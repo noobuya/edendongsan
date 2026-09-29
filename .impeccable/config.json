@@ -1,0 +1,26 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "gray-on-color",
+        "value": "*",
+        "files": [
+          "frontend/components/ui/PanelArrayField.tsx"
+        ],
+        "createdAt": "2026-09-28T17:38:20.414Z",
+        "reason": "pre-existing code unrelated to this edit: text-slate-300 is the resting state; active:bg-red-50 only ever appears together with active:text-red-500 (not gray) on press, so gray text never actually renders on the colored background"
+      },
+      {
+        "rule": "gray-on-color",
+        "value": "*",
+        "files": [
+          "frontend/components/SectorReedit.tsx"
+        ],
+        "createdAt": "2026-09-29T16:05:04.667Z",
+        "reason": "pre-existing disabled-button state (bg-slate-200/text-slate-400), unrelated to this edit; muted disabled styling is intentional"
+      }
+    ]
+  }
+}

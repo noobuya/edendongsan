@@ -1,0 +1,4 @@
+
+# next-pwa가 만드는 서비스워커 산출물 (이 앱은 PWA를 쓰지 않는다)
+public/sw.js
+public/workbox-*.js

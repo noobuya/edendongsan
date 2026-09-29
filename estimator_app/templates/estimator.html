@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>꾸밍홈 | 프리미엄 견적 컨설턴트</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+  :root{
+    --bg:#F2F4F6;
+    --card:#ffffff;
+    --ink:#16181d;
+    --sub:#8b8f98;
+    --line:#eceef1;
+    --accent:#2f6fed;
+    --accent-soft:#eaf0fe;
+    --bar-dark:#191b20;
+    --bar-dark2:#282b33;
+    --stealth:#b5460f;
+    --stealth-soft:#fff1e8;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Pretendard","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+    overscroll-behavior-y:none;}
+  #app{max-width:480px;margin:0 auto;min-height:100dvh;position:relative;padding-bottom:118px;}
+
+  header{padding:26px 22px 6px;}
+  .brand-chip{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid var(--line);
+    border-radius:20px;padding:5px 12px 5px 6px;font-size:11.5px;font-weight:700;color:var(--sub);
+    box-shadow:0 1px 2px rgba(15,23,42,.03);}
+  .brand-chip .dot{width:20px;height:20px;border-radius:7px;background:linear-gradient(135deg,#2f6fed,#6a8dff);
+    display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:800;}
+  header h1{font-size:21px;margin:12px 0 3px;font-weight:800;letter-spacing:-.4px;}
+  header p{margin:0;font-size:13px;color:var(--sub);}
+
+  /* ---------- 투트랙(Two-Track) 세그먼트 컨트롤 ---------- */
+  .segmented{position:relative;display:flex;background:#eaecef;border-radius:15px;padding:4px;
+    margin:16px 22px 4px;}
+  .segmented button{flex:1;position:relative;z-index:1;border:none;background:transparent;
+    padding:11px 4px;font-size:12.5px;font-weight:800;color:var(--sub);border-radius:11px;
+    cursor:pointer;transition:color .25s ease;white-space:nowrap;}
+  .segmented button.active{color:var(--ink);}
+  .segmented .seg-thumb{position:absolute;top:4px;left:4px;width:calc(50% - 4px);height:calc(100% - 8px);
+    background:#fff;border-radius:11px;box-shadow:0 2px 8px rgba(15,23,42,.12);
+    transition:transform .34s cubic-bezier(.22,.9,.28,1);z-index:0;}
+  .segmented[data-active="detail"] .seg-thumb{transform:translateX(100%);}
+
+  #detailMode, #quickMode{display:none;}
+  #app[data-mode="detail"] #detailMode{display:block;}
+  #app[data-mode="quick"] #quickMode{display:block;}
+  #app[data-mode="quick"] .bottom-bar-zone{display:none;}
+
+  /* ---------- 🏠 평수별 전체 견적 (Quick Mode) ---------- */
+  .quick-card{margin:14px 16px 18px;background:#fff;border:1px solid var(--line);border-radius:24px;
+    padding:22px 20px 20px;box-shadow:0 1px 2px rgba(20,20,30,.04);}
+  .quick-label{text-align:center;font-size:12.5px;font-weight:700;color:var(--sub);}
+  .pyeong-value{text-align:center;font-size:36px;font-weight:800;letter-spacing:-.6px;margin:4px 0 14px;
+    font-variant-numeric:tabular-nums;}
+  input[type=range].pyeong-slider{-webkit-appearance:none;appearance:none;width:100%;height:6px;
+    border-radius:4px;background:linear-gradient(90deg,var(--accent),var(--accent) 0,var(--line) 0);
+    margin:6px 0 4px;cursor:pointer;}
+  input[type=range].pyeong-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+    width:26px;height:26px;border-radius:50%;background:#fff;border:3px solid var(--accent);
+    box-shadow:0 3px 8px rgba(47,111,237,.35);cursor:pointer;}
+  input[type=range].pyeong-slider::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:#fff;
+    border:3px solid var(--accent);box-shadow:0 3px 8px rgba(47,111,237,.35);cursor:pointer;}
+  .slider-ticks{display:flex;justify-content:space-between;font-size:10.5px;color:#c3c6cc;font-weight:700;
+    padding:0 2px;margin-bottom:16px;}
+
+  .chip-row{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-bottom:6px;}
+  .chip-opt{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:9px 14px;
+    font-size:12px;font-weight:700;color:var(--sub);cursor:pointer;transition:all .15s ease;user-select:none;}
+  .chip-opt.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);}
+
+  .range-price{margin-top:18px;padding-top:16px;border-top:2px dashed var(--line);text-align:center;}
+  .range-price .rp-title{font-size:12.5px;font-weight:700;color:var(--ink);margin-bottom:6px;}
+  .range-price .rp-value{font-size:19px;font-weight:800;letter-spacing:-.2px;cursor:pointer;user-select:none;
+    font-variant-numeric:tabular-nums;}
+  .range-price .rp-note{font-size:10.5px;color:#b0b3ba;margin-top:10px;line-height:1.5;}
+
+  .picker-head{padding:18px 22px 2px;font-size:12.5px;font-weight:700;color:var(--sub);letter-spacing:.2px;}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:10px 16px 8px;}
+  .tile{
+    position:relative;background:var(--card);border:1px solid var(--line);
+    border-radius:20px;padding:16px 14px 14px;text-align:left;cursor:pointer;
+    display:flex;flex-direction:column;gap:10px;
+    box-shadow:0 1px 2px rgba(20,20,30,.04);
+    transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+    user-select:none;
+  }
+  .tile:active{transform:scale(.94);}
+  .tile.bump{animation:bump .28s ease;}
+  @keyframes bump{
+    0%{transform:scale(1);}
+    35%{transform:scale(.90);box-shadow:0 0 0 3px var(--accent-soft);}
+    100%{transform:scale(1);}
+  }
+  .icon-chip{width:44px;height:44px;border-radius:14px;display:flex;align-items:center;justify-content:center;
+    font-size:22px;box-shadow:0 4px 10px -4px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.25);}
+  .tile .name{font-size:14.5px;font-weight:700;color:var(--ink);}
+  .type-badge{display:inline-block;font-size:10px;font-weight:700;color:#5b5f68;background:#f1f2f5;
+    border-radius:7px;padding:3px 7px;margin-top:-4px;width:fit-content;}
+  .tile .price{font-size:12px;color:var(--sub);margin-top:-2px;}
+  .tile .qty-badge{
+    position:absolute;top:12px;right:12px;min-width:22px;height:22px;padding:0 6px;
+    background:var(--accent);color:#fff;border-radius:11px;font-size:12px;font-weight:800;
+    display:none;align-items:center;justify-content:center;
+  }
+  .tile.has-qty{border-color:#c9d8fb;background:#fafcff;}
+  .tile.has-qty .qty-badge{display:flex;}
+
+  .hint{padding:6px 22px 110px;font-size:11.5px;color:var(--sub);text-align:center;}
+
+  /* ---------- Sticky bottom bar ---------- */
+  .bottom-bar-zone{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;
+    padding:0 12px 12px;pointer-events:none;z-index:40;}
+  .bottom-bar{
+    pointer-events:auto;width:100%;max-width:456px;position:relative;
+    background:linear-gradient(155deg,var(--bar-dark2),var(--bar-dark));
+    color:#fff;border-radius:24px;padding:14px 18px;
+    box-shadow:0 12px 28px rgba(0,0,0,.28);
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    cursor:pointer;touch-action:none;
+  }
+  .bottom-bar .grabber{position:absolute;left:50%;top:6px;transform:translateX(-50%);
+    width:36px;height:4px;border-radius:2px;background:rgba(255,255,255,.35);}
+  .bottom-bar .label{font-size:12px;color:rgba(255,255,255,.6);font-weight:600;}
+  .bottom-bar .amount{font-size:22px;font-weight:800;letter-spacing:-.3px;margin-top:2px;
+    font-variant-numeric:tabular-nums;transition:color .2s ease;}
+  .bottom-bar .amount .won{font-size:14px;font-weight:600;margin-left:2px;color:rgba(255,255,255,.8);}
+  .bottom-bar .cta{
+    background:rgba(255,255,255,.14);border-radius:14px;padding:10px 14px;
+    font-size:13px;font-weight:700;white-space:nowrap;display:flex;align-items:center;gap:4px;
+  }
+  .bottom-bar .cta .arrow{transition:transform .2s ease;}
+  #app.sheet-open .bottom-bar .cta .arrow{transform:rotate(180deg);}
+
+  /* ---------- 🔒 사장님 전용 내부 분석 패널 (Stealth Mode) ---------- */
+  .sim-panel{
+    position:fixed;left:50%;bottom:104px;transform:translate(-50%,12px);
+    width:calc(100% - 24px);max-width:432px;max-height:0;opacity:0;overflow:hidden;pointer-events:none;
+    background:#fff;border:1px solid var(--line);border-radius:22px;
+    box-shadow:0 20px 44px rgba(15,23,42,.24);
+    transition:opacity .25s ease, transform .25s ease, max-height .32s ease;z-index:55;
+  }
+  .sim-panel.show{max-height:80dvh;opacity:1;transform:translate(-50%,0);pointer-events:auto;
+    overflow-y:auto;padding:18px 18px 20px;}
+  #app.sheet-open .sim-panel{bottom:200px;}
+
+  .sim-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+  .sim-head .sim-title{font-size:13px;font-weight:800;color:var(--stealth);display:flex;align-items:center;gap:6px;}
+  .sim-badge{font-size:10px;font-weight:700;color:#c07a3e;background:var(--stealth-soft);
+    padding:2px 7px;border-radius:6px;}
+  .sim-close{width:28px;height:28px;border-radius:50%;border:none;background:#f2f3f6;color:var(--sub);
+    font-size:12px;cursor:pointer;flex:0 0 auto;}
+
+  .sim-internal{background:var(--stealth-soft);border-radius:14px;padding:11px 13px;margin-bottom:8px;
+    font-size:12.5px;font-weight:700;color:var(--stealth);line-height:1.75;}
+  .sim-internal .si-tag{font-size:11px;font-weight:800;opacity:.75;}
+  .sim-internal b{font-variant-numeric:tabular-nums;color:var(--ink);}
+
+  .sim-row{display:flex;align-items:center;justify-content:space-between;padding:9px 0;
+    border-bottom:1px dashed var(--line);font-size:13px;}
+  .sim-label{color:var(--sub);font-weight:700;}
+  .sim-value{font-weight:800;font-variant-numeric:tabular-nums;}
+  .sim-value.sim-minus{color:#c0392b;}
+
+  .sim-total-input-wrap{display:flex;align-items:center;gap:5px;}
+  .sim-total-input{width:126px;text-align:right;border:1px solid var(--line);border-radius:10px;
+    padding:7px 8px;font-size:14px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--ink);}
+  .sim-unit{font-size:12px;color:var(--sub);font-weight:700;}
+
+  .sim-crew{padding:10px 0;border-bottom:1px dashed var(--line);}
+  .sim-crew-head{font-size:12.5px;font-weight:800;margin-bottom:8px;}
+  .sim-crew-head .sim-rate{font-weight:600;color:var(--sub);font-size:11px;}
+  .sim-crew-controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:12px;
+    font-weight:700;color:var(--ink);}
+  .stepper{display:flex;align-items:center;gap:6px;background:#f5f6f8;border-radius:10px;padding:4px 8px;}
+  .step-btn{width:23px;height:23px;border-radius:50%;border:none;background:#fff;
+    box-shadow:0 1px 2px rgba(0,0,0,.15);font-size:14px;font-weight:800;cursor:pointer;
+    color:var(--ink);line-height:1;}
+  .sim-x, .sim-eq{color:var(--sub);font-weight:700;}
+  .sim-eq b{color:var(--ink);font-variant-numeric:tabular-nums;}
+
+  .sim-profit-row{display:flex;flex-direction:column;align-items:center;gap:4px;
+    padding-top:16px;margin-top:4px;text-align:center;}
+  .sim-profit-row .sim-profit-label{font-size:12px;font-weight:700;color:var(--sub);}
+  .sim-profit{font-size:27px;font-weight:800;color:var(--accent);letter-spacing:-.4px;
+    font-variant-numeric:tabular-nums;}
+
+  /* ---------- Modal (floating digital receipt) ---------- */
+  .backdrop{
+    position:fixed;inset:0;background:rgba(10,12,18,.5);opacity:0;pointer-events:none;
+    transition:opacity .25s ease;z-index:45;backdrop-filter:blur(2px);
+  }
+  #app.sheet-open .backdrop{opacity:1;pointer-events:auto;}
+
+  .modal-wrap{
+    position:fixed;inset:0;display:flex;align-items:flex-end;justify-content:center;
+    padding:14px 14px calc(14px + env(safe-area-inset-bottom,0px));z-index:50;
+    pointer-events:none;
+  }
+  .modal-scroll{
+    width:100%;max-width:392px;max-height:88dvh;overflow-y:auto;
+    display:flex;flex-direction:column;gap:10px;
+    transform:translateY(24px) scale(.97);opacity:0;
+    transition:transform .34s cubic-bezier(.22,.9,.28,1), opacity .28s ease;
+    pointer-events:none;
+  }
+  #app.sheet-open .modal-wrap{pointer-events:auto;}
+  #app.sheet-open .modal-scroll{transform:translateY(0) scale(1);opacity:1;pointer-events:auto;}
+
+  .modal-top{display:flex;justify-content:flex-end;padding:0 2px;}
+  .close-x{width:34px;height:34px;border-radius:50%;border:none;background:rgba(255,255,255,.9);
+    color:var(--ink);font-size:15px;cursor:pointer;box-shadow:0 4px 10px rgba(0,0,0,.15);}
+
+  .receipt-card{
+    background:#fff;border-radius:28px;padding:26px 24px 22px;
+    box-shadow:0 1px 2px rgba(15,23,42,.04), 0 24px 48px -16px rgba(15,23,42,.22);
+    cursor:grab;
+  }
+  .drag-handle{display:flex;justify-content:center;margin-bottom:14px;}
+  .drag-handle span{width:38px;height:4px;border-radius:3px;background:#e4e6eb;}
+
+  .brand-strip{display:flex;align-items:center;gap:11px;}
+  .brand-mark{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#2f6fed,#7aa2ff);
+    color:#fff;font-weight:800;font-size:17px;display:flex;align-items:center;justify-content:center;
+    box-shadow:0 6px 14px -6px rgba(47,111,237,.6);flex:0 0 auto;}
+  .brand-name{font-size:14.5px;font-weight:800;letter-spacing:-.2px;}
+  .brand-sub{font-size:11.5px;color:var(--sub);margin-top:1px;}
+
+  .meta-row{display:flex;justify-content:space-between;font-size:11px;color:var(--sub);
+    margin:14px 0 2px;font-variant-numeric:tabular-nums;}
+
+  .divider-dash{border:none;border-top:1.5px dashed var(--line);margin:16px 0;}
+
+  .receipt-rows{display:flex;flex-direction:column;}
+  .r-empty{padding:22px 0;text-align:center;color:var(--sub);font-size:13px;}
+  .r-row{padding:11px 0;border-bottom:1px dotted var(--line);}
+  .r-row:last-child{border-bottom:none;}
+  .r-top{display:flex;align-items:center;gap:10px;}
+  .r-row .r-chip{width:30px;height:30px;border-radius:9px;flex:0 0 auto;display:flex;align-items:center;
+    justify-content:center;font-size:15px;box-shadow:inset 0 1px 0 rgba(255,255,255,.25);}
+  .r-row .r-mid{flex:1;min-width:0;}
+  .r-row .r-name{font-size:13.5px;font-weight:700;color:var(--ink);}
+  .r-row .r-type{font-size:10px;font-weight:700;color:#5b5f68;background:#f1f2f5;border-radius:6px;
+    padding:2px 6px;display:inline-block;margin-top:2px;}
+  .r-row .r-amt{font-size:13.5px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;flex:0 0 auto;}
+  .r-row .r-qty-line{font-size:11px;color:var(--sub);margin:5px 0 0 40px;}
+  .r-row .r-value-note{font-size:10.3px;color:#b0b3ba;margin:2px 0 0 40px;line-height:1.4;}
+
+  .total-block{margin-top:14px;padding-top:16px;border-top:2px solid var(--ink);
+    display:flex;flex-direction:column;align-items:center;gap:2px;text-align:center;}
+  .total-label{font-size:12px;color:var(--sub);font-weight:700;}
+  .total-amount{font-size:29px;font-weight:800;letter-spacing:-.5px;font-variant-numeric:tabular-nums;
+    cursor:pointer;user-select:none;}
+  .total-amount .won{font-size:16px;font-weight:700;margin-left:2px;color:var(--sub);}
+
+  .badges{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin-top:14px;}
+  .badge{font-size:10.8px;font-weight:700;padding:6px 11px;border-radius:999px;white-space:nowrap;
+    display:inline-flex;align-items:center;gap:4px;}
+  .badge.green{background:#e8f7ee;color:#1a8a4c;}
+  .badge.blue{background:#eaf0fe;color:#2f6fed;}
+
+  .footnote{text-align:center;font-size:10.5px;color:#b7bac2;margin-top:16px;line-height:1.5;}
+
+  .action-stack{display:flex;flex-direction:column;gap:8px;padding:2px 2px 4px;}
+  .btn-share{
+    background:linear-gradient(135deg,#1c1e24,#2f333d);color:#fff;border:none;border-radius:18px;padding:15px;
+    font-size:14.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;
+    box-shadow:0 10px 22px -8px rgba(0,0,0,.4);transition:transform .12s ease;
+  }
+  .btn-share:active{transform:scale(.97);}
+  .btn-share.copied{background:linear-gradient(135deg,#1a8a4c,#22a35a);}
+  .btn-ghost{background:#fff;border:1px solid var(--line);color:var(--ink);border-radius:16px;padding:12px;
+    font-size:13px;font-weight:700;cursor:pointer;}
+  .btn-reset{background:none;border:none;color:var(--sub);font-size:12px;text-align:center;
+    padding:4px;cursor:pointer;text-decoration:underline;}
+
+  .toast{
+    position:fixed;left:50%;bottom:150px;transform:translate(-50%,10px);
+    background:var(--ink);color:#fff;padding:10px 16px;border-radius:20px;font-size:12.5px;font-weight:600;
+    opacity:0;pointer-events:none;transition:opacity .25s ease, transform .25s ease;z-index:60;
+    box-shadow:0 8px 18px rgba(0,0,0,.25);max-width:80%;text-align:center;
+  }
+  .toast.show{opacity:1;transform:translate(-50%,0);}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <div class="brand-chip"><span class="dot">K</span>꾸밍홈 KKUMING HOME · 공식 견적 컨설턴트</div>
+    <h1>프리미엄 견적 컨설턴트</h1>
+    <p>현장에서 바로 완성도 높은 견적서를 보여드리세요</p>
+  </header>
+
+  <div class="segmented" id="segmented" data-active="quick">
+    <div class="seg-thumb"></div>
+    <button type="button" class="tab-btn active" id="tabQuick" data-mode="quick">🏠 평수별 전체 견적</button>
+    <button type="button" class="tab-btn" id="tabDetail" data-mode="detail">🔍 부분 상세 견적</button>
+  </div>
+
+  <div id="quickMode">
+    <div class="quick-card">
+      <div class="quick-label">시공 평수를 선택해 주세요</div>
+      <div class="pyeong-value" id="pyeongValue">24평</div>
+      <input type="range" class="pyeong-slider" id="pyeongSlider" min="10" max="60" step="1" value="24">
+      <div class="slider-ticks"><span>10평</span><span>24평</span><span>33평</span><span>40평</span><span>60평</span></div>
+
+      <div class="chip-row">
+        <button type="button" class="chip-opt on" id="chipFull" data-chip="full">✅ 전체(문+샷시+몰딩 등)</button>
+        <button type="button" class="chip-opt" id="chipNoSash" data-chip="noSash">샷시 제외</button>
+        <button type="button" class="chip-opt" id="chipSink" data-chip="sink">✅ 싱크대 포함</button>
+      </div>
+
+      <div class="range-price">
+        <div class="rp-title" id="rpTitle">24평 전체 프리미엄 리폼 세트</div>
+        <div class="rp-value" id="rpValue">📌 0원 ~ 0원</div>
+        <div class="rp-note">※ 현장 실측 후 최종 확정되며, 본 견적은 표준 기준입니다.</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="detailMode">
+    <div class="picker-head">시공 품목 선택</div>
+    <div class="grid" id="grid"></div>
+    <div class="hint">품목 카드를 탭하면 견적서에 바로 반영됩니다</div>
+  </div>
+
+  <div class="backdrop" id="backdrop"></div>
+
+  <div class="sim-panel" id="simPanel"></div>
+
+  <div class="bottom-bar-zone">
+    <div class="bottom-bar" id="bottomBar">
+      <div class="grabber"></div>
+      <div>
+        <div class="label">총 예상 견적</div>
+        <div class="amount" id="barAmountWrap"><span id="totalAmount">0</span><span class="won">원</span></div>
+      </div>
+      <div class="cta">견적서 보기<span class="arrow">▲</span></div>
+    </div>
+  </div>
+
+  <div class="modal-wrap" id="modalWrap">
+    <div class="modal-scroll" id="modalScroll">
+      <div class="modal-top"><button class="close-x" id="closeBtn">✕</button></div>
+
+      <div class="receipt-card" id="receiptCard">
+        <div class="drag-handle"><span></span></div>
+
+        <div class="brand-strip">
+          <div class="brand-mark">K</div>
+          <div>
+            <div class="brand-name">꾸밍홈 인테리어 필름</div>
+            <div class="brand-sub">프리미엄 시공 견적서</div>
+          </div>
+        </div>
+        <div class="meta-row">
+          <span id="issueDate">발행일 -</span>
+          <span id="estimateNo">견적번호 -</span>
+        </div>
+
+        <hr class="divider-dash">
+
+        <div class="receipt-rows" id="receiptRows">
+          <div class="r-empty">품목을 선택하면 견적 내역이 표시됩니다</div>
+        </div>
+
+        <div class="total-block">
+          <div class="total-label">총 예상 견적</div>
+          <div class="total-amount" id="receiptTotal"><span id="receiptTotalValue">0</span><span class="won">원</span></div>
+        </div>
+
+        <div class="badges">
+          <span class="badge green">🌿 친환경 인증 필름 사용</span>
+          <span class="badge blue">🛠️ 전문 기공 직접 시공</span>
+          <span class="badge green">🛡️ 1년 무상 A/S 보증</span>
+        </div>
+
+        <div class="footnote">상기 견적은 현장 실측 후 최종 확정됩니다.<br>꾸밍홈은 고객님의 공간을 프리미엄 소재로 책임지고 완성합니다.</div>
+      </div>
+
+      <div class="action-stack">
+        <button class="btn-share" id="shareBtn">🖼️ 견적서 이미지로 카톡 공유</button>
+        <button class="btn-ghost" id="copyTextBtn">텍스트로 복사</button>
+        <button class="btn-reset" id="resetBtn">전체 초기화</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+const ITEMS = {{ items | tojson }};
+// 메인 백엔드가 /estimator 아래에 붙여 서비스할 때도 API 경로가 맞도록 마운트 경로를 붙인다.
+const BASE = {{ request.script_root | tojson }};
+
+const state = { selections: {} };
+let displayedTotal = 0;
+let lastData = null; // 가장 최근 /api/calculate 응답 (스텔스 모드 계산용)
+
+const grid = document.getElementById('grid');
+const totalAmountEl = document.getElementById('totalAmount');
+const barAmountWrap = document.getElementById('barAmountWrap');
+const bottomBar = document.getElementById('bottomBar');
+const receiptRows = document.getElementById('receiptRows');
+const receiptTotalValue = document.getElementById('receiptTotalValue');
+const receiptTotalEl = document.getElementById('receiptTotal');
+const appEl = document.getElementById('app');
+const backdrop = document.getElementById('backdrop');
+const modalWrap = document.getElementById('modalWrap');
+const receiptCard = document.getElementById('receiptCard');
+const toastEl = document.getElementById('toast');
+
+const segmented = document.getElementById('segmented');
+const tabQuick = document.getElementById('tabQuick');
+const tabDetail = document.getElementById('tabDetail');
+const pyeongSlider = document.getElementById('pyeongSlider');
+const pyeongValueEl = document.getElementById('pyeongValue');
+const rpTitleEl = document.getElementById('rpTitle');
+const rpValueEl = document.getElementById('rpValue');
+const simPanel = document.getElementById('simPanel');
+
+function haptic(){
+  if (navigator.vibrate) { try{ navigator.vibrate(12); }catch(e){} }
+}
+function fmt(n){ return Math.round(n).toLocaleString(); }
+
+/* ---------- issue date / estimate no (프레젠테이션용, 표시 전용) ---------- */
+(function initMeta(){
+  const now = new Date();
+  const dateStr = `발행일 ${now.getFullYear()}.${String(now.getMonth()+1).padStart(2,'0')}.${String(now.getDate()).padStart(2,'0')}`;
+  const no = 'KKM-' + now.getFullYear() + String(now.getMonth()+1).padStart(2,'0') + String(now.getDate()).padStart(2,'0')
+    + '-' + String(Math.floor(1000 + Math.random()*9000));
+  document.getElementById('issueDate').textContent = dateStr;
+  document.getElementById('estimateNo').textContent = `견적번호 ${no}`;
+})();
+
+/* ---------- 투트랙(Two-Track) 모드 스위치 ---------- */
+function setMode(mode){
+  appEl.dataset.mode = mode;
+  segmented.dataset.active = mode;
+  tabQuick.classList.toggle('active', mode === 'quick');
+  tabDetail.classList.toggle('active', mode === 'detail');
+}
+tabQuick.addEventListener('click', () => setMode('quick'));
+tabDetail.addEventListener('click', () => setMode('detail'));
+setMode('quick');
+
+/* ---------- 🏠 평수별 전체 견적 (Quick Mode) ---------- */
+const PYEONG_BASE_MIN = 137500; // 원/평 (표준 하한)
+const PYEONG_BASE_MAX = 162500; // 원/평 (표준 상한)
+const quick = { pyeong: 24, noSash: false, sink: false };
+let quickRange = { min: 0, max: 0 };
+
+function computeQuickRange(){
+  let mult = quick.noSash ? 0.85 : 1.0;
+  if (quick.sink) mult *= 1.15;
+  const round10k = (n) => Math.round(n / 10000) * 10000;
+  return {
+    min: round10k(quick.pyeong * PYEONG_BASE_MIN * mult),
+    max: round10k(quick.pyeong * PYEONG_BASE_MAX * mult),
+  };
+}
+
+function renderQuickMode(){
+  pyeongValueEl.textContent = `${quick.pyeong}평`;
+  const pct = (quick.pyeong - 10) / (60 - 10) * 100;
+  pyeongSlider.style.background = `linear-gradient(90deg, var(--accent), var(--accent) ${pct}%, var(--line) ${pct}%)`;
+
+  quickRange = computeQuickRange();
+  const label = quick.noSash ? '샷시 제외' : '전체';
+  const sinkTxt = quick.sink ? ' · 싱크대 포함' : '';
+  rpTitleEl.textContent = `${quick.pyeong}평 ${label}${sinkTxt} 프리미엄 리폼 세트`;
+  rpValueEl.innerHTML = `📌 ${quickRange.min.toLocaleString()}원 ~ ${quickRange.max.toLocaleString()}원`;
+}
+
+pyeongSlider.addEventListener('input', () => {
+  quick.pyeong = parseInt(pyeongSlider.value, 10);
+  renderQuickMode();
+});
+
+document.getElementById('chipFull').addEventListener('click', () => {
+  quick.noSash = false;
+  syncChips();
+  renderQuickMode();
+});
+document.getElementById('chipNoSash').addEventListener('click', () => {
+  quick.noSash = true;
+  syncChips();
+  renderQuickMode();
+});
+document.getElementById('chipSink').addEventListener('click', () => {
+  quick.sink = !quick.sink;
+  syncChips();
+  renderQuickMode();
+});
+function syncChips(){
+  document.getElementById('chipFull').classList.toggle('on', !quick.noSash);
+  document.getElementById('chipNoSash').classList.toggle('on', quick.noSash);
+  document.getElementById('chipSink').classList.toggle('on', quick.sink);
+}
+renderQuickMode();
+
+/* ---------- 품목 선택 그리드 ---------- */
+function buildGrid(){
+  Object.entries(ITEMS).forEach(([code, item]) => {
+    const tile = document.createElement('button');
+    tile.className = 'tile';
+    tile.dataset.code = code;
+    const [c1, c2] = item.chip || ['#94a3b8', '#64748b'];
+    tile.innerHTML = `
+      <span class="qty-badge">0</span>
+      <span class="icon-chip" style="background:linear-gradient(135deg, ${c1}, ${c2})">${item.icon}</span>
+      <span class="name">${item.label}</span>
+      ${item.design_type ? `<span class="type-badge">${item.design_type}</span>` : ''}
+      <span class="price">${item.price.toLocaleString()}원</span>
+    `;
+    let pressTimer = null;
+    tile.addEventListener('click', () => addItem(code, tile));
+    tile.addEventListener('touchstart', () => {
+      pressTimer = setTimeout(() => { removeAllOf(code, tile); haptic(); }, 600);
+    }, {passive:true});
+    ['touchend','touchmove','touchcancel'].forEach(ev =>
+      tile.addEventListener(ev, () => clearTimeout(pressTimer)));
+    grid.appendChild(tile);
+  });
+}
+
+function addItem(code, tileEl){
+  state.selections[code] = (state.selections[code] || 0) + 1;
+  haptic();
+  tileEl.classList.remove('bump'); void tileEl.offsetWidth; tileEl.classList.add('bump');
+  syncTile(code);
+  recalculate();
+}
+
+function removeAllOf(code, tileEl){
+  if (!state.selections[code]) return;
+  delete state.selections[code];
+  syncTile(code);
+  recalculate();
+  showToast(`${ITEMS[code].label} 초기화됨`);
+}
+
+function syncTile(code){
+  const tile = grid.querySelector(`.tile[data-code="${code}"]`);
+  const qty = state.selections[code] || 0;
+  tile.querySelector('.qty-badge').textContent = qty;
+  tile.classList.toggle('has-qty', qty > 0);
+}
+
+function countUpTo(target){
+  const start = displayedTotal;
+  const diff = target - start;
+  if (diff === 0) { totalAmountEl.textContent = fmt(target); receiptTotalValue.textContent = fmt(target); return; }
+  const duration = 380;
+  const t0 = performance.now();
+  function frame(now){
+    const p = Math.min(1, (now - t0) / duration);
+    const eased = 1 - Math.pow(1 - p, 3);
+    const val = Math.round(start + diff * eased);
+    totalAmountEl.textContent = fmt(val);
+    receiptTotalValue.textContent = fmt(val);
+    if (p < 1) requestAnimationFrame(frame);
+    else displayedTotal = target;
+  }
+  requestAnimationFrame(frame);
+}
+
+async function recalculate(){
+  const res = await fetch(BASE + '/api/calculate', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({selections: state.selections})
+  });
+  const data = await res.json();
+  lastData = data;
+  countUpTo(data.total);
+  renderReceipt(data);
+}
+
+function renderReceipt(data){
+  const { breakdown, value_note } = data;
+
+  if (!breakdown.length){
+    receiptRows.innerHTML = '<div class="r-empty">품목을 선택하면 견적 내역이 표시됩니다</div>';
+    return;
+  }
+
+  receiptRows.innerHTML = breakdown.map(b => {
+    const item = ITEMS[b.code] || {};
+    const [c1, c2] = item.chip || ['#94a3b8', '#64748b'];
+    return `
+      <div class="r-row">
+        <div class="r-top">
+          <span class="r-chip" style="background:linear-gradient(135deg, ${c1}, ${c2})">${b.icon}</span>
+          <span class="r-mid">
+            <div class="r-name">${b.label}</div>
+            ${b.design_type ? `<span class="r-type">${b.design_type}</span>` : ''}
+          </span>
+          <span class="r-amt">${b.line_total.toLocaleString()}원</span>
+        </div>
+        <div class="r-qty-line">${b.qty}개 × ${b.unit_price.toLocaleString()}원</div>
+        <div class="r-value-note">※ ${b.note || value_note}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+/* ---------- 🔒 사장님 전용 '내부 분석 패널' (Stealth Mode) ----------
+   견적 금액(하단 바 / 견적서 카드 / 평수별 전체 견적)을 빠르게 두 번 탭(Double Tap)
+   하거나 길게 누르면(Long Press), 고객 몰래 내부 분석 패널이 열린다.
+   총 견적을 직접 입력/수정하고 기공·조공의 인원/일수를 +/- 로 조정하면
+   자재비(20% 고정)와 기공/조공 일당을 뺀 '최종 사장님 순수익'이 실시간으로 계산된다. */
+const GONG_RATE = 300000;   // 기공 일당
+const JOGONG_RATE = 100000; // 조공 일당
+let simMeters = null; // 품목 선택 기반 원단 소요량(미터). 평수 견적에서는 산정 불가(null)
+let simMaterialRatio = 0.20; // 품목 구성에 따른 실효 자재비 비율 (평수 견적은 20% 기본)
+const sim = { total: 0, gongCount: 1, gongDays: 3, joCount: 1, joDays: 3 };
+
+function simCompute(){
+  const material = Math.round(sim.total * simMaterialRatio);
+  const gongCost = GONG_RATE * sim.gongCount * sim.gongDays;
+  const joCost = JOGONG_RATE * sim.joCount * sim.joDays;
+  const profit = sim.total - material - gongCost - joCost;
+  return { material, gongCost, joCost, profit };
+}
+
+function simBuildHTML(){
+  return `
+    <div class="sim-head">
+      <span class="sim-title">🔒 내부 분석 <span class="sim-badge">고객 비공개</span></span>
+      <button type="button" class="sim-close" id="simCloseBtn">✕</button>
+    </div>
+    <div class="sim-internal" id="simInternal"></div>
+    <div class="sim-row">
+      <span class="sim-label">총 견적</span>
+      <div class="sim-total-input-wrap">
+        <input type="number" id="simTotalInput" class="sim-total-input" step="10000" inputmode="numeric">
+        <span class="sim-unit">원</span>
+      </div>
+    </div>
+    <div class="sim-row">
+      <span class="sim-label" id="simMaterialLabel">자재비 (20% 고정)</span>
+      <span class="sim-value sim-minus" id="simMaterial">- 0원</span>
+    </div>
+    <div class="sim-crew">
+      <div class="sim-crew-head">👷 기공 <span class="sim-rate">(일 30만원)</span></div>
+      <div class="sim-crew-controls">
+        <div class="stepper">
+          <button type="button" class="step-btn" data-role="gong" data-field="count" data-dir="-1">−</button>
+          <span><span id="simGongCount">1</span>명</span>
+          <button type="button" class="step-btn" data-role="gong" data-field="count" data-dir="1">+</button>
+        </div>
+        <span class="sim-x">×</span>
+        <div class="stepper">
+          <button type="button" class="step-btn" data-role="gong" data-field="days" data-dir="-1">−</button>
+          <span><span id="simGongDays">3</span>일</span>
+          <button type="button" class="step-btn" data-role="gong" data-field="days" data-dir="1">+</button>
+        </div>
+        <span class="sim-eq">= <b id="simGongCost">0원</b></span>
+      </div>
+    </div>
+    <div class="sim-crew">
+      <div class="sim-crew-head">🧑‍🔧 조공 <span class="sim-rate">(일 10만원)</span></div>
+      <div class="sim-crew-controls">
+        <div class="stepper">
+          <button type="button" class="step-btn" data-role="jo" data-field="count" data-dir="-1">−</button>
+          <span><span id="simJoCount">1</span>명</span>
+          <button type="button" class="step-btn" data-role="jo" data-field="count" data-dir="1">+</button>
+        </div>
+        <span class="sim-x">×</span>
+        <div class="stepper">
+          <button type="button" class="step-btn" data-role="jo" data-field="days" data-dir="-1">−</button>
+          <span><span id="simJoDays">3</span>일</span>
+          <button type="button" class="step-btn" data-role="jo" data-field="days" data-dir="1">+</button>
+        </div>
+        <span class="sim-eq">= <b id="simJoCost">0원</b></span>
+      </div>
+    </div>
+    <div class="sim-profit-row">
+      <span class="sim-profit-label">최종 사장님 순수익</span>
+      <span class="sim-profit" id="simProfit">0원</span>
+    </div>
+  `;
+}
+
+function simRender(updateInput){
+  const { material, gongCost, joCost, profit } = simCompute();
+  if (updateInput) document.getElementById('simTotalInput').value = sim.total;
+  const margin = sim.total - material;
+  const matPct = Math.round(simMaterialRatio * 100);
+  document.getElementById('simMaterialLabel').textContent = `자재비 (${matPct}% 고정)`;
+  document.getElementById('simInternal').innerHTML = `
+    <div><span class="si-tag">[내부 분석]</span></div>
+    <div>원단 소요량: <b>${simMeters === null ? '품목 선택 시 산출' : '약 ' + simMeters + ' 미터'}</b></div>
+    <div>예상 자재비: <b>${fmt(material)}원</b></div>
+    <div>시공 마진율: <b>${100 - matPct}% (${fmt(margin)}원)</b></div>`;
+  document.getElementById('simMaterial').textContent = `- ${fmt(material)}원`;
+  document.getElementById('simGongCount').textContent = sim.gongCount;
+  document.getElementById('simGongDays').textContent = sim.gongDays;
+  document.getElementById('simGongCost').textContent = `${fmt(gongCost)}원`;
+  document.getElementById('simJoCount').textContent = sim.joCount;
+  document.getElementById('simJoDays').textContent = sim.joDays;
+  document.getElementById('simJoCost').textContent = `${fmt(joCost)}원`;
+  const profitEl = document.getElementById('simProfit');
+  profitEl.textContent = `${fmt(profit)}원`;
+  profitEl.style.color = profit < 0 ? '#c0392b' : '';
+}
+
+function simWire(){
+  document.getElementById('simCloseBtn').addEventListener('click', closeSimulator);
+  document.getElementById('simTotalInput').addEventListener('input', (e) => {
+    sim.total = Math.max(0, parseInt(e.target.value || '0', 10));
+    simRender(false);
+  });
+  simPanel.addEventListener('click', (e) => {
+    const btn = e.target.closest('.step-btn');
+    if (!btn) return;
+    const dir = parseInt(btn.dataset.dir, 10);
+    const field = btn.dataset.field;
+    const key = btn.dataset.role === 'gong'
+      ? (field === 'count' ? 'gongCount' : 'gongDays')
+      : (field === 'count' ? 'joCount' : 'joDays');
+    const max = field === 'count' ? 9 : 30;
+    sim[key] = Math.max(0, Math.min(max, sim[key] + dir));
+    haptic();
+    simRender(false);
+  });
+}
+
+let simBuilt = false;
+function openSimulator(seedTotal){
+  if (!simBuilt){
+    simPanel.innerHTML = simBuildHTML();
+    simWire();
+    simBuilt = true;
+  }
+  sim.total = Math.max(0, Math.round(seedTotal));
+  const fromItems = lastData && lastData.total > 0 && Math.round(seedTotal) === lastData.total;
+  simMeters = fromItems ? lastData.margin_analysis.film_meters : null;
+  simMaterialRatio = fromItems ? lastData.margin_analysis.material_ratio : 0.20;
+  simPanel.classList.add('show');
+  simRender(true);
+  haptic();
+}
+function closeSimulator(){ simPanel.classList.remove('show'); }
+function toggleSimulator(seedTotal){
+  if (simPanel.classList.contains('show')) closeSimulator();
+  else openSimulator(seedTotal);
+}
+
+document.addEventListener('click', (e) => {
+  if (!simPanel.classList.contains('show')) return;
+  if (simPanel.contains(e.target)) return;
+  if (totalAmountEl.contains(e.target)) return;
+  if (receiptTotalEl.contains(e.target)) return;
+  if (rpValueEl.contains(e.target)) return;
+  closeSimulator();
+});
+
+/* 더블탭(280ms 이내 연속 탭) 또는 롱프레스(650ms)로 시뮬레이터를 여는 공용 트리거 */
+function attachSimTrigger(el, getSeedTotal){
+  let tapTimer = null, tapCount = 0, pressTimer = null, longFired = false;
+  el.addEventListener('touchstart', () => {
+    longFired = false;
+    pressTimer = setTimeout(() => { longFired = true; toggleSimulator(getSeedTotal()); }, 650);
+  }, {passive:true});
+  ['touchend','touchmove','touchcancel'].forEach(ev =>
+    el.addEventListener(ev, () => clearTimeout(pressTimer)));
+  el.addEventListener('click', () => {
+    if (longFired){ longFired = false; return; }
+    tapCount++;
+    if (tapCount === 1){
+      tapTimer = setTimeout(() => { tapCount = 0; }, 280);
+    } else {
+      clearTimeout(tapTimer);
+      tapCount = 0;
+      toggleSimulator(getSeedTotal());
+    }
+  });
+}
+
+/* ---------- 모달(디지털 영수증) 열기/닫기 ---------- */
+function openSheet(){ appEl.classList.add('sheet-open'); }
+function closeSheet(){ appEl.classList.remove('sheet-open'); }
+function toggleSheet(){ appEl.classList.toggle('sheet-open'); }
+
+backdrop.addEventListener('click', () => {
+  if (simPanel.classList.contains('show')){ closeSimulator(); return; }
+  closeSheet();
+});
+document.getElementById('closeBtn').addEventListener('click', closeSheet);
+
+/* 하단 바: 싱글탭=견적서 열기 / 스와이프업=견적서 열기 / 더블탭·롱프레스=시뮬레이터 */
+let touchStartY = null;
+let barTapTimer = null, barTapCount = 0, barPressTimer = null, barLongFired = false;
+
+bottomBar.addEventListener('touchstart', e => {
+  touchStartY = e.touches[0].clientY;
+  barLongFired = false;
+  barPressTimer = setTimeout(() => { barLongFired = true; toggleSimulator(displayedTotal); }, 650);
+}, {passive:true});
+bottomBar.addEventListener('touchmove', () => clearTimeout(barPressTimer), {passive:true});
+bottomBar.addEventListener('touchend', e => {
+  clearTimeout(barPressTimer);
+  if (touchStartY !== null){
+    const dy = e.changedTouches[0].clientY - touchStartY;
+    touchStartY = null;
+    if (dy < -25){ openSheet(); return; }
+  }
+}, {passive:true});
+
+bottomBar.addEventListener('click', () => {
+  if (barLongFired){ barLongFired = false; return; }
+  barTapCount++;
+  if (barTapCount === 1){
+    barTapTimer = setTimeout(() => { barTapCount = 0; toggleSheet(); }, 280);
+  } else {
+    clearTimeout(barTapTimer);
+    barTapCount = 0;
+    toggleSimulator(displayedTotal);
+  }
+});
+
+/* 견적서 카드 총액 & 평수별 전체 견적 금액: 더블탭·롱프레스 = 시뮬레이터 */
+attachSimTrigger(receiptTotalEl, () => displayedTotal);
+attachSimTrigger(rpValueEl, () => Math.round((quickRange.min + quickRange.max) / 2));
+
+let cardStartY = null;
+receiptCard.addEventListener('touchstart', e => { cardStartY = e.touches[0].clientY; }, {passive:true});
+receiptCard.addEventListener('touchend', e => {
+  if (cardStartY === null) return;
+  const dy = e.changedTouches[0].clientY - cardStartY;
+  if (dy > 40) closeSheet();
+  cardStartY = null;
+}, {passive:true});
+
+/* ---------- 이미지로 캡처하여 카톡 공유 ---------- */
+document.getElementById('shareBtn').addEventListener('click', async () => {
+  if (!lastData || !lastData.breakdown.length){ showToast('선택된 품목이 없습니다'); return; }
+
+  // 고객 앞에서 절대 원가/마진 분석이 캡처되지 않도록 시뮬레이터를 강제로 닫는다.
+  closeSimulator();
+  await new Promise(r => setTimeout(r, 350));
+
+  const btn = document.getElementById('shareBtn');
+  const originalText = btn.textContent;
+  btn.textContent = '이미지 생성 중...';
+
+  try{
+    const canvas = await html2canvas(receiptCard, {scale: 2, backgroundColor: '#ffffff', useCORS: true});
+    canvas.toBlob(async (blob) => {
+      const filename = `꾸밍홈_견적서_${document.getElementById('issueDate').textContent.replace(/\D/g,'')}.png`;
+      const file = new File([blob], filename, { type: 'image/png' });
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })){
+        try{
+          await navigator.share({
+            files: [file],
+            title: '꾸밍홈 프리미엄 견적서',
+            text: '고객님, 요청하신 프리미엄 인테리어 필름 시공 견적서입니다.',
+          });
+          showToast('견적서를 공유했습니다');
+        }catch(err){
+          if (err.name !== 'AbortError') downloadBlob(blob, filename);
+        }
+      } else {
+        downloadBlob(blob, filename);
+        showToast('견적서 이미지가 저장되었습니다');
+      }
+      btn.textContent = originalText;
+    }, 'image/png');
+  }catch(err){
+    btn.textContent = originalText;
+    showToast('이미지 생성에 실패했습니다');
+  }
+});
+
+function downloadBlob(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/* ---------- 텍스트 복사 (보조 수단) ---------- */
+document.getElementById('copyTextBtn').addEventListener('click', async () => {
+  if (!lastData || !lastData.breakdown.length){ showToast('선택된 품목이 없습니다'); return; }
+  const lines = [
+    '📋 꾸밍홈 프리미엄 인테리어 필름 시공 견적서',
+    '─────────────────────',
+    ...lastData.breakdown.map(b => `${b.icon} ${b.label}  ×${b.qty}   ${b.line_total.toLocaleString()}원`),
+    '─────────────────────',
+    `총 예상 견적 : ${lastData.total.toLocaleString()}원`,
+    '',
+    '🌿 친환경 인증 필름 사용 · 🛠️ 전문 기공 직접 시공 · 🛡️ 1년 무상 A/S 보증',
+    '* 상기 견적은 현장 실측 후 최종 확정됩니다.',
+  ];
+  const text = lines.join('\n');
+  try{
+    await navigator.clipboard.writeText(text);
+  }catch(e){
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+  }
+  showToast('견적 내역이 복사되었습니다');
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  state.selections = {};
+  Object.keys(ITEMS).forEach(syncTile);
+  closeSimulator();
+  recalculate();
+  showToast('견적이 초기화되었습니다');
+});
+
+let toastTimer = null;
+function showToast(msg){
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1600);
+}
+
+buildGrid();
+recalculate();
+</script>
+</body>
+</html>

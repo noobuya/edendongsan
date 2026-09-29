@@ -1,0 +1,272 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertCircle, Loader2, MousePointerClick, Sparkles, Wand2 } from "lucide-react";
+import type { JobStatusResponse } from "@/types";
+import { getJobStatus, requestIllustration, requestInpaint, resolveAssetUrl } from "@/lib/api";
+import AssetImage from "@/components/AssetImage";
+import PremiumReceipt from "@/components/PremiumReceipt";
+import InteractiveResultCanvas from "@/components/InteractiveResultCanvas";
+import SectorReedit from "@/components/SectorReedit";
+import SitePhotoGallery from "@/components/SitePhotoGallery";
+import SwatchPicker from "@/components/ui/SwatchPicker";
+import { PATTERN_SWATCHES } from "@/lib/patternSwatches";
+
+type ViewTab = "result" | "sector";
+
+const TAB_META: { id: ViewTab; label: string }[] = [
+  { id: "result", label: "시공 결과 (After)" },
+  { id: "sector", label: "구역 부분 편집" },
+];
+
+const EDIT_POLL_MS = 1500;
+// SDXL 인페인팅이 응답 없이 멈추거나 서버가 재시작돼 editing 플래그가 영원히
+// true로 남는 경우에도 프론트가 무한정 폴링하지 않도록 하는 안전장치.
+const EDIT_TIMEOUT_MS = 90_000;
+
+export default function SimulationPanel({
+  job,
+  onSecretHold,
+}: {
+  job: JobStatusResponse;
+  /** 견적서 안 상호 뱃지를 3초 길게 눌렀을 때 — 단가 설정을 연다. */
+  onSecretHold?: () => void;
+}) {
+  const [tab, setTab] = useState<ViewTab>("result");
+  const [liveJob, setLiveJob] = useState(job);
+  const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
+  const [selectedRegionLabel, setSelectedRegionLabel] = useState<string | null>(null);
+  const [lastColorId, setLastColorId] = useState(PATTERN_SWATCHES[0].id);
+  const [pickHint, setPickHint] = useState(false);
+  const [illustText, setIllustText] = useState("");
+  const [illustDesc, setIllustDesc] = useState("");
+  const editPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // 폴링할 때마다(매 1.5~2초) liveJob이 새 객체로 갱신되므로, 그대로 map하면
+  // 매번 새 배열 참조가 생겨 InteractiveResultCanvas가 사진/마스크를 계속 다시
+  // 로드하는 "무한 반복" 깜빡임이 생긴다. 그렇다고 job_id에만 묶으면, 처음
+  // "대기 중"(regions: [])으로 마운트된 빈 배열에 메모가 얼어붙어 완료 후에도
+  // 클릭 대상이 영영 0개가 된다 — regions는 완료 시점에 한 번만 채워지므로
+  // job_id + 개수 조합으로 묶으면 두 문제를 모두 피할 수 있다.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const resolvedRegions = useMemo(
+    () => liveJob.regions.map((r) => ({ ...r, mask_url: resolveAssetUrl(r.mask_url) })),
+    [liveJob.job_id, liveJob.regions.length]
+  );
+
+  // 부모(page.tsx)가 폴링 중에 넘겨주는 job은 상태가 바뀔 때마다(대기 중 → 처리 중 →
+  // 완료) 매번 새 객체로 들어온다. job_id가 바뀔 때만 동기화하면, 처음 "대기 중"
+  // 상태로 마운트된 스냅샷에 그대로 멈춰 있게 되어 백엔드가 실제로 완료된 뒤에도
+  // 화면은 "처리 중" 스피너를 영원히 보여주는 버그가 생긴다(무한 로딩) — 완료
+  // 후에는 부모가 더 이상 job을 갱신하지 않으므로, 매번 동기화해도 이후 부위별
+  // AI 편집으로 갈라진 liveJob을 덮어쓸 위험은 없다.
+  useEffect(() => {
+    setLiveJob(job);
+  }, [job]);
+
+  // 새 job(다른 사진으로 재요청, 다른 견적 불러오기 등)이 시작될 때만 선택/편집
+  // 상태를 초기화한다.
+  useEffect(() => {
+    setSelectedRegionId(null);
+    setSelectedRegionLabel(null);
+    if (editPollRef.current) clearInterval(editPollRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job.job_id]);
+
+  useEffect(() => {
+    return () => {
+      if (editPollRef.current) clearInterval(editPollRef.current);
+    };
+  }, []);
+
+  function startEditPolling(jobId: string) {
+    if (editPollRef.current) clearInterval(editPollRef.current);
+    const startedAt = Date.now();
+    editPollRef.current = setInterval(async () => {
+      if (Date.now() - startedAt > EDIT_TIMEOUT_MS) {
+        if (editPollRef.current) clearInterval(editPollRef.current);
+        editPollRef.current = null;
+        setLiveJob((prev) => ({
+          ...prev,
+          editing: false,
+          editing_region_id: undefined,
+          edit_error: "AI 렌더링이 응답 시간 내에 완료되지 않았습니다. 다시 시도해주세요.",
+        }));
+        return;
+      }
+      try {
+        const status = await getJobStatus(jobId);
+        setLiveJob(status);
+        if (!status.editing && editPollRef.current) {
+          clearInterval(editPollRef.current);
+          editPollRef.current = null;
+        }
+      } catch {
+        if (editPollRef.current) clearInterval(editPollRef.current);
+        editPollRef.current = null;
+        setLiveJob((prev) => ({ ...prev, editing: false, edit_error: "편집 상태 조회에 실패했습니다." }));
+      }
+    }, EDIT_POLL_MS);
+  }
+
+  if (liveJob.status === "failed") {
+    return (
+      <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">
+        <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+        <div>
+          {/* 서버가 실제로 실패를 알려준 경우에만 이 화면이 나온다. 예전에는 프론트의
+              시간 초과까지 여기로 흘러들어와, 다 끝난 작업에도 "영역 인식 실패"가
+              떴다(app/page.tsx의 STALL_TIMEOUT_MS 주석 참고). */}
+          <p className="text-sm font-medium">시뮬레이션에 실패했습니다. 사진을 다시 촬영해 주세요.</p>
+          {liveJob.error && <p className="mt-1 text-xs text-red-600/80">{liveJob.error}</p>}
+        </div>
+      </div>
+    );
+  }
+
+  if (liveJob.status !== "done" || !liveJob.estimate) {
+    return (
+      <div className="flex h-full min-h-[240px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center text-slate-400">
+        <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
+        {/* 서버가 알려준 현재 단계를 그대로 보여준다 — 고객 앞에서 기다리는 동안
+            "멈춘 건지 진행 중인지"를 사장님이 바로 읽을 수 있어야 한다. */}
+        <p className="text-sm">
+          {liveJob.stage ?? (liveJob.status === "queued" ? "대기 중..." : "AI가 영역을 인식하고 렌더링하는 중입니다...")}
+        </p>
+      </div>
+    );
+  }
+
+  const resultUrl = liveJob.rendered_image_url ? resolveAssetUrl(liveJob.rendered_image_url) : undefined;
+
+  function handleSelectRegion(regionId: string | null, label: string | null) {
+    setSelectedRegionId(regionId);
+    setSelectedRegionLabel(label);
+  }
+
+  async function handleIllustration() {
+    if (liveJob.editing) return;
+    if (!illustText.trim() && !illustDesc.trim()) return;
+
+    setLiveJob((prev) => ({ ...prev, editing: true, editing_region_id: undefined, edit_error: undefined }));
+    try {
+      await requestIllustration(liveJob.job_id, illustText.trim(), illustDesc.trim());
+      startEditPolling(liveJob.job_id);
+    } catch (err) {
+      setLiveJob((prev) => ({
+        ...prev,
+        editing: false,
+        edit_error: err instanceof Error ? err.message : "일러스트 생성 요청에 실패했습니다.",
+      }));
+    }
+  }
+
+  async function handleSwatchSelect(colorId: string) {
+    setLastColorId(colorId);
+    if (!selectedRegionId) {
+      setPickHint(true);
+      setTimeout(() => setPickHint(false), 2000);
+      return;
+    }
+    if (liveJob.editing) return;
+
+    setLiveJob((prev) => ({ ...prev, editing: true, editing_region_id: selectedRegionId, edit_error: undefined }));
+    try {
+      await requestInpaint(liveJob.job_id, selectedRegionId, colorId);
+      startEditPolling(liveJob.job_id);
+    } catch (err) {
+      setLiveJob((prev) => ({
+        ...prev,
+        editing: false,
+        editing_region_id: undefined,
+        edit_error: err instanceof Error ? err.message : "AI 편집 요청에 실패했습니다.",
+      }));
+    }
+  }
+
+  return (
+    /* 펼친 화면에서는 마스터-디테일로 갈라진다 — 왼쪽(60%)은 고객과 함께 보는 사진과
+       편집 도구, 오른쪽(40%)은 따로 스크롤되는 견적·작업사진 패널. */
+    <div className="space-y-4 foldLandscape:flex foldLandscape:h-full foldLandscape:gap-5 foldLandscape:space-y-0">
+      <div className="glass-panel overflow-hidden foldLandscape:h-full foldLandscape:w-3/5 foldLandscape:shrink-0 foldLandscape:overflow-y-auto">
+        {/* iOS 세그먼티드 컨트롤 형태 — 밑줄 탭보다 손가락으로 정확히 누르기 쉽다. */}
+        <div className="p-2">
+          <div className="flex gap-1 rounded-full bg-slate-900/[0.05] p-1">
+            {TAB_META.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTab(t.id)}
+                className={`flex-1 rounded-full px-2 py-2.5 text-[13px] font-semibold transition-all duration-200 ${
+                  tab === t.id
+                    ? "bg-white text-indigo-600 shadow-sm"
+                    : "text-slate-500 active:scale-95"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-slate-100">
+          {tab === "result" &&
+            (resultUrl ? (
+              <div className="space-y-0">
+                {/* [최종 뷰어]
+                    이 탭은 고객에게 보여주고 그대로 인쇄(PDF)하는 화면이다. 색상 스와치,
+                    문구 입력, "AI로 시공 사진 만들기" 같은 조작 UI는 전부 [구역 부분 편집]
+                    탭으로 옮겼다 — 결과지에 편집 도구가 섞여 있으면 지저분하고, 고객 앞에서
+                    실수로 눌러 결과가 바뀌는 사고도 난다. */}
+                <InteractiveResultCanvas
+                  imageUrl={resultUrl}
+                  regions={resolvedRegions}
+                  selectedRegionId={selectedRegionId}
+                  onSelectRegion={handleSelectRegion}
+                  editingRegionId={liveJob.editing ? liveJob.editing_region_id : null}
+                />
+              </div>
+            ) : (
+              <div className="flex aspect-[4/3] items-center justify-center text-sm text-slate-400">
+                이미지가 없습니다
+              </div>
+            ))}
+
+          {tab === "sector" &&
+            (resultUrl ? (
+              <div className="space-y-0">
+                <SectorReedit
+                  key={resultUrl}
+                  jobId={liveJob.job_id}
+                  imageUrl={resultUrl}
+                  busy={liveJob.editing}
+                  onSubmitted={() => {
+                    setLiveJob((prev) => ({ ...prev, editing: true, edit_error: undefined }));
+                    startEditPolling(liveJob.job_id);
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="flex aspect-[4/3] items-center justify-center text-sm text-slate-400">
+                편집할 시공 후 사진이 없습니다
+              </div>
+            ))}
+
+        </div>
+      </div>
+
+      <div className="space-y-4 foldLandscape:h-full foldLandscape:w-2/5 foldLandscape:overflow-y-auto foldLandscape:pb-32">
+        <PremiumReceipt estimate={liveJob.estimate} jobId={liveJob.job_id} onSecretHold={onSecretHold} />
+
+        {/* job_id를 key로 줘서, 다른 견적을 불러올 때 이전 견적의 사진/블로그 로컬
+            상태가 그대로 남아 뒤섞이지 않고 새로 마운트되게 한다. */}
+        <SitePhotoGallery
+          key={liveJob.job_id}
+          jobId={liveJob.job_id}
+          initialPhotos={liveJob.work_photos}
+          initialBlogPost={liveJob.blog_post}
+        />
+      </div>
+    </div>
+  );
+}

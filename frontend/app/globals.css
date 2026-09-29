@@ -1,0 +1,142 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  /* 아래쪽 안전 여백은 body가 아니라 화면에 고정된 하단 액션 바가 직접 책임진다
+     (fixed 요소는 body padding의 영향을 받지 않기 때문). */
+}
+
+@layer components {
+  /* 넓은 배경 위에 떠 있는 반투명 유리 패널. 화면을 칸으로 나누지 않고, 배경(사진·
+     캔버스)이 패널 뒤로 비쳐 보이게 해서 깊이감을 만든다. */
+  .glass-panel {
+    @apply rounded-3xl border border-white/50 bg-white/70 shadow-[0_8px_32px_rgba(0,0,0,0.10)] backdrop-blur-2xl;
+  }
+
+  /* 앱 바·뱃지처럼 작게 떠 있는 유리 조각. */
+  .glass-pill {
+    @apply rounded-full border border-white/50 bg-white/70 shadow-[0_4px_20px_rgba(0,0,0,0.08)] backdrop-blur-xl;
+  }
+
+  /* 사진이 없을 때 배경을 채우는 고급스러운 그라데이션 캔버스.
+     단색 회색 덩어리 대신 은은한 빛 번짐을 겹쳐 공간감을 준다. */
+  .canvas-stage {
+    background-color: #eef1f6;
+    background-image:
+      radial-gradient(60% 50% at 18% 12%, rgba(99, 102, 241, 0.16), transparent 70%),
+      radial-gradient(55% 45% at 82% 78%, rgba(56, 189, 248, 0.14), transparent 72%),
+      radial-gradient(45% 40% at 55% 45%, rgba(255, 255, 255, 0.85), transparent 70%),
+      linear-gradient(160deg, #f6f8fc 0%, #e7ebf3 55%, #dfe4ee 100%);
+  }
+}
+
+@layer utilities {
+  /* 가로 스크롤 칩 목록에서 스크롤바를 숨긴다 — 네이티브 앱에는 가로 스크롤바가 없다. */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* 아이폰 제스처 바 / 안드로이드 네비게이션 바를 침범하지 않기 위한 여백.
+     기본 여백에 더하는 방식이라, 안전 영역이 0인 기기에서도 버튼이 화면 맨
+     아래 모서리에 딱 붙지 않는다. */
+  .pb-safe {
+    padding-bottom: calc(0.875rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* 탭할 때 뜨는 회색 하이라이트는 웹 브라우저 티가 나므로 없앤다. */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---- 빠른 견적(/quote) 화면 전용 ---------------------------------------------
+   브라우저가 알아서 그리는 부분(범위 슬라이더, 선택 영역, 포커스 링, 시트 등장)도
+   화면 색과 같은 규칙으로 맞춘다. .fin-scope 안에서만 적용된다. */
+.fin-scope ::selection {
+  background: #c7d2fe;
+  color: #191f28;
+}
+.fin-scope :focus-visible {
+  outline: 2px solid #4f46e5;
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+
+.fin-range {
+  --fill: 50%;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 32px;
+  background: transparent;
+  cursor: pointer;
+  touch-action: pan-y;
+}
+.fin-range::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(to right, #4f46e5 var(--fill), #e5e8eb var(--fill));
+}
+.fin-range::-moz-range-track {
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(to right, #4f46e5 var(--fill), #e5e8eb var(--fill));
+}
+.fin-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 30px;
+  height: 30px;
+  margin-top: -11px;
+  border-radius: 50%;
+  background: #fff;
+  border: 0;
+  box-shadow: 0 0 0 1px rgba(79, 70, 229, 0.25), 0 3px 10px rgba(25, 31, 40, 0.22);
+}
+.fin-range::-moz-range-thumb {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #fff;
+  border: 0;
+  box-shadow: 0 0 0 1px rgba(79, 70, 229, 0.25), 0 3px 10px rgba(25, 31, 40, 0.22);
+}
+
+@keyframes fin-sheet-in {
+  from {
+    transform: translateY(32px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+@keyframes fin-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.fin-sheet {
+  animation: fin-sheet-in 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.fin-backdrop {
+  animation: fin-fade-in 220ms ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fin-sheet,
+  .fin-backdrop {
+    animation: none;
+  }
+}
