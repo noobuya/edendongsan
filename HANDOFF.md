@@ -470,3 +470,27 @@
 - **배포 절차:** PC에서 `git push` → `ssh -i $k ubuntu@54.66.15.115` → `~/deploy.sh`. 스크립트가 최신 main을 받고(`git reset --hard`), 필요할 때만 패키지를 설치하고, `next build`(1~3분) 후 두 서비스를 재시작하며 :3000과 :8000/api/quotes가 200인지 확인한다. 빌드가 실패하면 직전 빌드로 되돌린다. `~/deploy.sh --force`는 강제 재빌드. `backend/storage`(견적·사진)와 `backend/.env`는 git 밖이라 배포로 지워지지 않는다.
 - **확인 시점 서버 코드:** `8de92c8 첫 업로드`. 이후 커밋(`f18c80c`, `1ade82a` 등)은 서버에 반영하지 않았다(폰 앱은 화면·API가 모두 서버 코드를 쓰므로 새 기능은 배포해야 보인다).
 - 서버 로그: `journalctl -u eden-backend -u eden-frontend -n 50`.
+
+## 카메라 줌 + "업데이트해줘" 규칙 + 자동화 작업 대기열 (2026-09-30 ~ 10-01)
+
+### 카메라 줌 (커밋 396b18c)
+- 원인: `frontend/components/CameraSheet.tsx`에 줌 기능이 아예 없었다. 핀치 줌, 0.5/1/2/4x 버튼(폰이 지원하는 범위만), 슬라이더, 마우스 휠을 추가.
+- 폰이 `track.getCapabilities().zoom`을 지원하면 하드웨어 줌(`applyConstraints`), 아니면 디지털 줌(화면 `scale` + 촬영 시 중앙 잘라내기).
+- 메인 촬영 화면과 시공 전/중/후 사진(`SitePhotoGallery`)이 같은 컴포넌트를 쓰므로 둘 다 적용. 사용자가 폰에서 된다고 확인함.
+- **PWA 캐시 주의:** 배포 후에도 폰에 옛 화면이 보이면 서비스워커(next-pwa) 캐시 때문이다. 서버는 새 번들을 내주고 있었다(서버 빌드에서 확인). 앱을 완전히 끄고 두 번 열면 반영된다. 자동 새로고침(controllerchange 시 reload)은 아직 넣지 않았고, `components/ServiceWorkerCleanup.tsx`가 이미 존재한다(내용 미확인).
+
+### "업데이트해줘" 규칙
+- 사용자가 "업데이트해줘"라고 하면 커밋 → `git push`(PC에서) → `ssh -i $k ubuntu@54.66.15.115 "~/deploy.sh"`를 한 번에 실행한다(메모리 `update-command.md`). 서버 키는 읽기 전용이라 서버에서 푸시는 불가. APK 재빌드는 포함하지 않는다.
+- `~/deploy.sh`는 이제 `eden-backend eden-frontend eden-worker` 세 서비스를 재시작한다.
+
+### 자동화 작업 대기열 (커밋 8b2bf54, 24084ef)
+- **배경:** 학원 수강생이 웹에서 쓰는 "인테리어 필름 자동화(Selenium)"를 서비스화하려는 요청. **정작 기존 Selenium 스크립트는 이 PC와 서버 어디에서도 찾지 못했다.** 그래서 지금은 골격 + "연결 테스트" 작업만 있고, 실제 발주 자동화는 스크립트를 받아야 붙일 수 있다.
+- **구조:** 기존 FastAPI/Next.js에 추가(새 서버 없음).
+  - `backend/app/automation/`: `tasks.py`(작업 등록부 — 새 자동화는 여기에 `Task` 추가, 폼은 `fields`로 자동 생성), `store.py`(SQLite `storage/automation.db` 대기열, 비밀번호 같은 `secret` 필드는 끝나면 삭제), `worker.py`(1건씩 처리, 작업마다 `run_one.py` 별도 프로세스, 5분 제한), `run_one.py`.
+  - `backend/app/routers/automation.py`: `/api/automation/{login,tasks,jobs}`. 접근은 `X-Access-Code` 헤더. 코드는 `backend/.env`의 `AUTOMATION_CODES=코드:이름,코드:이름`(설정은 `config.py`). 한 사람당 동시 대기 3건 제한, 본인 작업만 조회 가능.
+  - `frontend/app/automation/page.tsx`(코드 입장·폼·순번·취소·결과), `frontend/lib/api.ts` 하단에 API 함수. 첫 화면(사진 찍기 전)의 "자동화 작업" 버튼(`app/page.tsx`)에서 진입.
+  - `deploy/eden-worker.service`: 워커 systemd 서비스(`MemoryMax=600M`).
+- **서버에 직접 한 설정(저장소 밖):** `/etc/systemd/system/eden-worker.service` 설치·enable, `~/deploy.sh`에 `eden-worker` 재시작 추가, `~/edendongsan/backend/.env`에 `AUTOMATION_CODES=<코드>:관리자` 추가. **접속 코드는 보안상 이 문서에 적지 않는다** — 서버 `.env`를 보거나 새로 발급할 것. 수강생별 코드를 나누려면 그 줄에 `코드:이름`을 쉼표로 추가하고 `sudo systemctl restart eden-backend`.
+- **검증:** 로컬에서 로그인·순번·완료·타인 조회 차단·3건 제한 확인. 실서버에서 작업 1건이 대기 → 완료까지 가는 것과 틀린 코드 401, `/automation` 200 확인. 폰 화면 조작(버튼·폼)은 미확인.
+- **서버 자원:** 메모리 908MB(여유 약 450MB), 2코어, 스왑 2GB는 이미 있음. Chrome/Selenium은 동시에 못 돌린다 → 붙이기 전에 AWS 콘솔에서 t3.small(2GB) 이상으로 올리기를 권했다(사용자가 아직 결정 안 함). 워커가 1건씩만 처리하는 이유.
+- **남은 일:** ① Selenium 스크립트 받아 `tasks.py`에 이식하고 서버에 Chrome+드라이버 설치 ② 수강생 이름/코드 목록으로 `AUTOMATION_CODES` 확정 ③ 인스턴스 업그레이드 결정 ④ (선택) PWA 새 버전 자동 새로고침.
