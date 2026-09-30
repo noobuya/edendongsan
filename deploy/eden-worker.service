@@ -1,0 +1,17 @@
+[Unit]
+Description=Eden automation worker (queue, 1 job at a time)
+After=network-online.target eden-backend.service
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/edendongsan/backend
+ExecStart=/home/ubuntu/edendongsan/venv/bin/python -m app.automation.worker
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+# 브라우저가 메모리를 다 써도 서버 전체가 죽지 않도록 워커 쪽 상한을 둔다.
+MemoryMax=600M
+
+[Install]
+WantedBy=multi-user.target

@@ -459,3 +459,48 @@ export async function saveEstimatorPricing(values: Record<string, number>): Prom
   const data = await res.json();
   return data.fields;
 }
+
+// ---- 자동화 작업(수강생 코드로 접근, 서버 대기열에서 1건씩 처리) ----
+
+export interface AutomationField {
+  key: string;
+  label: string;
+  type: "text" | "number" | "password" | "textarea";
+  required: boolean;
+  placeholder: string;
+}
+export interface AutomationTask {
+  id: string;
+  title: string;
+  description: string;
+  fields: AutomationField[];
+}
+export interface AutomationJob {
+  id: string;
+  task: string;
+  status: "queued" | "running" | "done" | "failed" | "canceled";
+  position: number | null;
+  log: string[];
+  result: Record<string, unknown> | null;
+  error: string | null;
+  created: number;
+  finished: number | null;
+}
+
+async function automationFetch<T>(path: string, code: string, init: RequestInit = {}): Promise<T> {
+  const res = await apiFetch(`${API_BASE}/api/automation${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", "X-Access-Code": code, ...init.headers },
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "요청에 실패했습니다."));
+  return res.json();
+}
+
+export const automationLogin = (code: string) =>
+  automationFetch<{ name: string }>("/login", code, { method: "POST", body: JSON.stringify({ code }) });
+export const automationTasks = (code: string) => automationFetch<AutomationTask[]>("/tasks", code);
+export const automationJobs = (code: string) => automationFetch<AutomationJob[]>("/jobs", code);
+export const automationCreate = (code: string, task: string, params: Record<string, string>) =>
+  automationFetch<AutomationJob>("/jobs", code, { method: "POST", body: JSON.stringify({ task, params }) });
+export const automationCancel = (code: string, id: string) =>
+  automationFetch<{ ok: boolean }>(`/jobs/${id}`, code, { method: "DELETE" });
