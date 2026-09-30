@@ -23,6 +23,29 @@ export default function CameraSheet({ open, onCapture, onClose, onPickFile }: Pr
   const [error, setError] = useState<string | null>(null);
   const [facing, setFacing] = useState<"environment" | "user">("environment");
   const [busy, setBusy] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  // hardware=true면 카메라 자체 광학/센서 줌, false면 화면 확대 + 촬영 시 중앙 잘라내기(디지털 줌).
+  const [zoomCaps, setZoomCaps] = useState<{ min: number; max: number; hardware: boolean }>({
+    min: 1,
+    max: 4,
+    hardware: false,
+  });
+  const trackRef = useRef<MediaStreamTrack | null>(null);
+  const capsRef = useRef(zoomCaps);
+  const pinchRef = useRef<{ dist: number; zoom: number } | null>(null);
+  const zoomRef = useRef(1);
+
+  const applyZoom = useCallback((value: number) => {
+    const { min, max, hardware } = capsRef.current;
+    const z = Math.min(max, Math.max(min, value));
+    zoomRef.current = z;
+    setZoom(z);
+    if (hardware) {
+      trackRef.current
+        ?.applyConstraints({ advanced: [{ zoom: z } as MediaTrackConstraintSet] })
+        .catch(() => {});
+    }
+  }, []);
 
   const stopStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -48,6 +71,21 @@ export default function CameraSheet({ open, onCapture, onClose, onPickFile }: Pr
           return;
         }
         streamRef.current = stream;
+
+        const track = stream.getVideoTracks()[0] ?? null;
+        trackRef.current = track;
+        const caps = (track?.getCapabilities?.() ?? {}) as { zoom?: { min: number; max: number } };
+        const next = caps.zoom
+          ? { min: caps.zoom.min, max: Math.min(caps.zoom.max, 10), hardware: true }
+          : { min: 1, max: 4, hardware: false };
+        capsRef.current = next;
+        setZoomCaps(next);
+        zoomRef.current = Math.max(1, next.min);
+        setZoom(zoomRef.current);
+        if (next.hardware) {
+          await track?.applyConstraints({ advanced: [{ zoom: zoomRef.current } as MediaTrackConstraintSet] }).catch(() => {});
+        }
+
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           await videoRef.current.play().catch(() => {});
@@ -74,15 +112,22 @@ export default function CameraSheet({ open, onCapture, onClose, onPickFile }: Pr
     if (!video || !video.videoWidth) return;
     setBusy(true);
 
+    // 디지털 줌이면 화면에서 보이는 중앙 영역만 잘라 저장한다(하드웨어 줌은 이미 영상에 반영됨).
+    const digital = !capsRef.current.hardware && zoomRef.current > 1;
+    const sw = digital ? video.videoWidth / zoomRef.current : video.videoWidth;
+    const sh = digital ? video.videoHeight / zoomRef.current : video.videoHeight;
+    const sx = (video.videoWidth - sw) / 2;
+    const sy = (video.videoHeight - sh) / 2;
+
     const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    canvas.width = Math.round(sw);
+    canvas.height = Math.round(sh);
     const ctx = canvas.getContext("2d");
     if (!ctx) {
       setBusy(false);
       return;
     }
-    ctx.drawImage(video, 0, 0);
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
     canvas.toBlob(
       (blob) => {
         setBusy(false);
@@ -96,7 +141,27 @@ export default function CameraSheet({ open, onCapture, onClose, onPickFile }: Pr
     );
   }
 
+  function touchDist(e: React.TouchEvent) {
+    const [a, b] = [e.touches[0], e.touches[1]];
+    return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  }
+
+  function handleTouchStart(e: React.TouchEvent) {
+    if (e.touches.length === 2) pinchRef.current = { dist: touchDist(e), zoom: zoomRef.current };
+  }
+
+  function handleTouchMove(e: React.TouchEvent) {
+    if (e.touches.length !== 2 || !pinchRef.current) return;
+    applyZoom(pinchRef.current.zoom * (touchDist(e) / pinchRef.current.dist));
+  }
+
+  function handleWheel(e: React.WheelEvent) {
+    applyZoom(zoomRef.current * (e.deltaY < 0 ? 1.1 : 1 / 1.1));
+  }
+
   if (!open) return null;
+
+  const presets = [0.5, 1, 2, 4].filter((z) => z >= zoomCaps.min - 0.01 && z <= zoomCaps.max + 0.01);
 
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-black animate-[fade-in_0.2s_ease-out]">
@@ -122,8 +187,55 @@ export default function CameraSheet({ open, onCapture, onClose, onPickFile }: Pr
         </button>
       </div>
 
-      <div className="relative flex min-h-0 flex-1 items-center justify-center">
-        <video ref={videoRef} playsInline muted autoPlay className="h-full w-full object-contain" />
+      <div
+        className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden"
+        style={{ touchAction: "none" }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={() => (pinchRef.current = null)}
+        onWheel={handleWheel}
+      >
+        <video
+          ref={videoRef}
+          playsInline
+          muted
+          autoPlay
+          className="h-full w-full object-contain"
+          style={!zoomCaps.hardware && zoom > 1 ? { transform: `scale(${zoom})` } : undefined}
+        />
+
+        {!error && (
+          <div className="absolute inset-x-0 bottom-4 flex flex-col items-center gap-3 px-6">
+            <div className="flex items-center gap-1 rounded-full bg-black/45 p-1 backdrop-blur-sm">
+              {presets.map((z) => {
+                const active = Math.abs(zoom - z) < 0.15;
+                return (
+                  <button
+                    key={z}
+                    type="button"
+                    onClick={() => applyZoom(z)}
+                    className={`flex h-11 min-w-11 items-center justify-center rounded-full px-3 text-[13px] font-bold tabular-nums transition-colors ${
+                      active ? "bg-white text-slate-900" : "text-white/85"
+                    }`}
+                  >
+                    {z}x
+                  </button>
+                );
+              })}
+              <span className="px-2 text-[13px] font-bold tabular-nums text-white">{zoom.toFixed(1)}x</span>
+            </div>
+            <input
+              type="range"
+              aria-label="줌"
+              min={zoomCaps.min}
+              max={zoomCaps.max}
+              step={0.1}
+              value={zoom}
+              onChange={(e) => applyZoom(Number(e.target.value))}
+              className="h-11 w-full max-w-xs accent-white"
+            />
+          </div>
+        )}
 
         {/* 구도 가이드 — 벽·천장이 프레임에 다 들어오게 잡아준다. */}
         {!error && (
