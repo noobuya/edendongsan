@@ -28,7 +28,7 @@ const config: CapacitorConfig = {
   // NEXT_PUBLIC_API_URL을 함께 고치고, `npx cap sync android`로 APK에 다시 반영한 뒤
   // APK를 새로 설치해야 한다 — 그 뒤로는 다시 자동으로 받는다.
   server: {
-    url: "https://circulate-blissful-traction.ngrok-free.dev",
+    url: "https://54-66-15-115.sslip.io",
     androidScheme: "https",
     cleartext: false,
   },
