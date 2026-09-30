@@ -462,3 +462,11 @@
   - 서버에서 코드가 어떻게 돌고(systemd/nginx/도커 등), 코드 배포를 어떻게 하는지는 이 세션에서 확인하지 않았다. 다음에 서버 작업을 하려면 ssh로 들어가 구성부터 확인할 것. 앱 코드를 고치면 GitHub 푸시 후 서버에서 받아 재시작해야 폰에 반영될 가능성이 크다(미확인).
   - 서버 주소를 바꾸면 `capacitor.config.ts` 수정 → `cap sync` → APK 재빌드·재설치가 필요(10차와 동일). `.env.local`의 `NEXT_PUBLIC_API_URL`이 아직 ngrok 주소일 수 있으니, 정적 번들 모드로 돌아갈 일이 있으면 함께 확인.
   - 서버는 인터넷에 공개돼 있으므로 5번 함정(원가 정보·저장된 견적 노출)이 그대로 유효하다. 주소를 고객에게 주지 말 것.
+
+### 서버 구성 확인 결과 (2026-09-30, ssh로 직접 확인)
+
+- **자동 배포 없음.** cron·webhook 없음. GitHub에 푸시해도 서버는 그대로이고, 서버에서 `~/deploy.sh`를 직접 실행해야 반영된다.
+- **서버 구성:** Caddy(HTTPS, sslip.io) → FastAPI(`eden-backend.service`, 127.0.0.1:8000) + Next.js 프로덕션(`eden-frontend.service`, 127.0.0.1:3000). 코드는 `/home/ubuntu/edendongsan`(origin: `git@github.com:noobuya/edendongsan.git`), 파이썬 venv는 `/home/ubuntu/edendongsan/venv`. 백업은 `~/backups`.
+- **배포 절차:** PC에서 `git push` → `ssh -i $k ubuntu@54.66.15.115` → `~/deploy.sh`. 스크립트가 최신 main을 받고(`git reset --hard`), 필요할 때만 패키지를 설치하고, `next build`(1~3분) 후 두 서비스를 재시작하며 :3000과 :8000/api/quotes가 200인지 확인한다. 빌드가 실패하면 직전 빌드로 되돌린다. `~/deploy.sh --force`는 강제 재빌드. `backend/storage`(견적·사진)와 `backend/.env`는 git 밖이라 배포로 지워지지 않는다.
+- **확인 시점 서버 코드:** `8de92c8 첫 업로드`. 이후 커밋(`f18c80c`, `1ade82a` 등)은 서버에 반영하지 않았다(폰 앱은 화면·API가 모두 서버 코드를 쓰므로 새 기능은 배포해야 보인다).
+- 서버 로그: `journalctl -u eden-backend -u eden-frontend -n 50`.
