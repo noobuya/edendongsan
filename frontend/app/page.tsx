@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowLeft, ArrowRight, Calculator, FolderOpen, Loader2, Newspaper, Ruler, Sparkles } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, Bot, Calculator, FolderOpen, Loader2, Newspaper, Ruler, Sparkles } from "lucide-react";
 import BusinessBadge from "@/components/BusinessBanner";
 import CanvasStage from "@/components/CanvasStage";
 import PricingSheet from "@/components/PricingSheet";
@@ -605,6 +605,15 @@ export default function HomePage() {
               >
                 <Calculator className="h-4 w-4" />
                 사진 없이 빠른 견적 보기
+              </Link>
+            )}
+            {step === 1 && !photo && (
+              <Link
+                href="/automation"
+                className="mt-2 flex h-12 items-center justify-center gap-2 rounded-2xl bg-white/80 text-[14px] font-semibold text-indigo-700 transition-transform active:scale-[0.98]"
+              >
+                <Bot className="h-4 w-4" />
+                자동화 작업
               </Link>
             )}
           </div>
