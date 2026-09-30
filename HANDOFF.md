@@ -445,3 +445,20 @@
 - **기능은 그대로 유지:** 조명·실링팬·싱크볼·변기·미세방충망·유리 썬팅이 필요한 현장이면, 기존처럼 화면 오른쪽 아래 [+] 버튼(`ItemPickerSheet`)으로 언제든 추가할 수 있다 — 이 부분은 손대지 않았고, 그룹별로 여전히 다 뜬다. 기본값만 "필름 위주"로 좁힌 것이지 기능을 없앤 게 아니다.
 - **검증:** `npx tsc --noEmit -p .`, 디자인 감지기(findings 없음) 통과. 헤드리스 Chrome으로 사진을 올리고 2단계로 넘어가면 "5개 항목"(인테리어 필름 그룹 산하 5개: 싱크대/상하부장·샷시 필름·문짝/문틀 시공·장롱/옷장·벽면 시트지)만 뜨고 "천장 시공"·"주방·욕실 설비" 등 다른 그룹 머리글은 아예 안 뜨는 것을 확인했다. [+] 버튼을 눌러 보면 인테리어 필름·유리 썬팅/일러스트·천장 시공·주방·욕실 설비·미세방충망 5개 그룹이 그대로 다 남아 있어, 필요할 때 추가하는 기능은 회귀 없이 그대로 작동하는 것도 확인했다.
 - **미변경:** `/quote`(빠른 견적) 페이지는 이 `selectedItems`/`StepItems` 구조를 아예 쓰지 않는 별도의 단가표 기반 화면이라 이번 변경과 무관하다 — 손대지 않았다.
+
+## 서버 이전: PC 없이 폰 앱 동작 (AWS 서버 + APK 주소 변경) (2026-09-30)
+
+- **목적:** PC(백엔드·프론트·ngrok)를 꺼도 폰 앱이 동작하게 함. 서버는 AWS(시드니 리전 추정) `54.66.15.115`, 고정 주소는 `https://54-66-15-115.sslip.io`(sslip.io 무료 도메인, 서버 IP를 그대로 도메인으로 씀). 서버 쪽 설치·설정은 이 세션 밖에서 다른 대화로 진행했고, 이 세션에서는 PC 쪽 작업만 했다.
+- **서버 접속(PowerShell, 한 줄씩):** `$k = "C:\Users\thunder\Desktop\eden-key.pem"` → `ssh -i $k ubuntu@54.66.15.115`. 키 파일 `eden-key.pem`은 바탕화면에 있으니 분실·유출 주의(저장소에 올리지 말 것).
+- **이 세션에서 한 일:**
+  1. `frontend/capacitor.config.ts`의 `server.url`을 ngrok 주소 → `https://54-66-15-115.sslip.io`로 변경(10차의 라이브 방식 유지, 주소만 교체).
+  2. `.gitignore`에 `.next-build/`, `.next-capacitor/` 추가, `frontend/.next-capacitor`는 `git rm --cached`로 추적 해제(빌드 산출물 49개 파일 삭제 커밋).
+  3. 커밋 "서버 주소로 변경"(`f18c80c`)을 GitHub(`noobuya/edendongsan`, `main`)에 푸시(`8de92c8..f18c80c`). 이제 이 폴더는 git 저장소다(위 "프로세스 성격"의 "git 저장소 아님"은 옛 정보).
+  4. `npx cap sync android` → `JAVA_HOME=C:\Program Files\Android\Android Studio\jbr` → `android\gradlew.bat assembleDebug` → BUILD SUCCESSFUL. `android/app/src/main/assets/capacitor.config.json`에 새 주소 반영 확인.
+- **APK:** `frontend/android/app/build/outputs/apk/debug/app-debug.apk` (약 4.3MB, 디버그 서명). 이 PC는 `adb`가 PATH에 없어(보통 `%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe`) USB 설치는 못 했고, 카톡 "나와의 채팅"으로 보내 폰에 설치하는 방식을 안내함.
+- **검증:** 사용자가 폰에 설치해 PC 프로그램을 모두 끈 상태에서 "잘된다"고 확인함(사용자 보고, 세부 화면별 점검은 안 함).
+- **달라진 점 / 주의:**
+  - 10차의 "PC의 백엔드·프론트·ngrok이 켜져 있어야 한다"는 제약은 이제 **서버(54.66.15.115)가 켜져 있어야 한다**로 바뀜. ngrok 도메인 충돌(5·6차 함정)도 더는 해당 없음.
+  - 서버에서 코드가 어떻게 돌고(systemd/nginx/도커 등), 코드 배포를 어떻게 하는지는 이 세션에서 확인하지 않았다. 다음에 서버 작업을 하려면 ssh로 들어가 구성부터 확인할 것. 앱 코드를 고치면 GitHub 푸시 후 서버에서 받아 재시작해야 폰에 반영될 가능성이 크다(미확인).
+  - 서버 주소를 바꾸면 `capacitor.config.ts` 수정 → `cap sync` → APK 재빌드·재설치가 필요(10차와 동일). `.env.local`의 `NEXT_PUBLIC_API_URL`이 아직 ngrok 주소일 수 있으니, 정적 번들 모드로 돌아갈 일이 있으면 함께 확인.
+  - 서버는 인터넷에 공개돼 있으므로 5번 함정(원가 정보·저장된 견적 노출)이 그대로 유효하다. 주소를 고객에게 주지 말 것.
