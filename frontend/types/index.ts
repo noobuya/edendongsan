@@ -152,6 +152,8 @@ export interface CreateJobParams {
   renderMode: RenderMode;
   autoDescription: string;
   manualRegions: MappedRegion[];
+  /** 사장님 기기의 관리자 토큰. 일러스트 문구를 보낼 때 함께 보낸다. */
+  ownerToken?: string | null;
 }
 
 export interface LineItemDetail {

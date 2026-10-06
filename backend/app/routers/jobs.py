@@ -3,12 +3,13 @@ import json
 import os
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, Header, HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
 
 from app.catalog import PATTERNS
 from app.jobs_store import JOBS
 from app.catalog import manual_base_prompt
+from app.owner_auth import is_owner
 from app.pipeline import (
     _quote_snapshot,
     _to_static_url,
@@ -162,9 +163,14 @@ async def save_edited_image(job_id: str, image: UploadFile = File(...)):
 
 @router.post("/{job_id}/illustration", response_model=InpaintAcceptedResponse)
 async def add_illustration(
-    job_id: str, request: IllustrationRequest, background_tasks: BackgroundTasks
+    job_id: str,
+    request: IllustrationRequest,
+    background_tasks: BackgroundTasks,
+    x_admin_token: str | None = Header(default=None),
 ):
-    """결과 사진에 고객이 원하는 문구/그림을 AI로 바로 그려 넣는다."""
+    """결과 사진에 고객이 원하는 문구/그림을 AI로 바로 그려 넣는다. 사장님 전용."""
+    if not is_owner(x_admin_token):
+        raise HTTPException(status_code=403, detail="일러스트는 사장님 기기에서만 쓸 수 있어요.")
     job = _get_or_restore_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="견적서를 찾을 수 없습니다.")

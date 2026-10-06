@@ -1,12 +1,13 @@
 import io
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, Header, HTTPException, UploadFile
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import ValidationError
 
 from app.catalog import manual_base_prompt
 from app.jobs_store import JOBS
+from app.owner_auth import is_owner
 from app.pipeline import run_pipeline
 from app.schemas import CreateJobRequest, JobCreateResponse
 
@@ -27,11 +28,16 @@ async def create_job(
     payload: str = Form(...),
     # 수동 모드에서 칠한 영역 마스크들. 원본 사진과 같은 요청으로 함께 올라온다.
     masks: list[UploadFile] = File(default=[]),
+    x_admin_token: str | None = Header(default=None),
 ):
     try:
         request = CreateJobRequest.model_validate_json(payload)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors()) from exc
+    # 일러스트 문구·설명은 사장님 기기에서만 받는다(학생 기기가 보내도 거절).
+    wants_illustration = bool(request.illustration_text.strip() or request.illustration_description.strip())
+    if wants_illustration and not is_owner(x_admin_token):
+        raise HTTPException(status_code=403, detail="일러스트는 사장님 기기에서만 쓸 수 있어요.")
 
     if not request.selected_items:
         raise HTTPException(status_code=422, detail="선택된 시공 항목이 없습니다.")

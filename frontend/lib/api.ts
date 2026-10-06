@@ -206,7 +206,11 @@ export async function createJob(
     form.append("masks", dataUrlToBlob(region.maskDataUrl), `mask_${index}.png`);
   }
 
-  const res = await apiFetch(`${API_BASE}/api/jobs`, { method: "POST", body: form });
+  const res = await apiFetch(`${API_BASE}/api/jobs`, {
+    method: "POST",
+    body: form,
+    headers: ownerHeaders(params.ownerToken),
+  });
   if (!res.ok) throw new Error(await extractErrorMessage(res, "업로드에 실패했습니다."));
   return res.json();
 }
@@ -240,14 +244,20 @@ export async function requestInpaint(jobId: string, regionId: string, patternId:
   if (!res.ok) throw new Error(await extractErrorMessage(res, "AI 편집 요청에 실패했습니다."));
 }
 
+/** 사장님 기기일 때만 관리자 토큰 헤더를 붙인다(학생 기기는 헤더 없이 보낸다). */
+function ownerHeaders(token?: string | null): Record<string, string> {
+  return token ? { "X-Admin-Token": token } : {};
+}
+
 export async function requestIllustration(
   jobId: string,
   text: string,
-  description: string
+  description: string,
+  ownerToken?: string | null
 ): Promise<void> {
   const res = await apiFetch(`${API_BASE}/api/jobs/${jobId}/illustration`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...ownerHeaders(ownerToken) },
     body: JSON.stringify({ text, description }),
   });
   if (!res.ok) throw new Error(await extractErrorMessage(res, "일러스트 생성 요청에 실패했습니다."));

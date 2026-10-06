@@ -14,6 +14,7 @@ import StepItems from "@/components/steps/StepItems";
 import StepMapping from "@/components/steps/StepMapping";
 import StepSite from "@/components/steps/StepSite";
 import { createJob, getJobStatus, listQuotes, resolveAssetUrl } from "@/lib/api";
+import { clearOwnerToken, readOwnerToken, saveOwnerToken } from "@/lib/ownerToken";
 import { useAndroidBack } from "@/lib/useAndroidBack";
 import { DEFAULT_OPTIONS, DEFAULT_WORK_ITEMS, taskTypeOf } from "@/lib/workItems";
 import type { JobOptionsState, JobStatusResponse, MappedRegion, RenderMode, WorkItemId } from "@/types";
@@ -69,6 +70,11 @@ export default function HomePage() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const maskStageRef = useRef<MaskStageHandle>(null);
   const regionIdRef = useRef(1);
+  // 사장님 기기 표시(관리자 토큰). 서버 렌더링 때는 모르므로 mount 후에 이 기기에서 읽는다.
+  const [ownerToken, setOwnerTokenState] = useState<string | null>(null);
+  useEffect(() => {
+    setOwnerTokenState(readOwnerToken());
+  }, []);
 
   // 맞춰둔 도형 + 고른 자재를 한 세트(Region)로 묶어 저장하고, 캔버스를 비워
   // 다음 영역을 지정할 수 있게 한다.
@@ -308,8 +314,10 @@ export default function HomePage() {
         customerName,
         selectedItems,
         options,
-        illustrationText: illustText,
-        illustrationDescription: illustDescription,
+        // 학생 기기에서는 일러스트 값을 보내지 않는다(입력도 안 보이므로 빈 값이 맞다).
+        illustrationText: ownerToken ? illustText : "",
+        illustrationDescription: ownerToken ? illustDescription : "",
+        ownerToken,
         renderMode,
         autoDescription,
         manualRegions: renderMode === "manual" ? mappedRegions : [],
@@ -551,6 +559,15 @@ export default function HomePage() {
                 onIllustTextChange={setIllustText}
                 illustDescription={illustDescription}
                 onIllustDescriptionChange={setIllustDescription}
+                isOwner={!!ownerToken}
+                onSaveOwnerToken={(token) => {
+                  saveOwnerToken(token);
+                  setOwnerTokenState(token);
+                }}
+                onClearOwnerToken={() => {
+                  clearOwnerToken();
+                  setOwnerTokenState(null);
+                }}
               />
             )}
             {step === 2 && (
