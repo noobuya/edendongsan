@@ -48,6 +48,7 @@ from app.schemas import (
 )
 
 FILM_ROLL_WIDTH_M = 1.22  # 인테리어 필름 표준 장폭
+DOOR_SIDES = 2  # 방문(문짝)은 앞면·뒷면 모두 시공 — 입력 치수는 한 면 기준
 MOLDING_WIDTH_M = 0.15  # 걸레받이/몰딩 표준 폭 (길이 입력을 면적으로 환산할 때 사용)
 
 
@@ -253,7 +254,9 @@ def _door_frame_line_item(opts: DoorFrameOptions) -> dict:
     같은 면적이라도 훨씬 오래 걸린다. 한 덩어리로 묶으면 문틀 많은 현장이 손해다."""
     table = _prices()["door_frame"]
     coverage = table["manday_coverage"]
-    door_area = _panels_area_m2(opts.doors)
+    # 방문은 입체물이라 앞면·뒷면을 다 시공한다. 입력은 "한 면" 치수이므로 2면으로 곱한다.
+    # 문틀은 펼쳐서 잰 감는 폭이 이미 앞뒤를 포함하므로 곱하지 않는다.
+    door_area = _panels_area_m2(opts.doors) * DOOR_SIDES
     frame_area = _panels_area_m2(opts.doorframes)
     total_area = door_area + frame_area
     if total_area <= 0:
@@ -268,7 +271,7 @@ def _door_frame_line_item(opts: DoorFrameOptions) -> dict:
             "m",
             opts.unit_price_per_m,
             "material",
-            f"문짝 {round(door_area, 2)}㎡ + 문틀 {round(frame_area, 2)}㎡ "
+            f"문짝 {round(door_area, 2)}㎡(앞·뒤 2면) + 문틀 {round(frame_area, 2)}㎡ "
             f"(로스율 15% · 장폭 {FILM_ROLL_WIDTH_M}m 반영)",
         )
     ]
@@ -294,9 +297,9 @@ def _door_frame_line_item(opts: DoorFrameOptions) -> dict:
         details.append(
             _manday_detail(
                 "문짝 시공 인건비",
-                _panels_labor_area_m2(opts.doors),
+                _panels_labor_area_m2(opts.doors) * DOOR_SIDES,
                 coverage["door_m2"],
-                _panels_spec_text(opts.doors) + _door_types_spec_suffix(opts.doors),
+                _panels_spec_text(opts.doors) + " · 앞뒤 2면" + _door_types_spec_suffix(opts.doors),
             )
         )
     if frame_area > 0:
