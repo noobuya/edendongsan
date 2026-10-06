@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CheckCircle2, Download, Hammer, Leaf, Lock, MessageCircle, Share2, ShieldCheck, X } from "lucide-react";
 import BusinessBadge from "@/components/BusinessBanner";
 import QuoteIcon, { toneOfWorkItem } from "@/components/quote/QuoteIcon";
+import BusinessStamp from "@/components/BusinessStamp";
 import { BUSINESS_NAME, BUSINESS_PHONE } from "@/lib/businessInfo";
 import type { EstimateBreakdown, WorkItemId } from "@/types";
 
@@ -392,11 +393,14 @@ export function PremiumReceiptView({
           ))}
         </div>
 
-        <div className="mt-6 border-t border-[#eef0f2] pt-4 text-[12.5px] leading-[1.6] text-[#6b7684]">
-          <p>
-            {BUSINESS_NAME} · <span className="tabular-nums">{BUSINESS_PHONE}</span>
-          </p>
-          <p>본 견적은 현장 실측 결과에 따라 조정될 수 있습니다.</p>
+        <div className="mt-6 flex items-end justify-between gap-3 border-t border-[#eef0f2] pt-4 text-[12.5px] leading-[1.6] text-[#6b7684]">
+          <div>
+            <p>
+              {BUSINESS_NAME} · <span className="tabular-nums">{BUSINESS_PHONE}</span>
+            </p>
+            <p>본 견적은 현장 실측 결과에 따라 조정될 수 있습니다.</p>
+          </div>
+          <BusinessStamp className="-mb-1 -mr-1" />
         </div>
       </div>
 
