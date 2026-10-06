@@ -218,6 +218,8 @@ export interface JobStatusResponse {
   regions: Region[];
   estimate?: EstimateBreakdown;
   error?: string;
+  /** 시공이 일부 적용되지 않았을 때의 안내 문구 목록. */
+  notices?: string[];
   editing: boolean;
   editing_region_id?: string;
   edit_error?: string;

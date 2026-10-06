@@ -49,6 +49,7 @@ async def get_job(job_id: str):
             regions=job.get("regions", []),
             estimate=job.get("estimate"),
             error=job.get("error"),
+            notices=job.get("notices", []),
             editing=job.get("editing", False),
             editing_region_id=job.get("editing_region_id"),
             edit_error=job.get("edit_error"),

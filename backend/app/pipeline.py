@@ -90,6 +90,7 @@ def _quote_snapshot(job_id: str) -> dict:
         "regions": job.get("regions", []),
         "estimate": job.get("estimate"),
         "error": job.get("error"),
+        "notices": job.get("notices", []),
         "editing": False,
         "editing_region_id": None,
         "edit_error": None,
@@ -177,6 +178,9 @@ def run_pipeline(
                     scene_rendered = True
                 except Exception as exc:
                     print(f"[pipeline] Gemini 장면 생성 실패, 기존 부분 수정 방식으로 폴백: {exc}")
+                    JOBS[job_id].setdefault("notices", []).append(
+                        "AI 시공 사진 생성에 실패했어요(사용량 한도 초과 또는 일시 오류). 문짝/문틀 시공은 적용되지 않았으니 다시 시도하거나 수동 영역 지정을 이용해 주세요."
+                    )
             if room_future is not None:
                 room_info = room_future.result()
 
@@ -218,6 +222,13 @@ def run_pipeline(
                 }
                 for r in masks.get("regions", [])
             }
+
+        if "door_frame" in selected_items and options.door_frame and not manual_regions:
+            found_doors = [r for r in regions_internal.values() if r.get("category") in ("door", "doorframe")]
+            if not found_doors:
+                JOBS[job_id].setdefault("notices", []).append(
+                    "사진에서 문짝이나 문틀을 찾지 못했어요. 문 손잡이와 테두리가 정면에서 보이게 다시 찍거나, 수동 영역 지정을 이용해 주세요."
+                )
 
         if not scene_rendered and "film" in selected_items and options.film:
             pattern_meta = PATTERNS.get(options.film.pattern_id, PATTERNS["matte-white"])
@@ -622,6 +633,19 @@ def _build_scene_instructions(
                 f"Refinish the {', '.join(targets)} with a {color_phrase} interior film — "
                 "keep the existing door/panel shapes, handles and hinges exactly as they are, "
                 "only the surface finish changes."
+            )
+
+    if "door_frame" in selected_items and options.door_frame:
+        door_color = FAN_BLADE_COLOR_PROMPTS.get(options.door_frame.pattern_id, "matte white")
+        door_targets = []
+        if any(d.count > 0 for d in options.door_frame.doors):
+            door_targets.append("room door panels")
+        if any(d.count > 0 for d in options.door_frame.doorframes):
+            door_targets.append("door frames")
+        if door_targets:
+            instructions.append(
+                f"Refinish the {' and '.join(door_targets)} with a {door_color} film — keep the door handles, "
+                "hinges, lock, peephole and the door's panel shape exactly as they are; only the surface finish changes."
             )
 
     if "sash" in selected_items and options.sash and any(f.count > 0 for f in options.sash.frames):

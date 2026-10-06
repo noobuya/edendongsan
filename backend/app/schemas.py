@@ -276,6 +276,8 @@ class JobStatusResponse(BaseModel):
     regions: list[Region] = Field(default_factory=list)
     estimate: Optional[EstimateBreakdown] = None
     error: Optional[str] = None
+    # 시공이 일부 적용되지 않았을 때 사장님에게 보여줄 안내(예: 문짝 인식 실패, AI 한도 초과).
+    notices: list[str] = Field(default_factory=list)
     # 부위별 AI 인페인팅 편집 진행 상태 (전체 job 상태와 별개로 동작)
     editing: bool = False
     editing_region_id: Optional[str] = None

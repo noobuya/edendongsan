@@ -499,6 +499,14 @@ export default function HomePage() {
         <section className="absolute inset-x-3 bottom-3 top-20 z-10 overflow-y-auto rounded-3xl pb-24 foldLandscape:inset-y-4 foldLandscape:left-4 foldLandscape:right-4 foldLandscape:top-20 foldLandscape:pb-4">
           {submitError && <ErrorNote message={submitError} />}
           {!submitError && slowNotice && <WaitNote message={slowNotice} />}
+          {job?.notices && job.notices.length > 0 && (
+            <div className="mx-1 mb-3 space-y-2 rounded-2xl border border-amber-200 bg-amber-50 p-4" role="alert">
+              <p className="text-[14px] font-bold text-amber-900">일부 시공이 적용되지 않았어요</p>
+              {job.notices.map((n) => (
+                <p key={n} className="text-[13px] leading-relaxed text-amber-900 break-keep">· {n}</p>
+              ))}
+            </div>
+          )}
           {job ? (
             <SimulationPanel job={job} onSecretHold={() => setPricingOpen(true)} />
           ) : (

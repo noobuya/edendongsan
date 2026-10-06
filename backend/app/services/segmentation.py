@@ -575,8 +575,8 @@ def _classify_objects_with_vision(
         parsed = json.loads(response.text)
         labels = {int(k): v for k, v in parsed["labels"].items()}
         return labels, _parse_fire_door_ids(parsed)
-    except Exception:
-        # 비전 API 실패/타임아웃 시 기하학적 휴리스틱(천장/벽)과 일반 라벨로 폴백
+    except Exception as exc:  # noqa: BLE001 - 분류 실패는 기하학적 휴리스틱으로 폴백
+        print(f"[segmentation] 영역 분류(Gemini) 실패, 위치 기준 이름으로 대체: {exc}")
         return {}, set()
 
 
