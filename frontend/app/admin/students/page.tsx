@@ -276,6 +276,9 @@ export default function AdminStudentsPage() {
                 <span className="text-[15px] font-bold text-slate-900">{r.name}</span>
                 <span className="text-[12px] text-slate-500">{r.created}</span>
               </button>
+              <p className="mt-1 text-[13px] tabular-nums text-slate-600">
+                {r.birth || "생년월일 없음"} · {r.phone || "전화번호 없음"}
+              </p>
               {openRequest === r.id && (
                 <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
                   <p className="text-[13px] text-slate-600">코드명을 확인하고 승인하면 학생 기기에서 자동으로 입장합니다.</p>
@@ -326,6 +329,11 @@ export default function AdminStudentsPage() {
               <p className="text-[15px] font-bold text-slate-900">
                 {s.name} <span className="ml-1 text-[12px] font-normal text-slate-500">{s.source}</span>
               </p>
+              {(s.birth || s.phone) && (
+                <p className="mt-0.5 text-[12.5px] tabular-nums text-slate-500">
+                  {s.birth || "-"} · {s.phone || "-"}
+                </p>
+              )}
               {s.code ? (
                 <p className="mt-0.5 break-all font-mono text-[13px] text-slate-600">{s.code}</p>
               ) : (

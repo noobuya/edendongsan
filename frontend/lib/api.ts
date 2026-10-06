@@ -510,8 +510,9 @@ async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> 
   return res.json();
 }
 
-export const automationRequestAccess = (name: string) =>
-  requestJson<AccessRequest>("/requests", { method: "POST", body: JSON.stringify({ name }) });
+export type SignupPayload = { name: string; birth: string; phone: string; consent: boolean };
+export const automationRequestAccess = (payload: SignupPayload) =>
+  requestJson<AccessRequest>("/requests", { method: "POST", body: JSON.stringify(payload) });
 export const automationRequestStatus = (id: string) => requestJson<AccessRequest>(`/requests/${id}`);
 
 export const automationTasks = (code: string) => automationFetch<AutomationTask[]>("/tasks", code);
@@ -522,7 +523,14 @@ export const automationCancel = (code: string, id: string) =>
   automationFetch<{ ok: boolean }>(`/jobs/${id}`, code, { method: "DELETE" });
 
 /** 관리자 화면 전용: 수강생 코드 목록·추가·삭제. 토큰은 서버 .env의 ADMIN_TOKEN과 같아야 한다. */
-export type AdminStudent = { name: string; code: string | null; source: string; created: string };
+export type AdminStudent = {
+  name: string;
+  code: string | null;
+  source: string;
+  created: string;
+  birth?: string;
+  phone?: string;
+};
 
 async function adminFetch<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
   const res = await apiFetch(`${API_BASE}/api/admin/students${path}`, {
@@ -535,7 +543,14 @@ async function adminFetch<T>(path: string, token: string, init: RequestInit = {}
 
 export const adminListStudents = (token: string) => adminFetch<AdminStudent[]>("", token);
 
-export type AdminRequest = { id: string; name: string; status: "pending" | "approved" | "rejected"; created: string };
+export type AdminRequest = {
+  id: string;
+  name: string;
+  status: "pending" | "approved" | "rejected";
+  created: string;
+  birth?: string;
+  phone?: string;
+};
 async function adminRequestFetch<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
   const res = await apiFetch(`${API_BASE}/api/admin/students/requests${path}`, {
     ...init,

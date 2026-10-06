@@ -1,5 +1,7 @@
 """자동화 작업 API. 수강생 코드(X-Access-Code)로 접근을 제한한다."""
+import datetime
 import hmac
+import re
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
@@ -46,6 +48,9 @@ async def login(req: LoginRequest):
 
 class SignupIn(BaseModel):
     name: str = Field(min_length=1, max_length=20)
+    birth: str = Field(min_length=10, max_length=10, description="YYYY-MM-DD")
+    phone: str = Field(min_length=10, max_length=16)
+    consent: bool
 
 
 @router.post("/requests")
@@ -53,8 +58,18 @@ async def request_access(req: SignupIn):
     name = req.name.strip()
     if not name:
         raise HTTPException(422, "이름을 입력해 주세요.")
+    if not req.consent:
+        raise HTTPException(422, "개인정보 수집·이용에 동의해 주세요.")
     try:
-        row = student_requests.create(name)
+        birth = datetime.date.fromisoformat(req.birth).isoformat()
+    except ValueError as exc:
+        raise HTTPException(422, "생년월일을 YYYY-MM-DD 형식으로 입력해 주세요.") from exc
+    digits = re.sub(r"\D", "", req.phone)
+    if not re.fullmatch(r"01[016789]\d{7,8}", digits):
+        raise HTTPException(422, "전화번호를 정확히 입력해 주세요. (예: 010-1234-5678)")
+    phone = f"{digits[:3]}-{digits[3:-4]}-{digits[-4:]}"
+    try:
+        row = student_requests.create(name, birth, phone)
     except ValueError as exc:
         raise HTTPException(429, str(exc)) from exc
     return {"id": row["id"], "status": row["status"], "name": row["name"]}

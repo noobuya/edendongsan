@@ -64,6 +64,9 @@ export default function AutomationPage() {
   // 코드가 없는 학생: 이름으로 승인을 요청하거나(signup), 이미 받은 코드를 입력한다(code).
   const [mode, setMode] = useState<"signup" | "code">("signup");
   const [signupName, setSignupName] = useState("");
+  const [signupBirth, setSignupBirth] = useState("");
+  const [signupPhone, setSignupPhone] = useState("");
+  const [signupConsent, setSignupConsent] = useState(false);
   const [requestId, setRequestId] = useState("");
   const [requestNote, setRequestNote] = useState<string | null>(null);
   const [tasks, setTasks] = useState<AutomationTask[]>([]);
@@ -143,15 +146,23 @@ export default function AutomationPage() {
 
   async function requestAccess() {
     const n = signupName.trim();
-    if (!n) return;
+    if (!n || !signupBirth || !signupPhone.trim() || !signupConsent) return;
     setBusy(true);
     setError(null);
     setRequestNote(null);
     try {
-      const r = await automationRequestAccess(n);
+      const r = await automationRequestAccess({
+        name: n,
+        birth: signupBirth,
+        phone: signupPhone.trim(),
+        consent: signupConsent,
+      });
       writeRequestId(r.id);
       setRequestId(r.id);
       setSignupName("");
+      setSignupBirth("");
+      setSignupPhone("");
+      setSignupConsent(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "요청하지 못했습니다.");
     } finally {
@@ -244,17 +255,47 @@ export default function AutomationPage() {
           </section>
         ) : !name && mode === "signup" ? (
           <section className="space-y-3 rounded-2xl bg-white p-5 shadow-sm">
-            <p className="text-[15px] text-slate-600">이름을 입력하고 승인을 요청하세요. 선생님이 승인하면 자동으로 입장돼요.</p>
+            <p className="text-[15px] text-slate-600">정보를 입력하고 승인을 요청하세요. 선생님이 승인하면 자동으로 입장돼요.</p>
             <input
               className={input}
               value={signupName}
               onChange={(e) => setSignupName(e.target.value)}
               placeholder="이름"
               maxLength={20}
-              onKeyDown={(e) => e.key === "Enter" && signupName.trim() && requestAccess()}
+              autoComplete="name"
             />
+            <div>
+              <p className="mb-1 text-[13px] text-slate-500">생년월일</p>
+              <input
+                type="date"
+                className={input}
+                value={signupBirth}
+                onChange={(e) => setSignupBirth(e.target.value)}
+                max={new Date().toISOString().slice(0, 10)}
+              />
+            </div>
+            <input
+              className={input}
+              value={signupPhone}
+              onChange={(e) => setSignupPhone(e.target.value)}
+              placeholder="전화번호 (예: 010-1234-5678)"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+            />
+            <label className="flex items-start gap-2 rounded-xl bg-slate-50 p-3 text-[13px] leading-relaxed text-slate-600">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 shrink-0 accent-indigo-600"
+                checked={signupConsent}
+                onChange={(e) => setSignupConsent(e.target.checked)}
+              />
+              <span className="break-keep">
+                이름·생년월일·전화번호를 수강생 확인과 승인 목적으로 수집하는 데 동의합니다. 관리자만 볼 수 있으며, 수강이 끝나면 요청하실 때 삭제합니다.
+              </span>
+            </label>
             <button
-              disabled={busy || !signupName.trim()}
+              disabled={busy || !signupName.trim() || !signupBirth || !signupPhone.trim() || !signupConsent}
               onClick={requestAccess}
               className="flex h-12 w-full items-center justify-center rounded-xl bg-indigo-600 text-[15px] font-bold text-white disabled:opacity-40"
             >

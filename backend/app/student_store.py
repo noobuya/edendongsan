@@ -41,14 +41,14 @@ def list_students() -> list[dict]:
         return list(_read())
 
 
-def add_student(name: str, code: str | None = None) -> dict:
+def add_student(name: str, code: str | None = None, info: dict | None = None) -> dict:
     with _lock:
         students = _read()
         if any(s["name"] == name for s in students):
             raise ValueError("이미 등록된 이름입니다.")
         if code is None:
             code = "".join(secrets.choice(ALPHABET) for _ in range(12))
-        row = {"name": name, "code": code, "created": time.strftime("%Y-%m-%d %H:%M")}
+        row = {"name": name, "code": code, "created": time.strftime("%Y-%m-%d %H:%M"), **(info or {})}
         students.append(row)
         _write(students)
         return row

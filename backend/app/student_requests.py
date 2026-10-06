@@ -35,7 +35,7 @@ def _write(rows: list[dict]) -> None:
     tmp.replace(p)
 
 
-def create(name: str) -> dict:
+def create(name: str, birth: str, phone: str) -> dict:
     with _lock:
         rows = _read()
         if sum(1 for r in rows if r["status"] == "pending") >= MAX_PENDING:
@@ -43,6 +43,10 @@ def create(name: str) -> dict:
         row = {
             "id": uuid.uuid4().hex,
             "name": name,
+            # 생년월일·전화번호는 관리자 화면에서만 보인다(학생 상태 조회 API에는 싣지 않는다).
+            "birth": birth,
+            "phone": phone,
+            "consented_at": time.strftime("%Y-%m-%d %H:%M"),
             "status": "pending",
             "code": None,
             "created": time.strftime("%Y-%m-%d %H:%M"),

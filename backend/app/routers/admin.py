@@ -37,7 +37,14 @@ class StudentIn(BaseModel):
 async def list_students(x_admin_token: str | None = Header(default=None)):
     _require_admin(x_admin_token)
     file_rows = [
-        {"name": s["name"], "code": s["code"], "source": "관리자", "created": s.get("created", "")}
+        {
+            "name": s["name"],
+            "code": s["code"],
+            "source": "관리자",
+            "created": s.get("created", ""),
+            "birth": s.get("birth", ""),
+            "phone": s.get("phone", ""),
+        }
         for s in student_store.list_students()
     ]
     return file_rows + _env_students()
@@ -87,7 +94,11 @@ async def approve_request(rid: str, req: ApproveIn, x_admin_token: str | None = 
     if _code_in_use(code):
         raise HTTPException(409, "이미 사용 중인 코드명이에요. 다른 이름을 정해 주세요.")
     try:
-        student_store.add_student(row["name"], code=code)
+        student_store.add_student(
+            row["name"],
+            code=code,
+            info={"birth": row.get("birth", ""), "phone": row.get("phone", "")},
+        )
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     updated = student_requests.set_status(rid, "approved", code)
