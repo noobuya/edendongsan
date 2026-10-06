@@ -3,13 +3,13 @@ import "./globals.css";
 import ServiceWorkerCleanup from "@/components/ServiceWorkerCleanup";
 
 export const metadata: Metadata = {
-  title: "인테리어 Pro 플래너",
+  title: "대한인테리어필름 플래너",
   description: "인테리어 필름/조명/실링팬/싱크볼 시공 AI 견적 & 시뮬레이션",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "인테리어 Pro",
+    title: "대한인테리어필름",
   },
 };
 

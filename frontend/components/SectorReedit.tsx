@@ -223,7 +223,7 @@ export default function SectorReedit({ jobId, imageUrl, busy, onSubmitted, extra
             type="text"
             value={overlayText}
             onChange={(e) => setOverlayText(e.target.value)}
-            placeholder="예: EDEN GARDEN"
+            placeholder="예: DAEHAN INTERIOR FILM"
             className="mt-1 w-full border-0 border-b border-slate-900/10 bg-transparent px-0 pb-2 pt-1.5 text-[14px] font-light text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-indigo-500 focus:ring-0"
           />
         </label>

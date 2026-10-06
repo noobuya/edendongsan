@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Camera, ImagePlus, RefreshCw, X } from "lucide-react";
+import { PhotoGuideSheet, PhotoGuideTip } from "@/components/PhotoGuide";
 
 interface Props {
   open: boolean;
@@ -21,6 +22,7 @@ export default function CameraSheet({ open, onCapture, onClose, onPickFile }: Pr
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [exampleOpen, setExampleOpen] = useState(false);
   const [facing, setFacing] = useState<"environment" | "user">("environment");
   const [busy, setBusy] = useState(false);
   const [zoom, setZoom] = useState(1);
@@ -248,6 +250,13 @@ export default function CameraSheet({ open, onCapture, onClose, onPickFile }: Pr
           </div>
         )}
 
+        {/* 촬영 안내 — 문 손잡이와 테두리가 정면에서 보여야 AI가 문짝 경계를 정확히 잡는다. */}
+        {!error && (
+          <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center px-4">
+            <PhotoGuideTip onOpenExample={() => setExampleOpen(true)} className="max-w-sm" />
+          </div>
+        )}
+
         {error && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 px-8 text-center">
             <span className="flex h-20 w-20 items-center justify-center rounded-full bg-white/10">
@@ -269,6 +278,8 @@ export default function CameraSheet({ open, onCapture, onClose, onPickFile }: Pr
           </div>
         )}
       </div>
+
+      <PhotoGuideSheet open={exampleOpen} onClose={() => setExampleOpen(false)} />
 
       <div className="flex shrink-0 items-center justify-center pb-safe pt-6">
         <button

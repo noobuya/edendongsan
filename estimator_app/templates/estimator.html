@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>꾸밍홈 | 프리미엄 견적 컨설턴트</title>
+<title>대한인테리어필름 | 프리미엄 견적 컨설턴트</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
   :root{
@@ -291,7 +291,7 @@
 <div id="app">
 
   <header>
-    <div class="brand-chip"><span class="dot">K</span>꾸밍홈 KKUMING HOME · 공식 견적 컨설턴트</div>
+    <div class="brand-chip"><span class="dot">대</span>대한인테리어필름 DAEHAN INTERIOR FILM · 공식 견적 컨설턴트</div>
     <h1>프리미엄 견적 컨설턴트</h1>
     <p>현장에서 바로 완성도 높은 견적서를 보여드리세요</p>
   </header>
@@ -352,9 +352,9 @@
         <div class="drag-handle"><span></span></div>
 
         <div class="brand-strip">
-          <div class="brand-mark">K</div>
+          <div class="brand-mark">대</div>
           <div>
-            <div class="brand-name">꾸밍홈 인테리어 필름</div>
+            <div class="brand-name">대한인테리어필름 인테리어 필름</div>
             <div class="brand-sub">프리미엄 시공 견적서</div>
           </div>
         </div>
@@ -380,7 +380,7 @@
           <span class="badge green">🛡️ 1년 무상 A/S 보증</span>
         </div>
 
-        <div class="footnote">상기 견적은 현장 실측 후 최종 확정됩니다.<br>꾸밍홈은 고객님의 공간을 프리미엄 소재로 책임지고 완성합니다.</div>
+        <div class="footnote">상기 견적은 현장 실측 후 최종 확정됩니다.<br>대한인테리어필름은 고객님의 공간을 프리미엄 소재로 책임지고 완성합니다.</div>
       </div>
 
       <div class="action-stack">
@@ -856,14 +856,14 @@ document.getElementById('shareBtn').addEventListener('click', async () => {
   try{
     const canvas = await html2canvas(receiptCard, {scale: 2, backgroundColor: '#ffffff', useCORS: true});
     canvas.toBlob(async (blob) => {
-      const filename = `꾸밍홈_견적서_${document.getElementById('issueDate').textContent.replace(/\D/g,'')}.png`;
+      const filename = `대한인테리어필름_견적서_${document.getElementById('issueDate').textContent.replace(/\D/g,'')}.png`;
       const file = new File([blob], filename, { type: 'image/png' });
 
       if (navigator.canShare && navigator.canShare({ files: [file] })){
         try{
           await navigator.share({
             files: [file],
-            title: '꾸밍홈 프리미엄 견적서',
+            title: '대한인테리어필름 프리미엄 견적서',
             text: '고객님, 요청하신 프리미엄 인테리어 필름 시공 견적서입니다.',
           });
           showToast('견적서를 공유했습니다');
@@ -894,7 +894,7 @@ function downloadBlob(blob, filename){
 document.getElementById('copyTextBtn').addEventListener('click', async () => {
   if (!lastData || !lastData.breakdown.length){ showToast('선택된 품목이 없습니다'); return; }
   const lines = [
-    '📋 꾸밍홈 프리미엄 인테리어 필름 시공 견적서',
+    '📋 대한인테리어필름 프리미엄 인테리어 필름 시공 견적서',
     '─────────────────────',
     ...lastData.breakdown.map(b => `${b.icon} ${b.label}  ×${b.qty}   ${b.line_total.toLocaleString()}원`),
     '─────────────────────',

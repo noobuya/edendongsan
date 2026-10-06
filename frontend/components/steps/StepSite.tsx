@@ -56,7 +56,7 @@ export default function StepSite({
             type="text"
             value={illustText}
             onChange={(e) => onIllustTextChange(e.target.value)}
-            placeholder="EDEN GARDEN"
+            placeholder="DAEHAN INTERIOR FILM"
             className={FIELD}
           />
         </label>

@@ -5,7 +5,7 @@
 위함이다 (app/services/blog_writer.py의 서명 블록 참고).
 """
 
-BUSINESS_NAME = "에덴동산"
+BUSINESS_NAME = "대한인테리어필름"
 BUSINESS_PHONE = "010-7664-8007"
 BUSINESS_SERVICE_AREA = "대구 전지역 및 경북 지역 출장 가능"
 BUSINESS_PHONE_TEL_HREF = f"tel:{BUSINESS_PHONE.replace('-', '')}"

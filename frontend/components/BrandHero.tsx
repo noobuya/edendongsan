@@ -6,7 +6,7 @@ import { BUSINESS_SERVICE_AREA } from "@/lib/businessInfo";
 /** 대표 시공 사진이 놓이는 자리. 실제 사진은 public/images/eden_main.jpg 로 넣으면 된다.
  *  (권장: 가로형 1600×900 이상. 파일 이름만 같으면 코드는 건드리지 않아도 된다.) */
 export const BRAND_HERO_SRC = "/images/eden_main.jpg";
-export const BRAND_HERO_ALT = "에덴동산 인테리어 필름 프리미엄 시공";
+export const BRAND_HERO_ALT = "대한인테리어필름 인테리어 필름 프리미엄 시공";
 // public/ 바로 아래(/eden_main.jpg)에 넣어도 찾아 쓴다.
 const BRAND_HERO_CANDIDATES = [BRAND_HERO_SRC, "/eden_main.jpg"];
 

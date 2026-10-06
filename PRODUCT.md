@@ -8,7 +8,7 @@ web
 
 ## Users
 
-The primary user is the owner-installer of 에덴동산, a 대구/경북 interior-work business (film wrapping, lighting, ceiling fans, sink and toilet replacement, glass tinting, screens). They use the app on a phone, standing in a customer's home, often one-handed, with unreliable site Wi-Fi. Their job is to photograph the space, mark the areas to be worked, choose materials and colors, and produce a quote on the spot.
+The primary user is the owner-installer of 대한인테리어필름, a 대구/경북 interior-work business (film wrapping, lighting, ceiling fans, sink and toilet replacement, glass tinting, screens). They use the app on a phone, standing in a customer's home, often one-handed, with unreliable site Wi-Fi. Their job is to photograph the space, mark the areas to be worked, choose materials and colors, and produce a quote on the spot.
 
 The customer is a second, live audience: the owner turns the screen toward them to show the quote and the rendered preview while the decision is being made. Prospective customers are a third audience. They read the public 시공 후기 blog, which they can search by customer name.
 
@@ -24,7 +24,7 @@ Built around one trade's real arithmetic and one owner's price list. The quote f
 
 - Flow: 1) site (photo, customer name), 2) work items (grouped: film family, glass, ceiling, plumbing/kitchen, window parts), 3) mapping regions to materials on the photo, then the result with preview and invoice.
 - Server processing (segmentation, vision, rendering) takes tens of seconds to minutes; the UI must keep the owner and the customer informed through slow steps rather than fail.
-- Quotes are saved and reopened from "불러오기". Unit prices are adjusted in the app (long-press the 에덴동산 banner → 단가 설정) because field prices vary by region, season and supplier.
+- Quotes are saved and reopened from "불러오기". Unit prices are adjusted in the app (long-press the 대한인테리어필름 banner → 단가 설정) because field prices vary by region, season and supplier.
 - Delivered as a Next.js PWA and an Android APK (Capacitor) talking to a remote FastAPI backend. The Android back button must be handled.
 - All UI copy is Korean.
 
@@ -39,7 +39,7 @@ Built around one trade's real arithmetic and one owner's price list. The quote f
 
 ## Brand Commitments
 
-Business name 에덴동산. Phone and service area come verbatim from `backend/app/business_info.py`. The current app name is 인테리어 Pro.
+Business name 대한인테리어필름. Phone and service area come verbatim from `backend/app/business_info.py`. The current app name is 대한인테리어필름.
 
 ## Evidence on Hand
 

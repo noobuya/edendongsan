@@ -81,6 +81,16 @@ CATEGORY_NAMES = {
     "glass_panel": "유리문/유리창",
 }
 
+# 방화/현관문은 같은 "door" 카테고리로 두되(시공 흐름·파이프라인은 그대로 쓴다),
+# 화면에 보이는 이름만 따로 붙여 일반 방문과 구별되게 한다.
+FIRE_DOOR_LABEL = "방화문(현관문)"
+
+
+def door_label(door_kind: str) -> str:
+    """문 종류("fire"/"plain")에 맞는 화면 표시 이름."""
+    return FIRE_DOOR_LABEL if door_kind == "fire" else CATEGORY_NAMES["door"]
+
+
 # 개수가 적고 사용자가 "콕 집어 색을 바꾸고 싶어 하는" 부위들. 문짝은 수십 개가
 # 잡히는 반면 실링팬/싱크볼은 보통 한두 개뿐이라, 클릭 가능 부위 상한
 # (MAX_CLICKABLE_REGIONS)에 밀려 잘려나가지 않도록 목록 앞쪽에 배치한다.
@@ -172,10 +182,10 @@ def segment_surfaces(
         if not candidates:
             raise RuntimeError("사진에서 유효한 영역 후보를 찾지 못했습니다.")
 
-        vision_labels = (
+        vision_labels, fire_door_ids = (
             _classify_objects_with_vision(image_path, candidates, settings.gemini_api_key, category_map)
             if settings.gemini_api_key and category_map
-            else {}
+            else ({}, set())
         )
 
         # 필요한 것만 찾는다 — 조명/실링팬 없이 필름(캐비닛)만 선택했다면 천장은
@@ -193,7 +203,16 @@ def segment_surfaces(
         )
 
         object_regions = _build_object_regions(
-            candidates, vision_labels, ceiling, wall, category_map, job_id, width, height, fan_candidate
+            candidates,
+            vision_labels,
+            ceiling,
+            wall,
+            category_map,
+            job_id,
+            width,
+            height,
+            fan_candidate,
+            fire_door_ids,
         )
 
         # 천장/벽처럼 넓은 면은 SAM이 통째로 잡아주지 못하는 사진이 흔하다.
@@ -441,23 +460,105 @@ def _score_candidates(masks: list[dict], width: int, height: int, image_path: st
     return scored
 
 
+# --- Vision API 시스템 프롬프트 -----------------------------------------------
+# 현장 테스트에서 일반 문짝·벽면·방화문(현관문)을 잘못 구분하는 비율이 높았다.
+# 원인은 모델이 "문", "벽"이라는 단어만 보고 판단했기 때문이다. 그래서 각 부위를
+# 눈으로 구별할 수 있는 구체적 부속품·경계선을 시스템 지시문에 명시하고, 사용자
+# 요청(분류 호출·박스 검출 호출)이 모두 같은 기준을 쓰도록 한 곳에 모은다.
+VISION_SYSTEM_INSTRUCTION = """\
+너는 한국 아파트·주택 실내 사진에서 인테리어 필름 시공 부위를 찾는 전문가다.
+잘못 분류하면 견적과 시공 결과가 틀어진다. 확신이 없으면 억지로 고르지 말고
+"other"(또는 빈 배열)로 답하라.
+
+[1. 방화문·현관문 판별 — 가장 먼저 확인]
+방화문과 현관문은 일반 방문과 달리 아래 부속품이 있다. 문 한 짝마다 이 목록을
+위에서부터 확인하고, 하나라도 뚜렷하면 방화문/현관문이다.
+  (a) 상단 도어클로저: 문 위쪽 상단 프레임 가장자리에 붙은 얇은 직사각 금속 상자.
+      상자에서 팔(암)이 뻗어 문틀 쪽으로 이어진다.
+  (b) 디지털 도어락: 손잡이 옆이나 위에 있는 키패드 또는 액정 패널, 카드 리더.
+  (c) 두꺼운 철제 문틀과 가스켓: 문과 문틀 사이에 검은 고무 패킹 띠가 보이거나,
+      문틀 단면이 두꺼운 철판처럼 보인다.
+  (d) 도어스토퍼(말굽): 바닥에 고정된 말굽 모양·원통형 스토퍼, 문 중앙의 외시경(작은 둥근 렌즈).
+  (e) 방화 인증 표시 스티커, 문 하단의 철제 보강 판.
+방화/현관문의 표면은 나무 결이 없는 페인트 칠한 금속 면이다.
+위 부속품이 하나도 안 보이고 나무 결·나무 몰딩 패널·유리창이 있으면 일반 방문이다.
+금속처럼 보여도 (a)~(e)가 없으면 일반 방문으로 판단하라.
+  - 방화/현관문이면 door_kind = "fire", 일반 방문이면 "plain".
+
+[2. 문짝 면적 기준 — 문짝 잎(판)만 잡는다]
+- 문짝 잎의 경계는 다음 세 가지로 정한다.
+  · 손잡이(도어캐치·레버·디지털 도어락 본체)의 위치 — 손잡이 쪽이 문짝의 한 가장자리다.
+  · 경첩(힌지)이 달린 쪽 모서리 — 경첩 돌기나 경첩 자국이 보이는 쪽이 반대 가장자리다.
+  · 문틀과의 단차 — 문짝 면과 문틀 면의 깊이 차이로 생기는 그림자 선이 문짝의 둘레선이다.
+- 문짝 가로는 손잡이 쪽 가장자리에서 경첩 쪽 가장자리까지, 세로는 문지방(바닥)에서
+  문틀 상단 단차선까지다.
+- 두 짝 문이면 짝마다 따로 잡고, 두 짝이 맞닿는 세로 단차선으로 나눈다.
+- 문틀(좁은 띠 몰딩), 도어클로저 상자, 문 위 상인방, 바닥 문지방은 문짝이 아니다.
+
+[3. 벽면 기준 — 천장 몰딩과 걸레받이 사이의 넓은 평면]
+- 벽면은 위쪽 경계가 천장 몰딩(천장과 벽이 만나는 띠)의 아랫선, 아래쪽 경계가
+  걸레받이(바닥과 벽이 만나는 얇은 띠)의 윗선인 넓은 수직 평면이다.
+- 좌우 경계는 모서리, 문틀, 창틀, 가구 측면이다.
+- 벽면에서 제외할 것: 상부장·하부장 문짝, 문틀, 창문·샷시, 스위치·콘센트, 그림·액자.
+- 타일 벽(줄눈이 격자로 반복)과 가구 뒷면은 벽면이 아니다. 타일이면 "other"다.
+- 천장, 바닥, 가구 상판은 벽면이 아니다.
+
+[4. 공통 규칙]
+- 사진에 실제로 보이는 것만 분류한다. 없는 것을 만들어내지 않는다.
+- 답은 지정된 JSON 형식으로만 한다. 설명 문장은 쓰지 않는다."""
+
+# 카테고리별로 "이렇게 생긴 것"을 짧게 적어 분류 호출에 함께 준다. 카테고리 이름만으로는
+# 문짝·문틀·벽·걸레받이를 가리기 어려웠다.
+CATEGORY_VISUAL_HINTS = {
+    "door": "문짝 한 짝 — 손잡이·경첩·문틀 단차가 있는 문 잎(방화/현관문 포함)",
+    "doorframe": "문틀 — 문 둘레를 두르는 좁은 띠 몰딩(케이싱)",
+    "wall": "벽면 — 천장 몰딩과 걸레받이 사이에 있는 넓은 수직 평면",
+    "ceiling": "천장 — 방 위쪽 전체를 덮는 수평면",
+    "baseboard": "걸레받이/몰딩 — 바닥과 벽이 만나는 얇은 가로 띠",
+    "upper_cabinet_door": "상부장 문짝 — 주방 벽 위쪽 수납장의 문 한 짝",
+    "lower_cabinet_door": "하부장 문짝 — 주방 바닥 쪽 수납장의 문 한 짝",
+    "window_sash": "샷시(창틀) — 창문 프레임",
+    "glass_panel": "유리문/유리창 — 유리 면 전체",
+}
+
+
+def _parse_fire_door_ids(parsed: dict) -> set[int]:
+    """분류 응답의 fire_door_ids를 정수 집합으로 바꾼다. 잘못된 값은 무시한다."""
+    fire_ids: set[int] = set()
+    for raw in parsed.get("fire_door_ids", []) or []:
+        try:
+            fire_ids.add(int(raw))
+        except (TypeError, ValueError):
+            continue
+    return fire_ids
+
+
 def _classify_objects_with_vision(
     image_path: str, candidates: list[dict], api_key: str, category_map: dict[str, str]
-) -> dict[int, str]:
+) -> tuple[dict[int, str], set[int]]:
     """Set-of-Mark 프롬프팅으로 후보 마스크 각각을 category_map의 카테고리 id 중
-    하나(또는 "other")로 분류한다. 한 번의 호출로 전체 후보를 동시에 처리한다."""
+    하나(또는 "other")로 분류한다. 한 번의 호출로 전체 후보를 동시에 처리한다.
+
+    반환값: (번호 -> 카테고리 id, 방화/현관문으로 판별된 "door" 후보 번호 집합)."""
     try:
         marked_path = _draw_marks(image_path, candidates)
 
         client = genai.Client(api_key=api_key)
         marked_image = Image.open(marked_path)
 
-        category_desc = ", ".join(f'"{cid}"({name})' for cid, name in category_map.items())
+        category_desc = "\n".join(
+            f'- "{cid}" ({name}): {CATEGORY_VISUAL_HINTS.get(cid, name)}'
+            for cid, name in category_map.items()
+        )
         prompt = (
             "사진 위에 빨간 번호가 매겨진 사각 영역들이 있다. 각 번호가 가리키는 대상이 "
-            f"다음 카테고리 중 무엇에 가장 가까운지 하나씩 판단하라: {category_desc}. "
-            '이 중 어디에도 명확히 해당하지 않으면 반드시 "other"로 답하라 (억지로 끼워맞추지 말 것). '
-            '다음 JSON 형식으로만 답하라: {"labels": {"1": "wall", "2": "upper_cabinet_door"}}'
+            "아래 카테고리 중 무엇인지 하나씩 판단하라. 각 카테고리의 설명을 기준으로 삼아라.\n"
+            f"{category_desc}\n"
+            '어디에도 명확히 해당하지 않으면 "other"로 답하라 (억지로 끼워맞추지 말 것). '
+            '"door"로 답한 번호 중 시스템 지시의 방화/현관문 특징이 보이는 것은 '
+            '"fire_door_ids"에 번호를 넣어라. '
+            '다음 JSON 형식으로만 답하라: {"labels": {"1": "wall", "2": "upper_cabinet_door", "3": "door"}, '
+            '"fire_door_ids": [3]}'
         )
 
         response = run_gemini_with_retry(
@@ -465,14 +566,18 @@ def _classify_objects_with_vision(
             VISION_TIMEOUT_S,
             model=GEMINI_MODEL,
             contents=[prompt, marked_image],
-            config=types.GenerateContentConfig(response_mime_type="application/json"),
+            config=types.GenerateContentConfig(
+                system_instruction=VISION_SYSTEM_INSTRUCTION,
+                response_mime_type="application/json",
+            ),
         )
 
         parsed = json.loads(response.text)
-        return {int(k): v for k, v in parsed["labels"].items()}
+        labels = {int(k): v for k, v in parsed["labels"].items()}
+        return labels, _parse_fire_door_ids(parsed)
     except Exception:
         # 비전 API 실패/타임아웃 시 기하학적 휴리스틱(천장/벽)과 일반 라벨로 폴백
-        return {}
+        return {}, set()
 
 
 def _detect_regions_with_boxes(
@@ -492,13 +597,19 @@ def _detect_regions_with_boxes(
     try:
         client = genai.Client(api_key=api_key)
         image = Image.open(image_path)
-        category_desc = ", ".join(f'"{cid}"({name})' for cid, name in wanted.items())
+        category_desc = "\n".join(
+            f'- "{cid}" ({name}): {CATEGORY_VISUAL_HINTS.get(cid, name)}' for cid, name in wanted.items()
+        )
         prompt = (
-            f"사진에서 다음 대상을 모두 찾아라: {category_desc}. "
+            f"사진에서 다음 대상을 모두 찾아라:\n{category_desc}\n"
+            "문짝은 손잡이·경첩·문틀 단차로 정해진 문 잎 한 짝만 상자로 잡아라 (문틀 띠 제외). "
+            "문이 두 짝이면 짝마다 따로 잡아라. 방화/현관문이면 door_kind를 \"fire\", "
+            "일반 방문이면 \"plain\"으로 표시하라. "
             "유리문/유리창은 유리에 비친 풍경(가로수·주차된 차·계단)이나 반사가 아니라 "
-            "'유리면 한 장 전체'를 하나의 상자로 잡아라. 문이 두 짝이면 짝마다 따로 잡아라. "
+            "'유리면 한 장 전체'를 하나의 상자로 잡아라. "
             "해당하는 대상이 없으면 빈 배열로 답하라 (억지로 만들어내지 말 것). "
-            '다음 JSON 형식으로만 답하라: {"objects": [{"label": "glass_panel", "box_2d": [ymin, xmin, ymax, xmax]}]} '
+            '다음 JSON 형식으로만 답하라: {"objects": [{"label": "door", "door_kind": "plain", '
+            '"box_2d": [ymin, xmin, ymax, xmax]}]} '
             "좌표는 이미지 기준 0~1000으로 정규화한 정수다."
         )
         response = run_gemini_with_retry(
@@ -506,7 +617,10 @@ def _detect_regions_with_boxes(
             BOX_DETECT_TIMEOUT_S,
             model=GEMINI_MODEL,
             contents=[prompt, image],
-            config=types.GenerateContentConfig(response_mime_type="application/json"),
+            config=types.GenerateContentConfig(
+                system_instruction=VISION_SYSTEM_INSTRUCTION,
+                response_mime_type="application/json",
+            ),
         )
         parsed = json.loads(response.text)
         objects = parsed.get("objects", []) if isinstance(parsed, dict) else parsed
@@ -515,7 +629,8 @@ def _detect_regions_with_boxes(
         return []
 
     image_area = width * height
-    boxes: list[tuple[str, int, int, int, int]] = []
+    # (카테고리 id, x0, y0, x1, y1, 문 종류) — 문 종류는 "door"에만 의미가 있고 그 밖은 "".
+    boxes: list[tuple[str, int, int, int, int, str]] = []
 
     for obj in objects:
         if not isinstance(obj, dict):
@@ -534,9 +649,12 @@ def _detect_regions_with_boxes(
         w, h = x1 - x0, y1 - y0
         if w < MIN_BOX_SIDE_PX or h < MIN_BOX_SIDE_PX or (w * h) / image_area > MAX_BOX_AREA_RATIO:
             continue
-        boxes.append((category_id, x0, y0, x1, y1))
+        door_kind = ""
+        if category_id == "door":
+            door_kind = "fire" if str(obj.get("door_kind", "")).lower() == "fire" else "plain"
+        boxes.append((category_id, x0, y0, x1, y1, door_kind))
 
-    def priority(entry: tuple[str, int, int, int, int]) -> int:
+    def priority(entry: tuple[str, int, int, int, int, str]) -> int:
         cid = entry[0]
         return BOX_CATEGORY_PRIORITY.index(cid) if cid in BOX_CATEGORY_PRIORITY else len(BOX_CATEGORY_PRIORITY)
 
@@ -546,24 +664,26 @@ def _detect_regions_with_boxes(
     counters: dict[str, int] = {}
     kept: list[tuple[int, int, int, int]] = []
 
-    for category_id, x0, y0, x1, y1 in boxes:
+    for category_id, x0, y0, x1, y1, door_kind in boxes:
         if len(regions) >= MAX_BOX_REGIONS:
             break
         if any(_box_iou((x0, y0, x1, y1), other) >= BOX_DEDUP_IOU for other in kept):
             continue
 
         index = start_index + len(regions) + 1
-        counters[category_id] = counters.get(category_id, 0) + 1
-        regions.append(
-            {
-                "id": f"obj-{index}",
-                "label": f"{wanted[category_id]} {counters[category_id]}",
-                "category": category_id,
-                "bbox": [x0, y0, x1 - x0, y1 - y0],
-                "mask_path": _save_rect_mask(width, height, x0, y0, x1, y1, job_id, f"obj{index}"),
-                "is_panel": True,
-            }
-        )
+        base_label = door_label(door_kind) if door_kind else wanted[category_id]
+        counters[base_label] = counters.get(base_label, 0) + 1
+        region = {
+            "id": f"obj-{index}",
+            "label": f"{base_label} {counters[base_label]}",
+            "category": category_id,
+            "bbox": [x0, y0, x1 - x0, y1 - y0],
+            "mask_path": _save_rect_mask(width, height, x0, y0, x1, y1, job_id, f"obj{index}"),
+            "is_panel": True,
+        }
+        if door_kind:
+            region["door_kind"] = door_kind
+        regions.append(region)
         kept.append((x0, y0, x1, y1))
 
     return regions
@@ -682,14 +802,17 @@ def _build_object_regions(
     width: int,
     height: int,
     fan_candidate: dict | None = None,
+    fire_door_ids: set[int] | frozenset[int] = frozenset(),
 ) -> list[dict]:
     """천장/벽으로 이미 확정된 후보를 제외한 나머지 중, 비전이 의미 있는 카테고리로
     분류한 것은 "상부장 문짝 1", "상부장 문짝 2"처럼 개별 번호를 붙여 각각 독립된
     클릭 대상으로 만든다. 분류에 실패한 나머지도 화면상 위치로 이름을 붙여
     ("상부장 추정 2" 등) 남겨 두어, 인터랙티브 캔버스에 클릭할 거리가 아예
-    없어지는 상황을 막는다."""
+    없어지는 상황을 막는다.
+
+    fire_door_ids는 비전이 방화/현관문으로 판별한 "door" 후보의 번호(후보 순서 기준)다."""
     image_area = width * height
-    labeled: list[tuple[dict, str]] = []
+    labeled: list[tuple[dict, str, str]] = []
     leftover: list[dict] = []
 
     for idx, c in enumerate(candidates, start=1):
@@ -701,7 +824,8 @@ def _build_object_regions(
 
         category_id = vision_labels.get(idx)
         if category_id in category_map and category_id not in ("wall", "ceiling"):
-            labeled.append((c, category_id))
+            door_kind = ("fire" if idx in fire_door_ids else "plain") if category_id == "door" else ""
+            labeled.append((c, category_id, door_kind))
         elif category_id and category_id != "other":
             continue  # 비전이 벽/천장으로 분류한 후보는 개별 클릭 대상에서 제외
         else:
@@ -725,12 +849,19 @@ def _build_object_regions(
 
     # 실링팬/싱크볼처럼 하나뿐인 설비를 문짝 수십 개에 밀려 잘리지 않게 앞으로 뺀다.
     labeled.sort(key=lambda item: item[1] not in PRIORITY_CATEGORIES)
-    for c, category_id in labeled:
-        category_counters[category_id] = category_counters.get(category_id, 0) + 1
-        display_label = f"{category_map[category_id]} {category_counters[category_id]}"
+    for c, category_id, door_kind in labeled:
+        base_label = door_label(door_kind) if door_kind else category_map[category_id]
+        category_counters[base_label] = category_counters.get(base_label, 0) + 1
+        display_label = f"{base_label} {category_counters[base_label]}"
         # 비전이 시공 대상 카테고리로 확정한 부위는 형태 휴리스틱과 무관하게 시공한다.
         entries.append(
-            {"candidate": c, "label": display_label, "category": category_id, "is_panel": True}
+            {
+                "candidate": c,
+                "label": display_label,
+                "category": category_id,
+                "is_panel": True,
+                "door_kind": door_kind,
+            }
         )
 
     # 자동 시공 대상(평평한 패널)을 먼저, 그 외 후보를 나중에 담아 상한(MAX_CLICKABLE_
@@ -766,16 +897,17 @@ def _build_object_regions(
         except Exception:
             continue
         x, y, w, h = bbox
-        regions.append(
-            {
-                "id": f"obj-{i}",
-                "label": entry["label"],
-                "category": entry["category"],
-                "bbox": [x, y, w, h],
-                "mask_path": mask_path,
-                "is_panel": entry["is_panel"],
-            }
-        )
+        region = {
+            "id": f"obj-{i}",
+            "label": entry["label"],
+            "category": entry["category"],
+            "bbox": [x, y, w, h],
+            "mask_path": mask_path,
+            "is_panel": entry["is_panel"],
+        }
+        if entry.get("door_kind"):
+            region["door_kind"] = entry["door_kind"]
+        regions.append(region)
     return regions
 
 

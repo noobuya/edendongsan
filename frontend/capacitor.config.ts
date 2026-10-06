@@ -2,7 +2,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
   appId: "com.interior.pro",
-  appName: "인테리어 Pro",
+  appName: "대한인테리어필름",
   // `npm run build:capacitor`가 만드는 정적 내보내기 결과물 경로. 앱은 이 폴더의
   // 파일을 기기 안에서 직접 열고, 백엔드 API만 원격으로 호출한다.
   //

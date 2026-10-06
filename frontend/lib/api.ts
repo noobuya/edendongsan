@@ -318,7 +318,7 @@ export async function deleteBlogPost(jobId: string): Promise<void> {
   if (!res.ok) throw new Error(await extractErrorMessage(res, "블로그 글 삭제에 실패했습니다."));
 }
 
-/** 단가(공임·재료비·요율) 설정 — 에덴동산 배너를 길게 눌러 여는 화면에서 쓴다. */
+/** 단가(공임·재료비·요율) 설정 — 대한인테리어필름 배너를 길게 눌러 여는 화면에서 쓴다. */
 export async function getPricing(): Promise<PricingField[]> {
   const res = await apiFetch(`${API_BASE}/api/pricing`);
   if (!res.ok) throw new Error(await extractErrorMessage(res, "단가를 불러오지 못했습니다."));

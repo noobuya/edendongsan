@@ -5,6 +5,7 @@ import { Camera, ImagePlus, RotateCcw } from "lucide-react";
 import AssetImage from "@/components/AssetImage";
 import { BRAND_HERO_ALT, useBrandImageSrc } from "@/components/BrandHero";
 import CameraSheet from "@/components/CameraSheet";
+import { PhotoGuideSheet, PhotoGuideTip } from "@/components/PhotoGuide";
 import { BUSINESS_SERVICE_AREA } from "@/lib/businessInfo";
 
 interface Props {
@@ -40,6 +41,8 @@ export default function CanvasStage({
   const [localCameraOpen, setLocalCameraOpen] = useState(false);
   const isCameraOpen = cameraOpen ?? localCameraOpen;
   const setCameraOpen = onCameraOpenChange ?? setLocalCameraOpen;
+  // 촬영 예시(정면 도해) 시트 — 촬영 전 안내 줄의 "예시 보기"로 연다.
+  const [exampleOpen, setExampleOpen] = useState(false);
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -120,7 +123,7 @@ export default function CanvasStage({
                 </button>
               </div>
 
-              <p className="text-[13px] text-white/80 break-keep">벽·천장 전체가 화면에 들어오도록 담아주세요</p>
+              <PhotoGuideTip onOpenExample={() => setExampleOpen(true)} className="max-w-sm" />
             </div>
           )}
         </div>
@@ -134,6 +137,8 @@ export default function CanvasStage({
         onClose={() => setCameraOpen(false)}
         onPickFile={() => galleryInputRef.current?.click()}
       />
+
+      <PhotoGuideSheet open={exampleOpen} onClose={() => setExampleOpen(false)} />
     </>
   );
 }
