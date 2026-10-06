@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, RotateCcw } from "lucide-react";
+import Link from "next/link";
+import { KeyRound, Loader2, RotateCcw } from "lucide-react";
 import type { PricingField } from "@/types";
 import BottomSheet from "@/components/ui/BottomSheet";
 import { getPricing, savePricing } from "@/lib/api";
@@ -110,6 +111,19 @@ export default function PricingSheet({
         </div>
       ) : (
         <div className="space-y-7">
+          {/* 관리자 전용 입구 — 수강생 코드 만들기·삭제 화면으로 간다(같은 길게 누르기로 열린 시트에서만 보인다). */}
+          <Link
+            href="/admin/students"
+            onClick={onClose}
+            className="flex h-14 items-center justify-between rounded-2xl bg-slate-100 px-4 text-[15px] font-semibold text-slate-800 transition-transform active:scale-[0.98]"
+          >
+            <span className="flex items-center gap-2">
+              <KeyRound className="h-4 w-4" />
+              수강생 코드 관리
+            </span>
+            <span className="text-slate-400">→</span>
+          </Link>
+
           {error && (
             <p className="rounded-2xl bg-red-50 px-4 py-3 text-[13px] font-light text-red-700">{error}</p>
           )}
