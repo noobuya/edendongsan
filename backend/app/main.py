@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
-from app.routers import admin, automation, blog, jobs, pricing, quotes, upload
+from app.routers import admin, admin_automation, automation, blog, jobs, pricing, quotes, upload
 
 settings = get_settings()
 app = FastAPI(title="AI 시공 견적/렌더링 API")
@@ -25,6 +25,7 @@ app.include_router(blog.router)
 app.include_router(pricing.router)
 app.include_router(automation.router)
 app.include_router(admin.router)
+app.include_router(admin_automation.router)
 
 
 # 견적 계산기(estimator_app, Flask)를 같은 서버 아래 /estimator 로 함께 서비스한다.
