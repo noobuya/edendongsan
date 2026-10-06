@@ -9,11 +9,14 @@ import sqlite3
 import time
 import uuid
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from app.config import get_settings
 
 MAX_QUEUED_PER_USER = 3
+MAX_PER_DAY = 3  # 하루(한국 시간 자정 기준) 접수 가능 건수. 취소한 작업도 포함한다.
+KST = timezone(timedelta(hours=9))
 
 
 def _db_path() -> Path:
@@ -69,6 +72,12 @@ def enqueue(owner: str, task: str, params: dict, secrets: dict) -> dict:
         ).fetchone()[0]
         if waiting >= MAX_QUEUED_PER_USER:
             raise ValueError(f"한 번에 {MAX_QUEUED_PER_USER}건까지만 대기할 수 있어요. 끝난 뒤 다시 요청해주세요.")
+        today_start = datetime.now(KST).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        today = con.execute(
+            "SELECT COUNT(*) FROM jobs WHERE owner=? AND created >= ?", (owner, today_start)
+        ).fetchone()[0]
+        if today >= MAX_PER_DAY:
+            raise ValueError(f"하루에 {MAX_PER_DAY}건까지만 요청할 수 있어요. 내일 다시 이용해 주세요.")
         job_id = uuid.uuid4().hex[:12]
         con.execute(
             "INSERT INTO jobs (id, owner, task, params, secrets, status, created) VALUES (?,?,?,?,?,'queued',?)",
