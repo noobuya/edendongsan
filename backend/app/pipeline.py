@@ -168,6 +168,11 @@ def run_pipeline(
                 # 지정하지 않은 곳까지 바뀌어 "여기만 바꿔달라"는 요청과 어긋난다.
                 current_path = _render_manual_regions(job_id, current_path, manual_regions)
                 scene_rendered = current_path != image_path
+                # 수동 모드에서도 사장님이 적은 문구/그림은 영역 렌더링 뒤에 한 번 더 얹는다.
+                if illustration_text.strip() or illustration_description.strip():
+                    current_path = _apply_illustration_pass(
+                        job_id, current_path, illustration_text, illustration_description
+                    )
             elif scene_instructions:
                 _stage(job_id, "시공 후 사진 생성 중")
                 try:
@@ -181,6 +186,10 @@ def run_pipeline(
                     JOBS[job_id].setdefault("notices", []).append(
                         "AI 시공 사진 생성에 실패했어요(사용량 한도 초과 또는 일시 오류). 문짝/문틀 시공은 적용되지 않았으니 다시 시도하거나 수동 영역 지정을 이용해 주세요."
                     )
+                    if illustration_text.strip() or illustration_description.strip():
+                        JOBS[job_id].setdefault("notices", []).append(
+                            "입력하신 일러스트 문구/그림은 AI 사진 생성 실패로 반영되지 않았어요. 다시 시도해 주세요."
+                        )
             if room_future is not None:
                 room_info = room_future.result()
 
@@ -388,6 +397,21 @@ def run_illustration_edit(job_id: str, text: str, description: str) -> None:
     finally:
         job["editing"] = False
         job["editing_region_id"] = None
+
+
+def _apply_illustration_pass(job_id: str, image_path: str, text: str, description: str) -> str:
+    """이미 만들어진 사진 위에 일러스트 지시문만 한 번 얹는다. 실패하면 원래 사진을 그대로 쓰고 안내를 남긴다."""
+    try:
+        out_path = f"storage/results/{job_id}_illust_pass.png"
+        with open(out_path, "wb") as f:
+            f.write(render_scene(image_path, [_illust_instruction(text, description)]))
+        return out_path
+    except Exception as exc:  # noqa: BLE001 - 일러스트 실패가 견적 전체를 막지 않도록 한다
+        print(f"[pipeline] 일러스트 적용 실패: {exc}")
+        JOBS[job_id].setdefault("notices", []).append(
+            "입력하신 일러스트 문구/그림을 넣지 못했어요(AI 일시 오류). 다시 시도해 주세요."
+        )
+        return image_path
 
 
 def _render_manual_regions(job_id: str, image_path: str, manual_regions: list[dict]) -> str:
