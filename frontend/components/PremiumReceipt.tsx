@@ -15,7 +15,7 @@ function won(amount: number): string {
 // 필름 계열은 표면 처리 공정이 핵심이라 그 공정을 "일체 포함"으로 보여준다.
 // 그 밖의 품목에는 이 공정이 없으므로 같은 문구를 붙이면 사실과 어긋난다.
 const FILM_FAMILY: WorkItemId[] = ["film", "sash", "door_frame", "wardrobe", "wall_film"];
-const FILM_NOTE = "기존 실리콘 제거, 친환경 프라이머 도포 및 정밀 평탄화(퍼티) 작업 일체 포함";
+const FILM_NOTE = "기존 실리콘 제거, 친환경 프라이머 도포, 정밀 평탄화(퍼티), 먼지 제거 및 굴곡부 가열 밀착 작업 일체 포함 · 시공 후 1~2일은 시공면에 물이 닿지 않게 관리";
 const GENERIC_NOTE = "자재, 설치, 마감 정리까지 일체 포함";
 
 const GUARANTEES = [
