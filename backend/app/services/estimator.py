@@ -40,6 +40,7 @@ from app.schemas import (
     FanOptions,
     FilmOptions,
     GlassOptions,
+    IllustrationOptions,
     JobOptions,
     LightingOptions,
     PanelItem,
@@ -452,12 +453,16 @@ def _glass_line_item(opts: GlassOptions) -> dict:
         details.append(_detail("썬팅 필름 자재비", area_m2, "㎡", unit_price, "material", spec))
         details.append(_manday_detail("썬팅 시공 인건비", area_m2, table["tint_manday_m2"]))
 
-    if opts.work_type in ("illust", "both") and opts.illust_count > 0:
-        details.append(
-            _detail("일러스트 그래픽 제작·시공", opts.illust_count, "건", table["illust_per_unit"], "material")
-        )
-
     return _line_item("glass", details)
+
+
+def _illustration_line_item(opts: IllustrationOptions) -> dict:
+    """사장님 전용 일러스트 항목. 단가는 예전 유리 일러스트와 같은 표(glass.illust_per_unit)를 쓴다."""
+    table = _prices()["glass"]
+    details = []
+    if opts.count > 0:
+        details.append(_detail("일러스트 그래픽 제작·시공", opts.count, "건", table["illust_per_unit"], "material"))
+    return _line_item("illustration", details)
 
 
 def _lighting_line_item(opts: LightingOptions) -> dict:
@@ -550,6 +555,8 @@ def calculate_estimate(
         line_items.append(_door_frame_line_item(options.door_frame))
     if "sink" in selected_items and options.sink:
         line_items.append(_sink_line_item(options.sink))
+    if "illustration" in selected_items and options.illustration:
+        line_items.append(_illustration_line_item(options.illustration))
 
     line_items = [item for item in line_items if item["details"]]
 

@@ -5,13 +5,15 @@ import { ChevronRight, Plus, X } from "lucide-react";
 import type { JobOptionsState, WorkItemId } from "@/types";
 import ItemPickerSheet from "@/components/ItemPickerSheet";
 import ItemOptionsSheet from "@/components/ItemOptionsSheet";
-import { ALL_WORK_ITEMS, WORK_ITEM_GROUPS, WORK_ITEM_META, summarizeItem } from "@/lib/workItems";
+import { ALL_WORK_ITEMS, WORK_ITEM_META, summarizeItem, visibleWorkGroups } from "@/lib/workItems";
 
 interface Props {
   selectedItems: WorkItemId[];
   onSelectedItemsChange: (items: WorkItemId[]) => void;
   options: JobOptionsState;
   onOptionsChange: (options: JobOptionsState) => void;
+  /** 사장님 기기 여부. 아니면 일러스트 종목은 목록에도 선택지에도 나오지 않는다. */
+  isOwner: boolean;
 }
 
 /** 2단계 — 시공 항목 세팅. 고른 항목만 카드로 쌓이고, 상세 입력은 시트에서 한다. */
@@ -20,11 +22,15 @@ export default function StepItems({
   onSelectedItemsChange,
   options,
   onOptionsChange,
+  isOwner,
 }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<WorkItemId | null>(null);
 
-  const ordered = ALL_WORK_ITEMS.filter((id) => selectedItems.includes(id));
+  const groups = visibleWorkGroups(isOwner);
+  const ordered = ALL_WORK_ITEMS.filter(
+    (id) => selectedItems.includes(id) && groups.some((g) => g.children.includes(id))
+  );
 
   function toggleItem(item: WorkItemId) {
     onSelectedItemsChange(
@@ -71,7 +77,7 @@ export default function StepItems({
             // 같은 큰 종목이 이어지면 그 위에 한 번만 머리글을 얹는다.
             // 필름 계열 부위가 넷이라 머리글이 없으면 "샷시가 왜 여기 있지" 싶어진다.
             const groupOf = (id: WorkItemId) =>
-              WORK_ITEM_GROUPS.find((g) => g.children.includes(id));
+              groups.find((g) => g.children.includes(id));
             const group = groupOf(item);
             const showHeading =
               !!group &&
@@ -143,6 +149,7 @@ export default function StepItems({
         selected={selectedItems}
         onToggle={toggleItem}
         onClose={() => setPickerOpen(false)}
+        isOwner={isOwner}
       />
       <ItemOptionsSheet
         item={editingItem}

@@ -46,8 +46,6 @@ export default function HomePage() {
   const [photo, setPhoto] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState("");
-  const [illustText, setIllustText] = useState("");
-  const [illustDescription, setIllustDescription] = useState("");
   const [selectedItems, setSelectedItems] = useState<WorkItemId[]>(DEFAULT_WORK_ITEMS);
   const [options, setOptions] = useState<JobOptionsState>(DEFAULT_OPTIONS);
   const [job, setJob] = useState<JobStatusResponse | null>(null);
@@ -304,19 +302,21 @@ export default function HomePage() {
   }
 
   async function handleSubmit() {
-    if (!photo || selectedItems.length === 0) return;
+    // 일러스트는 사장님 기기에서만 보낸다. 학생 기기가 담아 와도 여기서 걸러낸다.
+    const submitItems = ownerToken ? selectedItems : selectedItems.filter((i) => i !== "illustration");
+    if (!photo || submitItems.length === 0) return;
     setSubmitting(true);
     setSubmitError(null);
     setStep(3);
     try {
+      const withIllustration = submitItems.includes("illustration");
       const { job_id } = await createJob({
         photo,
         customerName,
-        selectedItems,
+        selectedItems: submitItems,
         options,
-        // 학생 기기에서는 일러스트 값을 보내지 않는다(입력도 안 보이므로 빈 값이 맞다).
-        illustrationText: ownerToken ? illustText : "",
-        illustrationDescription: ownerToken ? illustDescription : "",
+        illustrationText: withIllustration ? options.illustration.text : "",
+        illustrationDescription: withIllustration ? options.illustration.description : "",
         ownerToken,
         renderMode,
         autoDescription,
@@ -359,8 +359,6 @@ export default function HomePage() {
     setJob(null);
     setPhoto(null);
     setCustomerName("");
-    setIllustText("");
-    setIllustDescription("");
     setSelectedItems(DEFAULT_WORK_ITEMS);
     setOptions(DEFAULT_OPTIONS);
     setRenderMode("auto");
@@ -555,10 +553,6 @@ export default function HomePage() {
               <StepSite
                 customerName={customerName}
                 onCustomerNameChange={setCustomerName}
-                illustText={illustText}
-                onIllustTextChange={setIllustText}
-                illustDescription={illustDescription}
-                onIllustDescriptionChange={setIllustDescription}
                 isOwner={!!ownerToken}
                 onSaveOwnerToken={(token) => {
                   saveOwnerToken(token);
@@ -591,6 +585,7 @@ export default function HomePage() {
                     onSelectedItemsChange={setSelectedItems}
                     options={options}
                     onOptionsChange={setOptions}
+                    isOwner={!!ownerToken}
                   />
                 </div>
               </div>

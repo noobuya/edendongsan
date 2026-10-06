@@ -687,10 +687,6 @@ def _build_scene_instructions(
                 f"Apply {tint_phrase} to the glass door and glass panels, evenly covering the "
                 "glass without touching the frame."
             )
-        if glass.work_type in ("illust", "both") and glass.illust_count > 0:
-            # 문구·그림 설명을 안 적었어도 일러스트 건수를 넣었으면 대표 그래픽은 보여준다.
-            if not illustration_text.strip() and not illustration_description.strip():
-                instructions.append(_illust_instruction("", ""))
 
     if "lighting" in selected_items and options.lighting and options.lighting.light_count:
         count = options.lighting.light_count
@@ -709,9 +705,12 @@ def _build_scene_instructions(
             "with a short downrod and no extra pendant lamp."
         )
 
-    # 사진 아래에서 받은 일러스트 요청은 시공 항목 선택과 무관하게 항상 반영한다.
-    if illustration_text.strip() or illustration_description.strip():
-        instructions.append(_illust_instruction(illustration_text, illustration_description))
+    # 사장님 전용 "일러스트" 항목. 문구·그림 설명을 안 적었어도 건수가 있으면 대표 그래픽은 그린다.
+    if "illustration" in selected_items and options.illustration:
+        if illustration_text.strip() or illustration_description.strip():
+            instructions.append(_illust_instruction(illustration_text, illustration_description))
+        elif options.illustration.count > 0:
+            instructions.append(_illust_instruction("", ""))
 
     if "sink" in selected_items and options.sink:
         bowl = SINK_BOWL_SPECS[options.sink.spec]["prompt_keyword"]

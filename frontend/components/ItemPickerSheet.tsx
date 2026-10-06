@@ -4,21 +4,24 @@ import { useState } from "react";
 import { Check, ChevronLeft, ChevronRight } from "lucide-react";
 import type { WorkItemId } from "@/types";
 import BottomSheet from "@/components/ui/BottomSheet";
-import { WORK_ITEM_GROUPS, WORK_ITEM_META } from "@/lib/workItems";
+import { WORK_ITEM_META, visibleWorkGroups } from "@/lib/workItems";
 
 interface Props {
   open: boolean;
   selected: WorkItemId[];
   onToggle: (item: WorkItemId) => void;
   onClose: () => void;
+  /** 사장님 기기면 일러스트 종목도 보인다. */
+  isOwner: boolean;
 }
 
 /** FAB(+)를 누르면 올라오는 시공 항목 선택 시트. */
-export default function ItemPickerSheet({ open, selected, onToggle, onClose }: Props) {
+export default function ItemPickerSheet({ open, selected, onToggle, onClose, isOwner }: Props) {
+  const groups = visibleWorkGroups(isOwner);
   // 큰 종목을 먼저 고르고 그 안에서 부위를 고른다. 필름 계열은 자재가 같고 부위만
   // 다른데 한 줄로 늘어놓으면 "샷시도 필름인가?"부터 헷갈린다.
   const [openGroupId, setOpenGroupId] = useState<string | null>(null);
-  const group = WORK_ITEM_GROUPS.find((g) => g.id === openGroupId) ?? null;
+  const group = groups.find((g) => g.id === openGroupId) ?? null;
 
   function close() {
     setOpenGroupId(null);
@@ -66,7 +69,7 @@ export default function ItemPickerSheet({ open, selected, onToggle, onClose }: P
             ))}
           </>
         ) : (
-          WORK_ITEM_GROUPS.map((g) => {
+          groups.map((g) => {
             // 부위가 하나뿐인 종목은 한 단계를 건너뛰고 바로 켜고 끈다 —
             // 누를 게 하나인 화면을 한 번 더 보여줄 이유가 없다.
             if (g.children.length === 1) {

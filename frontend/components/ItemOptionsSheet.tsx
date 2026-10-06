@@ -13,6 +13,7 @@ import GlassForm from "@/components/forms/GlassForm";
 import LightingForm from "@/components/forms/LightingForm";
 import FanForm from "@/components/forms/FanForm";
 import SinkForm from "@/components/forms/SinkForm";
+import IllustrationForm from "@/components/forms/IllustrationForm";
 import { WORK_ITEM_META } from "@/lib/workItems";
 
 interface Props {
@@ -78,6 +79,12 @@ export default function ItemOptionsSheet({ item, options, onChange, onClose }: P
       )}
       {item === "fan" && <FanForm value={options.fan} onChange={(fan) => onChange({ ...options, fan })} />}
       {item === "sink" && <SinkForm value={options.sink} onChange={(sink) => onChange({ ...options, sink })} />}
+      {item === "illustration" && (
+        <IllustrationForm
+          value={options.illustration}
+          onChange={(illustration) => onChange({ ...options, illustration })}
+        />
+      )}
     </BottomSheet>
   );
 }

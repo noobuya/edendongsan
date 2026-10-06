@@ -1,16 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Wand2 } from "lucide-react";
 import { adminListStudents } from "@/lib/api";
 
 interface Props {
   customerName: string;
   onCustomerNameChange: (value: string) => void;
-  illustText: string;
-  onIllustTextChange: (value: string) => void;
-  illustDescription: string;
-  onIllustDescriptionChange: (value: string) => void;
   /** 이 기기가 사장님 기기인지. 아니면 일러스트 입력을 보여주지 않는다. */
   isOwner: boolean;
   /** 확인된 관리자 토큰을 이 기기에 저장한다. */
@@ -25,10 +20,6 @@ const FIELD =
 export default function StepSite({
   customerName,
   onCustomerNameChange,
-  illustText,
-  onIllustTextChange,
-  illustDescription,
-  onIllustDescriptionChange,
   isOwner,
   onSaveOwnerToken,
   onClearOwnerToken,
@@ -73,39 +64,6 @@ export default function StepSite({
           className={FIELD}
         />
       </label>
-
-      {/* 사장님 기기에서만 보인다. 학생 기기에는 문구·그림 입력 자체가 나오지 않는다. */}
-      {isOwner && (
-        <div className="space-y-6">
-          <div className="flex items-center gap-2">
-            <Wand2 className="h-4 w-4 text-indigo-500" />
-            <span className="text-[13px] font-semibold tracking-tight text-slate-900">넣을 문구·그림</span>
-            <span className="text-[11px] font-light text-slate-400">일러스트 유리시공</span>
-          </div>
-
-          <label className="block">
-            <span className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400">문구</span>
-            <input
-              type="text"
-              value={illustText}
-              onChange={(e) => onIllustTextChange(e.target.value)}
-              placeholder="DAEHAN INTERIOR FILM"
-              className={FIELD}
-            />
-          </label>
-
-          <label className="block">
-            <span className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400">그림 설명</span>
-            <textarea
-              value={illustDescription}
-              onChange={(e) => onIllustDescriptionChange(e.target.value)}
-              rows={3}
-              placeholder="얇은 선으로 그린 올리브 나뭇가지를 문구 왼쪽에"
-              className={`${FIELD} resize-none leading-relaxed`}
-            />
-          </label>
-        </div>
-      )}
 
       {/* 사장님 기기 설정. 토큰을 아는 사람만 일러스트를 연다. */}
       <div className="pt-2 text-[12px] font-light text-slate-400">

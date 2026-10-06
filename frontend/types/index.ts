@@ -13,7 +13,8 @@ export type WorkItemId =
   | "mesh_screen"
   | "toilet"
   | "wardrobe"
-  | "wall_film";
+  | "wall_film"
+  | "illustration";
 export type GlassWorkType = "tint" | "illust" | "both";
 export type GlassTintType = "clear" | "frosted" | "mirror" | "blackout";
 export type CeilingMaterial = "gypsum" | "concrete" | "wood_reinforced";
@@ -108,6 +109,13 @@ export interface GlassOptions {
   illustCount: number;
 }
 
+/** 사장님 전용 일러스트 항목. 학생 기기에서는 선택할 수 없다. */
+export interface IllustrationOptions {
+  count: number;
+  text: string;
+  description: string;
+}
+
 export interface LightingOptions {
   inch: LightingInch;
   lightCount: number;
@@ -140,6 +148,7 @@ export interface JobOptionsState {
   toilet: ToiletOptions;
   wardrobe: WardrobeOptions;
   wall_film: WallFilmOptions;
+  illustration: IllustrationOptions;
 }
 
 export interface CreateJobParams {

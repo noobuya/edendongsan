@@ -1,4 +1,4 @@
-import { Blinds, DoorOpen, Droplets, Fan, Grid2x2, Layers, Lightbulb, Rows3, Shirt, Sparkles, Toilet } from "lucide-react";
+import { Blinds, DoorOpen, Droplets, Fan, Grid2x2, Layers, Lightbulb, Rows3, Shirt, Sparkles, Toilet, Wand2 } from "lucide-react";
 import type { JobOptionsState, WorkItemId } from "@/types";
 
 /** 시공 항목 정의 한 곳. 항목 선택 시트, 항목 카드, 옵션 시트가 모두 여기를 본다. */
@@ -17,6 +17,7 @@ export const WORK_ITEM_META: Record<
   toilet: { label: "변기 설치", icon: Toilet, description: "변기 교체·철거·급수 연결" },
   wardrobe: { label: "장롱/옷장", icon: Shirt, description: "옷장 문짝·몸통 필름 랩핑" },
   wall_film: { label: "벽면 시트지", icon: Rows3, description: "벽면 필름 시공·면처리" },
+  illustration: { label: "일러스트 (사장님 전용)", icon: Wand2, description: "문구·그림을 시공 사진에 그려 넣기" },
 };
 
 /** 시공 항목의 상위 묶음.
@@ -69,7 +70,23 @@ export const WORK_ITEM_GROUPS: WorkItemGroup[] = [
     icon: Grid2x2,
     children: ["mesh_screen"],
   },
+  {
+    // 사장님 기기에서만 보인다(ItemPickerSheet·StepItems가 isOwner로 거른다).
+    id: "owner_family",
+    label: "일러스트 (사장님 전용)",
+    description: "문구·그림을 시공 사진에 그려 넣습니다",
+    icon: Wand2,
+    children: ["illustration"],
+  },
 ];
+
+/** 사장님 전용 종목 묶음 id. 학생 기기에서는 목록과 선택 대상에서 뺀다. */
+export const OWNER_ONLY_GROUP_IDS = ["owner_family"];
+
+/** 이 기기에서 고를 수 있는 종목 묶음만 돌려준다. */
+export function visibleWorkGroups(isOwner: boolean): WorkItemGroup[] {
+  return WORK_ITEM_GROUPS.filter((g) => isOwner || !OWNER_ONLY_GROUP_IDS.includes(g.id));
+}
 
 
 export const DEFAULT_OPTIONS: JobOptionsState = {
@@ -125,6 +142,7 @@ export const DEFAULT_OPTIONS: JobOptionsState = {
   mesh_screen: { meshType: "fine_20", screens: [], replaceFrame: false },
   // 개수 기본값은 0 — 건드리지도 않은 항목이 견적에 얹히면 안 된다.
   toilet: { spec: "standard", count: 0, removeExisting: true, replaceSupplyLine: true },
+  illustration: { count: 0, text: "", description: "" },
 };
 
 /** 전체 시공 항목. 목록을 따로 적지 않고 그룹에서 뽑아낸다 —
@@ -232,6 +250,8 @@ export const MATERIAL_OPTIONS: Record<
     { id: "walnut-wood", label: "월넛 우드", colorHex: "#5C3A28" },
     ...BODAQ_MATERIAL_OPTIONS,
   ],
+  // 일러스트는 영역을 칠해 고르는 항목이 아니라 사진 전체에 한 번 그려 넣는다.
+  illustration: [],
   wall_film: [
     { id: "matte-white", label: "매트 화이트", colorHex: "#F2F1ED" },
     { id: "cream-white", label: "크림 화이트", colorHex: "#F5EEDC" },
@@ -329,6 +349,10 @@ export function summarizeItem(item: WorkItemId, options: JobOptionsState): strin
   if (item === "lighting") {
     const l = options.lighting;
     return l.lightCount > 0 ? `${l.inch}인치 ${l.lightCount}개` : "조명 개수를 입력해주세요";
+  }
+  if (item === "illustration") {
+    const count = options.illustration.count;
+    return count > 0 ? `그래픽 ${count}건` : "건수를 입력해주세요";
   }
   if (item === "fan") {
     return options.fan.fanCount > 0 ? `실링팬 ${options.fan.fanCount}대` : "대수를 입력해주세요";

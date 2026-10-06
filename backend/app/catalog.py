@@ -15,6 +15,7 @@ WORK_ITEMS = {
     "toilet": {"id": "toilet", "name": "변기 설치"},
     "wardrobe": {"id": "wardrobe", "name": "장롱/옷장"},
     "wall_film": {"id": "wall_film", "name": "벽면 시트지"},
+    "illustration": {"id": "illustration", "name": "일러스트 (사장님 전용)"},
 }
 
 # 미세방충망 원단 종류. 촘촘할수록 벌레는 잘 막지만 바람이 덜 통한다.

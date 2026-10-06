@@ -3,7 +3,8 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 WorkItemId = Literal[
-    "film", "sash", "glass", "lighting", "fan", "sink", "door_frame", "mesh_screen", "toilet", "wardrobe", "wall_film"
+    "film", "sash", "glass", "lighting", "fan", "sink", "door_frame", "mesh_screen", "toilet", "wardrobe", "wall_film",
+    "illustration",
 ]
 MeshType = Literal["fine_20", "ultra_30", "pet_proof"]
 ToiletSpec = Literal["standard", "one_piece", "bidet_combo"]
@@ -116,9 +117,17 @@ class GlassOptions(BaseModel):
     work_type: GlassWorkType = "tint"
     tint_type: GlassTintType = "frosted"
     panels: list[PanelItem] = Field(default_factory=list)  # 유리 규격(가로×세로mm)×개수
-    # 일러스트(그래픽) 시공 건수. 새길 문구·디자인 설명은 견적 항목이 아니라
-    # "이 사진에 이렇게 넣어달라"는 지시라서 CreateJobRequest.illustration_* 로 받는다.
+    # 예전 유리 일러스트 입력. 일러스트는 사장님 전용 "illustration" 항목으로 분리되어
+    # 견적 계산과 시공 지시문에서 더는 쓰지 않는다(저장된 견적 호환용으로만 남긴다).
     illust_count: int = 0
+
+
+class IllustrationOptions(BaseModel):
+    """사장님 전용 일러스트(컷팅 그래픽) 시공. 문구·그림 설명은 이 항목 안에서 받는다."""
+
+    count: int = 0  # 건수(건당 단가)
+    text: str = ""  # 그대로 새길 문구
+    description: str = ""  # 그림 설명
 
 
 class LightingOptions(BaseModel):
@@ -153,6 +162,7 @@ class JobOptions(BaseModel):
     toilet: Optional[ToiletOptions] = None
     wardrobe: Optional[WardrobeOptions] = None
     wall_film: Optional[WallFilmOptions] = None
+    illustration: Optional[IllustrationOptions] = None
 
 
 class ManualRegion(BaseModel):

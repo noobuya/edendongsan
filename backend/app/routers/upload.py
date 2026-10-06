@@ -34,10 +34,18 @@ async def create_job(
         request = CreateJobRequest.model_validate_json(payload)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors()) from exc
-    # 일러스트 문구·설명은 사장님 기기에서만 받는다(학생 기기가 보내도 거절).
-    wants_illustration = bool(request.illustration_text.strip() or request.illustration_description.strip())
+    # 일러스트는 사장님 전용 항목이다. 학생 기기가 항목·문구·그림·유리 일러스트를 보내면 거절한다.
+    wants_illustration = (
+        "illustration" in request.selected_items
+        or bool(request.illustration_text.strip() or request.illustration_description.strip())
+        or bool(request.options.glass and request.options.glass.work_type in ("illust", "both"))
+    )
     if wants_illustration and not is_owner(x_admin_token):
         raise HTTPException(status_code=403, detail="일러스트는 사장님 기기에서만 쓸 수 있어요.")
+    # 문구·그림 설명은 "일러스트" 항목을 고른 경우에만 사진에 반영한다.
+    if "illustration" not in request.selected_items:
+        request.illustration_text = ""
+        request.illustration_description = ""
 
     if not request.selected_items:
         raise HTTPException(status_code=422, detail="선택된 시공 항목이 없습니다.")

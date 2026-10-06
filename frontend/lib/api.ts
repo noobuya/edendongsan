@@ -168,8 +168,10 @@ export async function createJob(
             work_type: options.glass.workType,
             tint_type: options.glass.tintType,
             panels: panelItemsPayload(options.glass.panels),
-            illust_count: options.glass.illustCount,
           }
+        : undefined,
+      illustration: selectedItems.includes("illustration")
+        ? { count: options.illustration.count }
         : undefined,
       lighting: selectedItems.includes("lighting")
         ? {
