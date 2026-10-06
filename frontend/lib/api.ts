@@ -504,3 +504,21 @@ export const automationCreate = (code: string, task: string, params: Record<stri
   automationFetch<AutomationJob>("/jobs", code, { method: "POST", body: JSON.stringify({ task, params }) });
 export const automationCancel = (code: string, id: string) =>
   automationFetch<{ ok: boolean }>(`/jobs/${id}`, code, { method: "DELETE" });
+
+/** 관리자 화면 전용: 수강생 코드 목록·추가·삭제. 토큰은 서버 .env의 ADMIN_TOKEN과 같아야 한다. */
+export type AdminStudent = { name: string; code: string | null; source: string; created: string };
+
+async function adminFetch<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
+  const res = await apiFetch(`${API_BASE}/api/admin/students${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", "X-Admin-Token": token, ...init.headers },
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "요청에 실패했습니다."));
+  return res.json();
+}
+
+export const adminListStudents = (token: string) => adminFetch<AdminStudent[]>("", token);
+export const adminAddStudent = (token: string, name: string) =>
+  adminFetch<AdminStudent>("", token, { method: "POST", body: JSON.stringify({ name }) });
+export const adminRemoveStudent = (token: string, name: string) =>
+  adminFetch<{ ok: boolean }>(`/${encodeURIComponent(name)}`, token, { method: "DELETE" });

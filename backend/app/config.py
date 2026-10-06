@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     storage_dir: str = "storage"
     # "코드:이름,코드:이름" 형식. 비어 있으면 아무도 자동화 기능을 쓸 수 없다.
     automation_codes: str = ""
+    # 관리자 페이지(/admin/students) 접속 토큰. 비어 있으면 관리자 기능이 꺼진다.
+    admin_token: str = ""
     cors_origins: list[str] = ["http://localhost:3000"]
 
     model_config = SettingsConfigDict(env_file=".env")

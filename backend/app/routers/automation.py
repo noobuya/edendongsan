@@ -7,17 +7,19 @@ from pydantic import BaseModel, Field
 from app.automation import store
 from app.automation.tasks import TASKS
 from app.config import get_settings
+from app import student_store
 
 router = APIRouter(prefix="/api/automation", tags=["automation"])
 
 
 def _codes() -> dict[str, str]:
-    """AUTOMATION_CODES="코드1:이름1,코드2:이름2" → {코드: 이름}"""
+    """AUTOMATION_CODES="코드1:이름1,코드2:이름2" + 관리자 페이지에서 만든 코드 → {코드: 이름}"""
     out: dict[str, str] = {}
     for part in get_settings().automation_codes.split(","):
         code, _, name = part.strip().partition(":")
         if code:
             out[code] = name or code
+    out.update(student_store.file_codes())
     return out
 
 
