@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from app.automation import store
 from app.automation.tasks import TASKS
 from app.config import get_settings
-from app import student_store
+from app import student_requests, student_store
 
 router = APIRouter(prefix="/api/automation", tags=["automation"])
 
@@ -42,6 +42,34 @@ class JobRequest(BaseModel):
 @router.post("/login")
 async def login(req: LoginRequest):
     return {"name": _owner(req.code)}
+
+
+class SignupIn(BaseModel):
+    name: str = Field(min_length=1, max_length=20)
+
+
+@router.post("/requests")
+async def request_access(req: SignupIn):
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(422, "이름을 입력해 주세요.")
+    try:
+        row = student_requests.create(name)
+    except ValueError as exc:
+        raise HTTPException(429, str(exc)) from exc
+    return {"id": row["id"], "status": row["status"], "name": row["name"]}
+
+
+@router.get("/requests/{rid}")
+async def request_status(rid: str):
+    row = student_requests.get(rid)
+    if row is None:
+        raise HTTPException(404, "요청을 찾을 수 없어요.")
+    out = {"id": row["id"], "status": row["status"], "name": row["name"]}
+    # 승인된 코드는 요청 번호를 가진 이 기기에만 돌려준다.
+    if row["status"] == "approved":
+        out["code"] = row["code"]
+    return out
 
 
 @router.get("/tasks")

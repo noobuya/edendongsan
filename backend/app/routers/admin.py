@@ -1,10 +1,11 @@
 """관리자 전용 수강생 코드 관리 API. 요청마다 X-Admin-Token 헤더로 확인한다."""
 import hmac
+import re
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from app import student_store
+from app import student_requests, student_store
 from app.config import get_settings
 
 router = APIRouter(prefix="/api/admin/students", tags=["admin"])
@@ -55,6 +56,54 @@ async def add_student(req: StudentIn, x_admin_token: str | None = Header(default
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     return {"name": row["name"], "code": row["code"], "source": "관리자", "created": row["created"]}
+
+
+class ApproveIn(BaseModel):
+    code: str = Field(min_length=6, max_length=40)
+
+
+def _code_in_use(code: str) -> bool:
+    env_codes = {part.strip().partition(":")[0] for part in get_settings().automation_codes.split(",")}
+    return code in env_codes or code in student_store.file_codes()
+
+
+@router.get("/requests")
+async def list_requests(x_admin_token: str | None = Header(default=None)):
+    _require_admin(x_admin_token)
+    return student_requests.list_all()
+
+
+@router.post("/requests/{rid}/approve")
+async def approve_request(rid: str, req: ApproveIn, x_admin_token: str | None = Header(default=None)):
+    _require_admin(x_admin_token)
+    row = student_requests.get(rid)
+    if row is None:
+        raise HTTPException(404, "요청을 찾을 수 없어요.")
+    if row["status"] != "pending":
+        raise HTTPException(409, "이미 처리된 요청이에요.")
+    code = req.code.strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{6,40}", code):
+        raise HTTPException(422, "코드명은 영문·숫자·-·_ 로 6~40자여야 해요.")
+    if _code_in_use(code):
+        raise HTTPException(409, "이미 사용 중인 코드명이에요. 다른 이름을 정해 주세요.")
+    try:
+        student_store.add_student(row["name"], code=code)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    updated = student_requests.set_status(rid, "approved", code)
+    return {"ok": True, "name": updated["name"], "code": code}
+
+
+@router.post("/requests/{rid}/reject")
+async def reject_request(rid: str, x_admin_token: str | None = Header(default=None)):
+    _require_admin(x_admin_token)
+    row = student_requests.get(rid)
+    if row is None:
+        raise HTTPException(404, "요청을 찾을 수 없어요.")
+    if row["status"] != "pending":
+        raise HTTPException(409, "이미 처리된 요청이에요.")
+    student_requests.set_status(rid, "rejected")
+    return {"ok": True}
 
 
 @router.delete("/{name}")

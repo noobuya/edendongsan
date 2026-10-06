@@ -2,7 +2,25 @@
 
 import { useEffect, useState } from "react";
 import { Copy, KeyRound, Loader2, Trash2, UserPlus } from "lucide-react";
-import { adminAddStudent, adminListStudents, adminRemoveStudent, type AdminStudent } from "@/lib/api";
+import {
+  adminAddStudent,
+  adminApproveRequest,
+  adminListRequests,
+  adminListStudents,
+  adminRejectRequest,
+  adminRemoveStudent,
+  type AdminRequest,
+  type AdminStudent,
+} from "@/lib/api";
+
+const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+
+/** 승인 때 쓸 코드명 초안. 관리자가 바꿀 수 있다. */
+function makeCodeDraft(): string {
+  const bytes = new Uint32Array(12);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => CODE_CHARS[b % CODE_CHARS.length]).join("");
+}
 
 /** 관리자 토큰은 이 브라우저 탭에만 임시로 둔다(탭을 닫으면 사라짐). */
 const TOKEN_KEY = "eden-admin-token";
@@ -37,12 +55,16 @@ export default function AdminStudentsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [requests, setRequests] = useState<AdminRequest[]>([]);
+  const [openRequest, setOpenRequest] = useState<string | null>(null);
+  const [codeDraft, setCodeDraft] = useState("");
 
   async function load(t: string) {
     setBusy(true);
     setError(null);
     try {
       setStudents(await adminListStudents(t));
+      setRequests(await adminListRequests(t));
       setToken(t);
       setAuthorized(true);
       writeToken(t);
@@ -74,6 +96,53 @@ export default function AdminStudentsPage() {
       setStudents(await adminListStudents(token));
     } catch (e) {
       setError(e instanceof Error ? e.message : "추가하지 못했습니다.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function refreshRequests() {
+    setRequests(await adminListRequests(token));
+    setStudents(await adminListStudents(token));
+  }
+
+  function openApproval(id: string) {
+    if (openRequest === id) {
+      setOpenRequest(null);
+      return;
+    }
+    setOpenRequest(id);
+    setCodeDraft(makeCodeDraft());
+    setError(null);
+  }
+
+  async function approve(req: AdminRequest) {
+    const code = codeDraft.trim();
+    if (!code) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await adminApproveRequest(token, req.id, code);
+      setOpenRequest(null);
+      setCreated({ name: req.name, code, source: "관리자", created: "" });
+      await refreshRequests();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "승인하지 못했습니다.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reject(req: AdminRequest) {
+    if (!window.confirm(`${req.name} 학생의 요청을 거절할까요?`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await adminRejectRequest(token, req.id);
+      setOpenRequest(null);
+      await refreshRequests();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "거절하지 못했습니다.");
     } finally {
       setBusy(false);
     }
@@ -191,6 +260,60 @@ export default function AdminStudentsPage() {
       </section>
 
       {error && <p className="px-1 text-[14px] font-semibold text-rose-700">{error}</p>}
+
+      <section className="space-y-2">
+        <h2 className="flex items-center gap-2 px-1 text-[15px] font-bold text-slate-700">
+          승인 요청 {requests.filter((r) => r.status === "pending").length}건
+        </h2>
+        {requests.filter((r) => r.status === "pending").length === 0 && (
+          <p className="px-1 text-[14px] text-slate-500">대기 중인 요청이 없어요.</p>
+        )}
+        {requests
+          .filter((r) => r.status === "pending")
+          .map((r) => (
+            <div key={r.id} className="rounded-2xl bg-white p-4 shadow-sm">
+              <button onClick={() => openApproval(r.id)} className="flex w-full items-center justify-between text-left">
+                <span className="text-[15px] font-bold text-slate-900">{r.name}</span>
+                <span className="text-[12px] text-slate-500">{r.created}</span>
+              </button>
+              {openRequest === r.id && (
+                <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
+                  <p className="text-[13px] text-slate-600">코드명을 확인하고 승인하면 학생 기기에서 자동으로 입장합니다.</p>
+                  <div className="flex gap-2">
+                    <input
+                      className={input}
+                      value={codeDraft}
+                      onChange={(e) => setCodeDraft(e.target.value)}
+                      aria-label="코드명"
+                    />
+                    <button
+                      onClick={() => setCodeDraft(makeCodeDraft())}
+                      className="h-12 shrink-0 rounded-xl bg-slate-100 px-3 text-[13px] font-semibold text-slate-700"
+                    >
+                      새로
+                    </button>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      disabled={busy || codeDraft.trim().length < 6}
+                      onClick={() => approve(r)}
+                      className="h-12 flex-1 rounded-xl bg-indigo-600 text-[15px] font-bold text-white disabled:opacity-40"
+                    >
+                      승인
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={() => reject(r)}
+                      className="h-12 flex-1 rounded-xl bg-rose-50 text-[15px] font-semibold text-rose-700 disabled:opacity-40"
+                    >
+                      거절
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+      </section>
 
       <section className="space-y-2">
         <h2 className="flex items-center gap-2 px-1 text-[15px] font-bold text-slate-700">

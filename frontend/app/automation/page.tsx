@@ -8,12 +8,16 @@ import {
   automationCreate,
   automationJobs,
   automationLogin,
+  automationRequestAccess,
+  automationRequestStatus,
   automationTasks,
   type AutomationJob,
   type AutomationTask,
 } from "@/lib/api";
 
 const CODE_KEY = "eden-automation-code";
+// 승인 요청을 보낸 기기의 요청 번호. 이 번호로만 자기 요청 상태를 확인한다.
+const REQUEST_KEY = "eden-automation-request";
 
 function readSaved(): string {
   try {
@@ -21,6 +25,21 @@ function readSaved(): string {
   } catch {
     return "";
   }
+}
+
+function readRequestId(): string {
+  try {
+    return localStorage.getItem(REQUEST_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeRequestId(id: string) {
+  try {
+    if (id) localStorage.setItem(REQUEST_KEY, id);
+    else localStorage.removeItem(REQUEST_KEY);
+  } catch {}
 }
 
 function statusLabel(job: AutomationJob): string {
@@ -42,6 +61,11 @@ export default function AutomationPage() {
   const [code, setCode] = useState("");
   const [name, setName] = useState<string | null>(null);
   const [codeInput, setCodeInput] = useState("");
+  // 코드가 없는 학생: 이름으로 승인을 요청하거나(signup), 이미 받은 코드를 입력한다(code).
+  const [mode, setMode] = useState<"signup" | "code">("signup");
+  const [signupName, setSignupName] = useState("");
+  const [requestId, setRequestId] = useState("");
+  const [requestNote, setRequestNote] = useState<string | null>(null);
   const [tasks, setTasks] = useState<AutomationTask[]>([]);
   const [taskId, setTaskId] = useState("");
   const [values, setValues] = useState<Record<string, string>>({});
@@ -72,8 +96,73 @@ export default function AutomationPage() {
 
   useEffect(() => {
     const saved = readSaved();
-    if (saved) void enter(saved);
+    if (saved) {
+      void enter(saved);
+      return;
+    }
+    const rid = readRequestId();
+    if (rid) setRequestId(rid);
   }, [enter]);
+
+  // 승인 대기 중이면 8초마다 상태를 확인한다. 승인되면 코드가 이 기기에 저장되고 바로 입장한다.
+  useEffect(() => {
+    if (!requestId || name) return;
+    let stop = false;
+    const check = async () => {
+      try {
+        const r = await automationRequestStatus(requestId);
+        if (stop) return;
+        if (r.status === "approved" && r.code) {
+          try {
+            localStorage.setItem(CODE_KEY, r.code);
+          } catch {}
+          writeRequestId("");
+          setRequestId("");
+          setRequestNote(null);
+          void enter(r.code);
+        } else if (r.status === "rejected") {
+          writeRequestId("");
+          setRequestId("");
+          setRequestNote("승인되지 않았어요. 선생님께 문의해 주세요.");
+        }
+      } catch {
+        // 요청 번호를 찾을 수 없으면(서버 초기화 등) 다시 요청할 수 있게 비운다.
+        if (!stop) {
+          writeRequestId("");
+          setRequestId("");
+        }
+      }
+    };
+    void check();
+    const t = setInterval(check, 8000);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, [requestId, name, enter]);
+
+  async function requestAccess() {
+    const n = signupName.trim();
+    if (!n) return;
+    setBusy(true);
+    setError(null);
+    setRequestNote(null);
+    try {
+      const r = await automationRequestAccess(n);
+      writeRequestId(r.id);
+      setRequestId(r.id);
+      setSignupName("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "요청하지 못했습니다.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function cancelRequest() {
+    writeRequestId("");
+    setRequestId("");
+  }
 
   // 대기 중이거나 실행 중인 작업이 있으면 3초마다 상태를 다시 확인한다.
   const active = jobs.some((j) => j.status === "queued" || j.status === "running");
@@ -143,7 +232,40 @@ export default function AutomationPage() {
       </header>
 
       <div className="mx-auto max-w-xl space-y-4 px-4">
-        {!name ? (
+        {!name && requestId ? (
+          <section className="space-y-3 rounded-2xl bg-white p-5 shadow-sm">
+            <p className="text-[16px] font-bold text-slate-900">승인을 기다리고 있어요</p>
+            <p className="text-[14px] leading-relaxed text-slate-600 break-keep">
+              선생님이 승인하면 자동으로 들어가집니다. 이 화면을 닫지 않아도 돼요.
+            </p>
+            <button onClick={cancelRequest} className="flex h-12 w-full items-center justify-center rounded-xl bg-slate-100 text-[15px] font-semibold text-slate-700">
+              요청 취소
+            </button>
+          </section>
+        ) : !name && mode === "signup" ? (
+          <section className="space-y-3 rounded-2xl bg-white p-5 shadow-sm">
+            <p className="text-[15px] text-slate-600">이름을 입력하고 승인을 요청하세요. 선생님이 승인하면 자동으로 입장돼요.</p>
+            <input
+              className={input}
+              value={signupName}
+              onChange={(e) => setSignupName(e.target.value)}
+              placeholder="이름"
+              maxLength={20}
+              onKeyDown={(e) => e.key === "Enter" && signupName.trim() && requestAccess()}
+            />
+            <button
+              disabled={busy || !signupName.trim()}
+              onClick={requestAccess}
+              className="flex h-12 w-full items-center justify-center rounded-xl bg-indigo-600 text-[15px] font-bold text-white disabled:opacity-40"
+            >
+              {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : "승인 요청 보내기"}
+            </button>
+            <button onClick={() => setMode("code")} className="w-full py-2 text-[14px] text-slate-500 underline">
+              이미 받은 코드가 있어요
+            </button>
+            {requestNote && <p className="text-[14px] font-semibold text-rose-700">{requestNote}</p>}
+          </section>
+        ) : !name ? (
           <section className="rounded-2xl bg-white p-5 shadow-sm">
             <p className="mb-3 text-[15px] text-slate-600">수강생 코드를 입력하면 입장할 수 있어요.</p>
             <input
@@ -160,6 +282,9 @@ export default function AutomationPage() {
               className="mt-3 flex h-12 w-full items-center justify-center rounded-xl bg-indigo-600 text-[15px] font-bold text-white disabled:opacity-40"
             >
               {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : "입장하기"}
+            </button>
+            <button onClick={() => setMode("signup")} className="mt-3 w-full py-2 text-[14px] text-slate-500 underline">
+              코드가 없어요 (승인 요청하기)
             </button>
           </section>
         ) : (

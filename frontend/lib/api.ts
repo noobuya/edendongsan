@@ -498,6 +498,22 @@ async function automationFetch<T>(path: string, code: string, init: RequestInit 
 
 export const automationLogin = (code: string) =>
   automationFetch<{ name: string }>("/login", code, { method: "POST", body: JSON.stringify({ code }) });
+/** 학생 가입(승인) 요청. 코드 없이 이름만 보내고, 받은 요청 번호로 승인 여부를 확인한다. */
+export type AccessRequest = { id: string; status: "pending" | "approved" | "rejected"; name: string; code?: string };
+
+async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await apiFetch(`${API_BASE}/api/automation${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...init.headers },
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "요청에 실패했습니다."));
+  return res.json();
+}
+
+export const automationRequestAccess = (name: string) =>
+  requestJson<AccessRequest>("/requests", { method: "POST", body: JSON.stringify({ name }) });
+export const automationRequestStatus = (id: string) => requestJson<AccessRequest>(`/requests/${id}`);
+
 export const automationTasks = (code: string) => automationFetch<AutomationTask[]>("/tasks", code);
 export const automationJobs = (code: string) => automationFetch<AutomationJob[]>("/jobs", code);
 export const automationCreate = (code: string, task: string, params: Record<string, string>) =>
@@ -518,6 +534,24 @@ async function adminFetch<T>(path: string, token: string, init: RequestInit = {}
 }
 
 export const adminListStudents = (token: string) => adminFetch<AdminStudent[]>("", token);
+
+export type AdminRequest = { id: string; name: string; status: "pending" | "approved" | "rejected"; created: string };
+async function adminRequestFetch<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
+  const res = await apiFetch(`${API_BASE}/api/admin/students/requests${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", "X-Admin-Token": token, ...init.headers },
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "요청에 실패했습니다."));
+  return res.json();
+}
+export const adminListRequests = (token: string) => adminRequestFetch<AdminRequest[]>("", token);
+export const adminApproveRequest = (token: string, id: string, code: string) =>
+  adminRequestFetch<{ ok: boolean; name: string; code: string }>(`/${id}/approve`, token, {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+export const adminRejectRequest = (token: string, id: string) =>
+  adminRequestFetch<{ ok: boolean }>(`/${id}/reject`, token, { method: "POST" });
 export const adminAddStudent = (token: string, name: string) =>
   adminFetch<AdminStudent>("", token, { method: "POST", body: JSON.stringify({ name }) });
 export const adminRemoveStudent = (token: string, name: string) =>
