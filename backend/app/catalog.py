@@ -6,7 +6,7 @@
 WORK_ITEMS = {
     "film": {"id": "film", "name": "인테리어 필름"},
     "sash": {"id": "sash", "name": "샷시 필름"},
-    "glass": {"id": "glass", "name": "유리 썬팅/일러스트"},
+    "glass": {"id": "glass", "name": "유리 썬팅"},
     "lighting": {"id": "lighting", "name": "조명/다운라이트"},
     "fan": {"id": "fan", "name": "실링팬"},
     "sink": {"id": "sink", "name": "싱크볼 교체"},

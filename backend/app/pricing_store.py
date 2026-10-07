@@ -117,7 +117,7 @@ PRICING_FIELDS: list[dict] = [
     {"key": "price_table.fan.labor_per_unit", "label": "실링팬 설치비 (대당)", "group": "공임", "unit": "원"},
     {"key": "price_table.fan.height_surcharge_per_m", "label": "천장 높이 할증 (m당)", "group": "공임", "unit": "원"},
     {"key": "price_table.sink.install_labor", "label": "싱크볼 설치비", "group": "공임", "unit": "원"},
-    {"key": "price_table.glass.illust_per_unit", "label": "유리 일러스트 (건당)", "group": "공임", "unit": "원"},
+    {"key": "price_table.glass.illust_per_unit", "label": "일러스트 (건당)", "group": "공임", "unit": "원"},
 
     {"key": "price_table.film.primer_per_m2", "label": "필름 프라이머 (㎡당)", "group": "재료비", "unit": "원"},
     {"key": "price_table.sash.primer_per_m2", "label": "샷시 프라이머 (㎡당)", "group": "재료비", "unit": "원"},

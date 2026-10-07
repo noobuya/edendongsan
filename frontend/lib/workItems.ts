@@ -8,7 +8,7 @@ export const WORK_ITEM_META: Record<
 > = {
   film: { label: "싱크대/상하부장", icon: Layers, description: "주방 상·하부장 필름 시공" },
   sash: { label: "샷시 필름", icon: Blinds, description: "창틀·문틀 필름 랩핑" },
-  glass: { label: "유리 썬팅/일러스트", icon: Sparkles, description: "유리문 썬팅과 그래픽" },
+  glass: { label: "유리 썬팅", icon: Sparkles, description: "유리문·유리창 썬팅 필름" },
   lighting: { label: "조명/다운라이트", icon: Lightbulb, description: "천장 조명 교체·추가" },
   fan: { label: "실링팬", icon: Fan, description: "실링팬 설치와 보강" },
   sink: { label: "싱크볼 교체", icon: Droplets, description: "싱크볼·수전 교체" },
@@ -44,8 +44,8 @@ export const WORK_ITEM_GROUPS: WorkItemGroup[] = [
   },
   {
     id: "glass_family",
-    label: "유리 썬팅/일러스트",
-    description: "유리문 썬팅과 그래픽",
+    label: "유리 썬팅",
+    description: "유리문·유리창 썬팅 필름",
     icon: Sparkles,
     children: ["glass"],
   },

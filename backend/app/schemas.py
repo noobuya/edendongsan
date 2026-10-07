@@ -196,9 +196,8 @@ class CreateJobRequest(BaseModel):
     customer_name: str = ""
     selected_items: list[WorkItemId]
     options: JobOptions = Field(default_factory=JobOptions)
-    # 사진 바로 아래에서 받는 일러스트 요청. 시공 항목(유리) 선택 여부와 무관하게
-    # 값이 있으면 시공 후 사진에 그려 넣는다 — "이 사진에 이런 문구/그림을 넣어줘"는
-    # 견적 항목이 아니라 사진에 대한 지시라서 항목 옵션 밖에 따로 둔다.
+    # 사장님 전용 "일러스트" 항목의 문구·그림 설명. 이 항목을 고르지 않으면 서버가 비운다.
+    # 문구·설명은 견적 항목이 아니라 사진에 대한 지시라서 항목 옵션 밖에 따로 둔다.
     illustration_text: str = ""
     illustration_description: str = ""
     # "auto"는 AI가 사진에서 부위를 스스로 찾고, "manual"은 아래 manual_regions로
