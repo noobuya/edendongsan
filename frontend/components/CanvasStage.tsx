@@ -82,7 +82,7 @@ export default function CanvasStage({
       {/* 촬영 UI는 패널이 덮지 않는 무대 영역의 한가운데에 놓는다.
           (세로: 패널이 아래 절반을 쓰므로 위쪽 / 가로: 패널이 오른쪽이므로 왼쪽) */}
       {showCapture && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-[62%] top-36 z-10 flex items-center justify-center px-6 foldLandscape:bottom-0 foldLandscape:right-[452px] foldLandscape:top-24">
+        <div className="pointer-events-none absolute inset-x-0 bottom-[62%] top-[8.75rem] z-10 flex items-start justify-center px-6 foldLandscape:bottom-0 foldLandscape:right-[452px] foldLandscape:top-24">
           {photoUrl ? (
             <button
               type="button"
