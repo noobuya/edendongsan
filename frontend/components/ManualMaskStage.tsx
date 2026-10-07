@@ -151,7 +151,13 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
     setDraftPoints([]);
     setSelectedId(shape.id);
     setTool("select");
-  }, [draftPoints]);
+    // 도형을 다 그렸으니 자재를 고를 패널을 다시 편다 — 타원(조명)과 달리 다각형은
+    // 보통 한 구역에 한 번만 그리므로, 여기서 안 열면 화면 맨 아래 작은 [자재 고르기]
+    // 버튼을 직접 찾아 눌러야만 다음으로 진행할 수 있었다("선택 후 진행이 안 된다"는
+    // 문의의 원인). 여러 도형을 합쳐 한 구역을 만들 때는 패널 위 [접고 사진 보기]로
+    // 다시 접고 이어 그리면 된다.
+    onDrawFocus?.(false);
+  }, [draftPoints, onDrawFocus]);
 
   function handleStageTap(point: Pt) {
     if (tool === "polygon") {
