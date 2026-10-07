@@ -216,6 +216,36 @@ export interface BlogPost {
   created_at: string;
 }
 
+/** 견적 공유 커뮤니티 — 고객 이름·사진 없이 품목·단가·총액만 올라간다. */
+export interface SharedEstimate {
+  id: string;
+  author: string;
+  item_names: string[];
+  line_items: LineItem[];
+  total_cost: number;
+  note: string;
+  created: number;
+}
+
+/** 개인 작업 일지의 사진 한 장. */
+export interface JournalPhoto {
+  id: string;
+  url: string;
+  caption: string;
+  uploaded_at: string;
+}
+
+/** 개인 작업 일지. 본인과 관리자만 조회·수정할 수 있다. */
+export interface JournalEntry {
+  id: string;
+  owner: string;
+  title: string;
+  content: string;
+  photos: JournalPhoto[];
+  created: number;
+  updated: number;
+}
+
 export interface JobStatusResponse {
   job_id: string;
   status: JobStatus;

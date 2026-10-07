@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowLeft, ArrowRight, Bot, Calculator, FolderOpen, Loader2, Newspaper, Ruler, Sparkles } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, Bot, Calculator, FolderOpen, Loader2, Newspaper, Ruler, Sparkles, Users } from "lucide-react";
 import BusinessBadge from "@/components/BusinessBanner";
 import CanvasStage from "@/components/CanvasStage";
 import PricingSheet from "@/components/PricingSheet";
@@ -461,6 +461,13 @@ export default function HomePage() {
             className="glass-pill flex h-11 w-11 items-center justify-center text-slate-700 transition-transform active:scale-90"
           >
             <Newspaper className="h-5 w-5" />
+          </Link>
+          <Link
+            href="/community"
+            aria-label="견적 공유"
+            className="glass-pill flex h-11 w-11 items-center justify-center text-slate-700 transition-transform active:scale-90"
+          >
+            <Users className="h-5 w-5" />
           </Link>
           {/* 견적서 목록은 고객 이름·금액이 들어 있는 사장님 전용 자료라 사장님
               기기에만 보여준다. */}

@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Loader2, MousePointerClick, Sparkles, Wand2 } from "lucide-react";
+import { AlertCircle, Loader2, MousePointerClick, Sparkles, Users, Wand2 } from "lucide-react";
 import type { JobStatusResponse } from "@/types";
 import { getJobStatus, requestIllustration, requestInpaint, resolveAssetUrl } from "@/lib/api";
 import AssetImage from "@/components/AssetImage";
 import PremiumReceipt from "@/components/PremiumReceipt";
+import ShareEstimateDialog from "@/components/community/ShareEstimateDialog";
 import InteractiveResultCanvas from "@/components/InteractiveResultCanvas";
 import SectorReedit from "@/components/SectorReedit";
 import SitePhotoGallery from "@/components/SitePhotoGallery";
@@ -37,6 +38,7 @@ export default function SimulationPanel({
 }) {
   const [tab, setTab] = useState<ViewTab>("result");
   const [liveJob, setLiveJob] = useState(job);
+  const [shareOpen, setShareOpen] = useState(false);
   const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
   const [selectedRegionLabel, setSelectedRegionLabel] = useState<string | null>(null);
   const [lastColorId, setLastColorId] = useState(PATTERN_SWATCHES[0].id);
@@ -295,6 +297,18 @@ export default function SimulationPanel({
 
       <div className="space-y-4 foldLandscape:h-full foldLandscape:w-2/5 foldLandscape:overflow-y-auto foldLandscape:pb-32">
         <PremiumReceipt estimate={liveJob.estimate} jobId={liveJob.job_id} onSecretHold={onSecretHold} />
+
+        <button
+          type="button"
+          onClick={() => setShareOpen(true)}
+          className="flex h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-white text-[13px] font-semibold text-indigo-600 shadow-sm"
+        >
+          <Users className="h-4 w-4" />
+          이 견적 커뮤니티에 공유하기
+        </button>
+        {liveJob.estimate && (
+          <ShareEstimateDialog estimate={liveJob.estimate} open={shareOpen} onClose={() => setShareOpen(false)} />
+        )}
 
         {/* job_id를 key로 줘서, 다른 견적을 불러올 때 이전 견적의 사진/블로그 로컬
             상태가 그대로 남아 뒤섞이지 않고 새로 마운트되게 한다. */}

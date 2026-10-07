@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowLeft, Bot, ChevronDown, Clock, Loader2, LogOut, MessageSquare, Sparkles } from "lucide-react";
+import { ArrowLeft, Bot, BookOpen, ChevronDown, Clock, Loader2, LogOut, MessageSquare, Sparkles } from "lucide-react";
 import {
   automationCancel,
   automationCreate,
@@ -296,6 +296,13 @@ export default function AutomationPage() {
               >
                 {name.slice(0, 1)}
               </span>
+              <Link
+                href="/automation/journal"
+                className="flex h-10 items-center gap-1 rounded-full px-3 text-[13px] font-semibold text-slate-500 transition hover:bg-white"
+              >
+                <BookOpen className="h-4 w-4" />
+                내 작업 일지
+              </Link>
               <button
                 onClick={logout}
                 className="flex h-10 items-center gap-1 rounded-full px-3 text-[13px] font-semibold text-slate-500 transition hover:bg-white"

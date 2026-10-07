@@ -33,6 +33,15 @@ def _owner(code: str | None) -> str:
     raise HTTPException(401, "수강생 코드가 올바르지 않아요.")
 
 
+def resolve_owner(code: str | None) -> str | None:
+    """수강생 코드면 이름을, 아니면 None을 돌려준다(예외를 던지지 않는다).
+    작업 일지처럼 다른 라우터에서 "이 코드가 누구인지"만 확인할 때 쓴다."""
+    try:
+        return _owner(code)
+    except HTTPException:
+        return None
+
+
 class LoginRequest(BaseModel):
     code: str
 

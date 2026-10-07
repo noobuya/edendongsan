@@ -3,17 +3,21 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Loader2, RefreshCw } from "lucide-react";
+import AssetImage from "@/components/AssetImage";
 import {
   adminAutomationFeedback,
   adminAutomationJobs,
   adminAutomationRerun,
   adminAutomationTasks,
   adminAutomationUpdateFeedback,
+  adminDeleteJournalEntry,
+  adminListJournalEntries,
   type AdminAutomationJob,
   type AutomationFeedback,
   type AutomationTask,
   type FeedbackStatus,
 } from "@/lib/api";
+import type { JournalEntry } from "@/types";
 import { FEEDBACK_KIND_LABEL } from "@/components/automation/FeedbackForm";
 
 /** 관리자 토큰은 이 탭에만 임시로 둔다(/admin/students와 같은 방식). */
@@ -60,10 +64,11 @@ export default function AdminAutomationPage() {
   const [token, setToken] = useState("");
   const [tokenInput, setTokenInput] = useState("");
   const [authorized, setAuthorized] = useState(false);
-  const [tab, setTab] = useState<"jobs" | "feedback">("feedback");
+  const [tab, setTab] = useState<"jobs" | "feedback" | "journal">("feedback");
   const [tasks, setTasks] = useState<AutomationTask[]>([]);
   const [jobs, setJobs] = useState<AdminAutomationJob[]>([]);
   const [feedback, setFeedback] = useState<AutomationFeedback[]>([]);
+  const [journal, setJournal] = useState<JournalEntry[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,14 +76,16 @@ export default function AdminAutomationPage() {
     setBusy(true);
     setError(null);
     try {
-      const [tk, jb, fb] = await Promise.all([
+      const [tk, jb, fb, jn] = await Promise.all([
         adminAutomationTasks(t),
         adminAutomationJobs(t),
         adminAutomationFeedback(t),
+        adminListJournalEntries(t),
       ]);
       setTasks(tk);
       setJobs(jb);
       setFeedback(fb);
+      setJournal(jn);
       setToken(t);
       setAuthorized(true);
       writeToken(t);
@@ -99,9 +106,14 @@ export default function AdminAutomationPage() {
 
   async function refresh() {
     try {
-      const [jb, fb] = await Promise.all([adminAutomationJobs(token), adminAutomationFeedback(token)]);
+      const [jb, fb, jn] = await Promise.all([
+        adminAutomationJobs(token),
+        adminAutomationFeedback(token),
+        adminListJournalEntries(token),
+      ]);
       setJobs(jb);
       setFeedback(fb);
+      setJournal(jn);
     } catch (e) {
       setError(e instanceof Error ? e.message : "새로고침하지 못했습니다.");
     }
@@ -162,6 +174,12 @@ export default function AdminAutomationPage() {
           >
             작업 로그
           </button>
+          <button
+            onClick={() => setTab("journal")}
+            className={`h-11 flex-1 rounded-xl text-[15px] font-semibold ${tab === "journal" ? "bg-indigo-600 text-white" : "bg-white text-slate-600 shadow-sm"}`}
+          >
+            작업 일지
+          </button>
         </nav>
 
         {error && <p className="text-[14px] font-semibold text-rose-700">{error}</p>}
@@ -180,6 +198,21 @@ export default function AdminAutomationPage() {
             {jobs.length === 0 && <p className="px-1 text-[14px] text-slate-500">아직 실행된 작업이 없어요.</p>}
             {jobs.map((job) => (
               <JobCard key={job.id} job={job} token={token} tasks={tasks} onRerun={() => void refresh()} onError={setError} />
+            ))}
+          </section>
+        )}
+
+        {tab === "journal" && (
+          <section className="space-y-3">
+            {journal.length === 0 && <p className="px-1 text-[14px] text-slate-500">아직 쓴 일지가 없어요.</p>}
+            {journal.map((entry) => (
+              <JournalAdminCard
+                key={entry.id}
+                entry={entry}
+                token={token}
+                onDeleted={(id) => setJournal((prev) => prev.filter((e) => e.id !== id))}
+                onError={setError}
+              />
             ))}
           </section>
         )}
@@ -375,6 +408,71 @@ function JobCard({
           </div>
         </div>
       )}
+    </article>
+  );
+}
+
+function JournalAdminCard({
+  entry,
+  token,
+  onDeleted,
+  onError,
+}: {
+  entry: JournalEntry;
+  token: string;
+  onDeleted: (id: string) => void;
+  onError: (msg: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete() {
+    if (!confirming) {
+      setConfirming(true);
+      return;
+    }
+    setDeleting(true);
+    try {
+      await adminDeleteJournalEntry(token, entry.id);
+      onDeleted(entry.id);
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "삭제하지 못했습니다.");
+      setDeleting(false);
+      setConfirming(false);
+    }
+  }
+
+  return (
+    <article className="space-y-2 rounded-2xl bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-center gap-2 text-[14px]">
+        <span className="font-bold text-slate-900">{entry.owner}</span>
+        <span className="text-slate-700">{entry.title}</span>
+        <span className="ml-auto text-[13px] text-slate-400">{fmt(entry.created)}</span>
+      </div>
+      {entry.content && (
+        <button onClick={() => setOpen(!open)} className="block w-full text-left">
+          <p className={`whitespace-pre-wrap break-words text-[13px] text-slate-600 ${open ? "" : "line-clamp-2"}`}>
+            {entry.content}
+          </p>
+        </button>
+      )}
+      {entry.photos.length > 0 && (
+        <div className="grid grid-cols-4 gap-1.5">
+          {entry.photos.map((p) => (
+            <AssetImage key={p.id} src={p.url} alt="" className="aspect-square w-full rounded-lg object-cover" />
+          ))}
+        </div>
+      )}
+      <button
+        onClick={handleDelete}
+        disabled={deleting}
+        className={`flex h-10 items-center gap-1 text-[13px] font-semibold disabled:opacity-50 ${
+          confirming ? "text-red-600" : "text-slate-400 hover:text-red-500"
+        }`}
+      >
+        {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : confirming ? "한 번 더 누르면 삭제" : "삭제"}
+      </button>
     </article>
   );
 }

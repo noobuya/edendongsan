@@ -4,10 +4,13 @@ import type {
   BlogSummary,
   CreateJobParams,
   JobStatusResponse,
+  JournalEntry,
+  LineItem,
   MappedRegion,
   PanelItem,
   PricingField,
   QuoteSummary,
+  SharedEstimate,
   WorkPhoto,
   WorkPhotoStage,
 } from "@/types";
@@ -684,4 +687,104 @@ export const adminAutomationRerun = (token: string, jobId: string, params: Recor
   adminAutomationFetch<AutomationJob>(`/jobs/${encodeURIComponent(jobId)}/rerun`, token, {
     method: "POST",
     body: JSON.stringify({ params }),
+  });
+
+/* ---- 견적 공유 커뮤니티. 고객 정보가 없어 조회·등록에 인증이 필요 없다 ---- */
+export const createSharedEstimate = (payload: {
+  author: string;
+  item_names: string[];
+  line_items: LineItem[];
+  total_cost: number;
+  note: string;
+}) =>
+  apiFetch(`${API_BASE}/api/community/estimates`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }).then(async (res) => {
+    if (!res.ok) throw new Error(await extractErrorMessage(res, "공유에 실패했습니다."));
+    return res.json() as Promise<SharedEstimate>;
+  });
+export const listSharedEstimates = (q = "") => {
+  const url = new URL(`${API_BASE}/api/community/estimates`, urlBase());
+  if (q) url.searchParams.set("q", q);
+  return apiFetch(url.toString()).then(async (res) => {
+    if (!res.ok) throw new Error(await extractErrorMessage(res, "목록을 불러오지 못했습니다."));
+    return res.json() as Promise<SharedEstimate[]>;
+  });
+};
+export const getSharedEstimate = (id: string) =>
+  apiFetch(`${API_BASE}/api/community/estimates/${encodeURIComponent(id)}`).then(async (res) => {
+    if (!res.ok) throw new Error(await extractErrorMessage(res, "공유된 견적을 찾을 수 없습니다."));
+    return res.json() as Promise<SharedEstimate>;
+  });
+export const deleteSharedEstimate = (id: string, ownerToken: string) =>
+  apiFetch(`${API_BASE}/api/community/estimates/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: ownerHeaders(ownerToken),
+  }).then(async (res) => {
+    if (!res.ok) throw new Error(await extractErrorMessage(res, "삭제에 실패했습니다."));
+  });
+
+/* ---- 개인 작업 일지. X-Access-Code면 본인 글만, 사장님 토큰이면 전체(관리자용) ---- */
+async function journalFetch<T>(path: string, code: string, init: RequestInit = {}): Promise<T> {
+  const res = await apiFetch(`${API_BASE}/api/journal${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", "X-Access-Code": code, ...init.headers },
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "요청에 실패했습니다."));
+  return res.json();
+}
+export const createJournalEntry = (code: string, title: string, content: string) =>
+  journalFetch<JournalEntry>("", code, { method: "POST", body: JSON.stringify({ title, content }) });
+export const listJournalEntries = (code: string) => journalFetch<JournalEntry[]>("", code);
+export const getJournalEntry = (code: string, id: string) =>
+  journalFetch<JournalEntry>(`/${encodeURIComponent(id)}`, code);
+export const updateJournalEntry = (code: string, id: string, title: string, content: string) =>
+  journalFetch<JournalEntry>(`/${encodeURIComponent(id)}`, code, {
+    method: "PATCH",
+    body: JSON.stringify({ title, content }),
+  });
+export const deleteJournalEntry = (code: string, id: string) =>
+  journalFetch<{ ok: boolean }>(`/${encodeURIComponent(id)}`, code, { method: "DELETE" });
+export const uploadJournalPhoto = (code: string, id: string, file: File, caption: string) => {
+  const form = new FormData();
+  form.append("photo", file);
+  form.append("caption", caption);
+  return apiFetch(`${API_BASE}/api/journal/${encodeURIComponent(id)}/photos`, {
+    method: "POST",
+    body: form,
+    headers: { "X-Access-Code": code },
+  }).then(async (res) => {
+    if (!res.ok) throw new Error(await extractErrorMessage(res, "사진 업로드에 실패했습니다."));
+    return res.json() as Promise<JournalEntry>;
+  });
+};
+export const deleteJournalPhoto = (code: string, id: string, photoId: string) =>
+  journalFetch<JournalEntry>(`/${encodeURIComponent(id)}/photos/${encodeURIComponent(photoId)}`, code, {
+    method: "DELETE",
+  });
+
+/** 관리자 화면 전용: 전체 학생 일지 조회(특정 학생만 보려면 owner에 이름을 넣는다), 모더레이션 삭제. */
+export const adminListJournalEntries = (token: string, owner = "") => {
+  const url = new URL(`${API_BASE}/api/journal`, urlBase());
+  if (owner) url.searchParams.set("owner", owner);
+  return apiFetch(url.toString(), { headers: { "X-Admin-Token": token } }).then(async (res) => {
+    if (!res.ok) throw new Error(await extractErrorMessage(res, "목록을 불러오지 못했습니다."));
+    return res.json() as Promise<JournalEntry[]>;
+  });
+};
+export const adminGetJournalEntry = (token: string, id: string) =>
+  apiFetch(`${API_BASE}/api/journal/${encodeURIComponent(id)}`, { headers: { "X-Admin-Token": token } }).then(
+    async (res) => {
+      if (!res.ok) throw new Error(await extractErrorMessage(res, "일지를 찾을 수 없습니다."));
+      return res.json() as Promise<JournalEntry>;
+    }
+  );
+export const adminDeleteJournalEntry = (token: string, id: string) =>
+  apiFetch(`${API_BASE}/api/journal/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: { "X-Admin-Token": token },
+  }).then(async (res) => {
+    if (!res.ok) throw new Error(await extractErrorMessage(res, "삭제에 실패했습니다."));
   });
