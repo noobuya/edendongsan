@@ -275,10 +275,22 @@ export async function saveEditedImage(jobId: string, blob: Blob): Promise<{ rend
   return res.json();
 }
 
-export async function listQuotes(query = ""): Promise<QuoteSummary[]> {
+/** 서버가 켜져 있는지만 확인하는 공개 핑. 인증이 필요 없다. */
+export async function checkServerHealth(): Promise<boolean> {
+  try {
+    const res = await apiFetch(`${API_BASE}/api/health`);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+// 견적서 목록·현장 사진·블로그 글은 고객 이름·금액이 들어 있는 사장님 전용 자료라
+// 서버가 X-Admin-Token을 요구한다(routers/quotes.py).
+export async function listQuotes(ownerToken: string, query = ""): Promise<QuoteSummary[]> {
   const url = new URL(`${API_BASE}/api/quotes`, urlBase());
   if (query) url.searchParams.set("q", query);
-  const res = await apiFetch(url.toString());
+  const res = await apiFetch(url.toString(), { headers: ownerHeaders(ownerToken) });
   if (!res.ok) throw new Error(await extractErrorMessage(res, "견적 목록 조회에 실패했습니다."));
   const data = await res.json();
   return data.quotes;
@@ -288,24 +300,35 @@ export async function uploadWorkPhoto(
   jobId: string,
   file: File,
   stage: WorkPhotoStage,
-  caption: string
+  caption: string,
+  ownerToken: string
 ): Promise<WorkPhoto> {
   const form = new FormData();
   form.append("photo", file);
   form.append("stage", stage);
   form.append("caption", caption);
-  const res = await apiFetch(`${API_BASE}/api/quotes/${jobId}/photos`, { method: "POST", body: form });
+  const res = await apiFetch(`${API_BASE}/api/quotes/${jobId}/photos`, {
+    method: "POST",
+    body: form,
+    headers: ownerHeaders(ownerToken),
+  });
   if (!res.ok) throw new Error(await extractErrorMessage(res, "현장 사진 업로드에 실패했습니다."));
   return res.json();
 }
 
-export async function deleteWorkPhoto(jobId: string, photoId: string): Promise<void> {
-  const res = await apiFetch(`${API_BASE}/api/quotes/${jobId}/photos/${photoId}`, { method: "DELETE" });
+export async function deleteWorkPhoto(jobId: string, photoId: string, ownerToken: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/quotes/${jobId}/photos/${photoId}`, {
+    method: "DELETE",
+    headers: ownerHeaders(ownerToken),
+  });
   if (!res.ok) throw new Error(await extractErrorMessage(res, "사진 삭제에 실패했습니다."));
 }
 
-export async function generateBlogPost(jobId: string): Promise<BlogPost> {
-  const res = await apiFetch(`${API_BASE}/api/quotes/${jobId}/blog`, { method: "POST" });
+export async function generateBlogPost(jobId: string, ownerToken: string): Promise<BlogPost> {
+  const res = await apiFetch(`${API_BASE}/api/quotes/${jobId}/blog`, {
+    method: "POST",
+    headers: ownerHeaders(ownerToken),
+  });
   if (!res.ok) throw new Error(await extractErrorMessage(res, "블로그 글 생성에 실패했습니다."));
   return res.json();
 }
@@ -325,8 +348,11 @@ export async function getBlogDetail(jobId: string): Promise<BlogDetail> {
   return res.json();
 }
 
-export async function deleteBlogPost(jobId: string): Promise<void> {
-  const res = await apiFetch(`${API_BASE}/api/quotes/${jobId}/blog`, { method: "DELETE" });
+export async function deleteBlogPost(jobId: string, ownerToken: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/quotes/${jobId}/blog`, {
+    method: "DELETE",
+    headers: ownerHeaders(ownerToken),
+  });
   if (!res.ok) throw new Error(await extractErrorMessage(res, "블로그 글 삭제에 실패했습니다."));
 }
 

@@ -13,7 +13,7 @@ import ManualMaskStage, { type MaskStageHandle } from "@/components/ManualMaskSt
 import StepItems from "@/components/steps/StepItems";
 import StepMapping from "@/components/steps/StepMapping";
 import StepSite from "@/components/steps/StepSite";
-import { checkOwnerToken, createJob, getJobStatus, listQuotes, resolveAssetUrl } from "@/lib/api";
+import { checkOwnerToken, checkServerHealth, createJob, getJobStatus, resolveAssetUrl } from "@/lib/api";
 import { clearOwnerToken, readOwnerToken, saveOwnerToken } from "@/lib/ownerToken";
 import { useAndroidBack } from "@/lib/useAndroidBack";
 import { DEFAULT_OPTIONS, DEFAULT_WORK_ITEMS, taskTypeOf } from "@/lib/workItems";
@@ -202,9 +202,7 @@ export default function HomePage() {
   // 서버에 닿는지 앱을 켜자마자 한 번 확인한다. 현장에서 견적을 다 입력하고 나서야
   // "연결 안 됨"을 알게 되면 그 시간이 통째로 날아간다.
   useEffect(() => {
-    listQuotes()
-      .then(() => setServerOnline(true))
-      .catch(() => setServerOnline(false));
+    void checkServerHealth().then(setServerOnline);
   }, []);
 
   useEffect(() => {
@@ -464,14 +462,18 @@ export default function HomePage() {
           >
             <Newspaper className="h-5 w-5" />
           </Link>
-          <button
-            type="button"
-            onClick={() => setQuoteDialogOpen(true)}
-            aria-label="견적서 불러오기"
-            className="glass-pill flex h-11 w-11 items-center justify-center text-slate-700 transition-transform active:scale-90"
-          >
-            <FolderOpen className="h-5 w-5" />
-          </button>
+          {/* 견적서 목록은 고객 이름·금액이 들어 있는 사장님 전용 자료라 사장님
+              기기에만 보여준다. */}
+          {ownerToken && (
+            <button
+              type="button"
+              onClick={() => setQuoteDialogOpen(true)}
+              aria-label="견적서 불러오기"
+              className="glass-pill flex h-11 w-11 items-center justify-center text-slate-700 transition-transform active:scale-90"
+            >
+              <FolderOpen className="h-5 w-5" />
+            </button>
+          )}
         </div>
       </header>
 
@@ -520,7 +522,7 @@ export default function HomePage() {
             </div>
           )}
           {job ? (
-            <SimulationPanel job={job} onSecretHold={() => setPricingOpen(true)} />
+            <SimulationPanel job={job} ownerToken={ownerToken} onSecretHold={() => setPricingOpen(true)} />
           ) : (
             <div className="glass-panel flex h-full flex-col items-center justify-center gap-3">
               <Loader2 className="h-7 w-7 animate-spin text-indigo-500" />
@@ -664,6 +666,7 @@ export default function HomePage() {
         open={quoteDialogOpen}
         onClose={() => setQuoteDialogOpen(false)}
         onSelect={handleLoadQuote}
+        ownerToken={ownerToken ?? ""}
       />
     </main>
   );

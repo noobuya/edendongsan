@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowLeft, Loader2, Trash2 } from "lucide-react";
+import { AlertCircle, ArrowLeft, Loader2 } from "lucide-react";
 import AssetImage from "@/components/AssetImage";
 import BusinessBanner from "@/components/BusinessBanner";
 import CallBanner from "@/components/CallBanner";
-import { deleteBlogPost, getBlogDetail } from "@/lib/api";
+import { getBlogDetail } from "@/lib/api";
 import type { BlogDetail, WorkPhoto, WorkPhotoStage } from "@/types";
 import { useAndroidBack } from "@/lib/useAndroidBack";
 
@@ -41,8 +41,6 @@ export default function BlogDetailPage() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [post, setPost] = useState<BlogDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("job");
@@ -57,23 +55,6 @@ export default function BlogDetailPage() {
       .then(setPost)
       .catch((err) => setError(err instanceof Error ? err.message : "글을 불러오지 못했습니다."));
   }, []);
-
-  async function handleDelete() {
-    if (!jobId) return;
-    if (!confirmingDelete) {
-      setConfirmingDelete(true);
-      return;
-    }
-    setDeleting(true);
-    try {
-      await deleteBlogPost(jobId);
-      router.push("/blog");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "후기 삭제에 실패했습니다.");
-      setDeleting(false);
-      setConfirmingDelete(false);
-    }
-  }
 
   if (error) {
     return (
@@ -123,23 +104,13 @@ export default function BlogDetailPage() {
         <BusinessBanner />
       </div>
 
-      <div className="mb-6 flex items-center justify-between gap-2">
+      {/* 삭제는 사장님 기기의 결과 화면(작업사진 패널)에서만 한다 — 이 페이지는
+          누구나 열 수 있는 공개 페이지라 삭제 버튼을 두지 않는다. */}
+      <div className="mb-6">
         <Link href="/blog" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700">
           <ArrowLeft className="h-4 w-4" />
           목록으로
         </Link>
-        <button
-          type="button"
-          onClick={handleDelete}
-          onBlur={() => setConfirmingDelete(false)}
-          disabled={deleting}
-          className={`flex items-center gap-1 text-xs font-medium disabled:opacity-50 ${
-            confirmingDelete ? "text-red-600" : "text-slate-400 hover:text-red-500"
-          }`}
-        >
-          {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-          {deleting ? "삭제 중..." : confirmingDelete ? "한 번 더 누르면 삭제" : "후기 삭제"}
-        </button>
       </div>
 
       <article>

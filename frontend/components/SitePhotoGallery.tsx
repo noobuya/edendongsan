@@ -18,9 +18,13 @@ interface Props {
   jobId: string;
   initialPhotos: WorkPhoto[];
   initialBlogPost?: BlogPost;
+  /** 사장님 기기의 관리자 토큰. 없으면(학생 기기) 사진 추가·삭제·블로그 글 작성은
+   *  서버가 거절하므로, 그 버튼들을 아예 숨기고 읽기 전용으로 보여준다. */
+  ownerToken: string | null;
 }
 
-export default function SitePhotoGallery({ jobId, initialPhotos, initialBlogPost }: Props) {
+export default function SitePhotoGallery({ jobId, initialPhotos, initialBlogPost, ownerToken }: Props) {
+  const isOwner = !!ownerToken;
   const [photos, setPhotos] = useState<WorkPhoto[]>(initialPhotos);
   const [blogPost, setBlogPost] = useState<BlogPost | undefined>(initialBlogPost);
   const [uploadingStage, setUploadingStage] = useState<WorkPhotoStage | null>(null);
@@ -52,10 +56,11 @@ export default function SitePhotoGallery({ jobId, initialPhotos, initialBlogPost
   }
 
   async function uploadPhoto(stage: WorkPhotoStage, file: File) {
+    if (!ownerToken) return;
     setError(null);
     setUploadingStage(stage);
     try {
-      const photo = await uploadWorkPhoto(jobId, file, stage, captions[stage].trim());
+      const photo = await uploadWorkPhoto(jobId, file, stage, captions[stage].trim(), ownerToken);
       setPhotos((prev) => [...prev, photo]);
       setCaptions((prev) => ({ ...prev, [stage]: "" }));
     } catch (err) {
@@ -66,22 +71,24 @@ export default function SitePhotoGallery({ jobId, initialPhotos, initialBlogPost
   }
 
   async function handleDelete(photoId: string) {
+    if (!ownerToken) return;
     // 서버 응답을 기다리지 않고 먼저 목록에서 지운다 — 삭제가 실패해도(네트워크
     // 순간 오류 등) 사용자 입장에서 크게 문제되지 않고, 다음 조회 시 서버 상태로
     // 다시 맞춰진다.
     setPhotos((prev) => prev.filter((p) => p.id !== photoId));
     try {
-      await deleteWorkPhoto(jobId, photoId);
+      await deleteWorkPhoto(jobId, photoId, ownerToken);
     } catch {
       // 무시 — 위 주석 참고
     }
   }
 
   async function handleGenerateBlog() {
+    if (!ownerToken) return;
     setError(null);
     setGenerating(true);
     try {
-      const post = await generateBlogPost(jobId);
+      const post = await generateBlogPost(jobId, ownerToken);
       setBlogPost(post);
     } catch (err) {
       setError(err instanceof Error ? err.message : "블로그 글 생성에 실패했습니다.");
@@ -91,6 +98,7 @@ export default function SitePhotoGallery({ jobId, initialPhotos, initialBlogPost
   }
 
   async function handleDeleteBlog() {
+    if (!ownerToken) return;
     if (!confirmingDelete) {
       setConfirmingDelete(true);
       return;
@@ -98,7 +106,7 @@ export default function SitePhotoGallery({ jobId, initialPhotos, initialBlogPost
     setError(null);
     setDeleting(true);
     try {
-      await deleteBlogPost(jobId);
+      await deleteBlogPost(jobId, ownerToken);
       setBlogPost(undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : "블로그 글 삭제에 실패했습니다.");
@@ -108,13 +116,18 @@ export default function SitePhotoGallery({ jobId, initialPhotos, initialBlogPost
     }
   }
 
+  // 학생 기기에는 올려둔 사진·블로그 글이 하나도 없으면 아예 보여줄 게 없다 —
+  // 추가·삭제는 사장님 기기 전용이라 빈 갤러리만 뜨는 건 혼란스럽다.
+  if (!isOwner && photos.length === 0 && !blogPost) return null;
+
   return (
     <div className="space-y-5 glass-panel p-6">
       <div>
         <h3 className="text-sm font-semibold text-slate-800">작업사진 촬영</h3>
         <p className="mt-0.5 text-xs text-slate-400">
-          현장을 방문할 때마다 시공 전/작업 중/시공 후 사진을 찍어 올려두면, 아래에서 AI가 그 사진으로
-          블로그 후기 글을 자동으로 써드립니다
+          {isOwner
+            ? "현장을 방문할 때마다 시공 전/작업 중/시공 후 사진을 찍어 올려두면, 아래에서 AI가 그 사진으로 블로그 후기 글을 자동으로 써드립니다"
+            : "사진 추가·삭제와 블로그 글 작성은 사장님 기기에서만 할 수 있어요"}
         </p>
       </div>
 
@@ -138,61 +151,71 @@ export default function SitePhotoGallery({ jobId, initialPhotos, initialBlogPost
                       alt={stage.label}
                       className="h-full w-full object-cover"
                     />
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(photo.id)}
-                      className="absolute right-0.5 top-0.5 hidden rounded bg-black/60 p-0.5 text-white group-hover:block"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
+                    {isOwner && (
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(photo.id)}
+                        className="absolute right-0.5 top-0.5 hidden rounded bg-black/60 p-0.5 text-white group-hover:block"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    )}
                   </div>
                 ))}
                 {/* 촬영(카메라)·앨범 두 버튼을 나란히 둔다 — 현장에 따라 그 자리에서
                     찍거나, 미리 찍어둔 사진을 바로 골라 쓸 수 있다. 같은 크기·모양의
                     유리 타일이라 둘 중 무엇을 눌러도 같은 무게로 느껴진다. */}
-                <button
-                  type="button"
-                  onClick={() => setCameraStage(stage.id)}
-                  disabled={isUploading}
-                  aria-label={`${stage.label} 사진 촬영`}
-                  className="group flex aspect-square flex-col items-center justify-center gap-0.5 rounded-md border border-slate-200/70 bg-white/60 text-slate-400 backdrop-blur-md transition-all duration-200 hover:border-indigo-300 hover:bg-indigo-50/70 hover:text-indigo-500 active:scale-95 disabled:opacity-50"
-                >
-                  {isUploading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      <Camera className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
-                      <span className="text-[10px]">촬영</span>
-                    </>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => inputRefs[stage.id].current?.click()}
-                  disabled={isUploading}
-                  aria-label={`${stage.label} 앨범에서 선택`}
-                  className="group flex aspect-square flex-col items-center justify-center gap-0.5 rounded-md border border-slate-200/70 bg-white/60 text-slate-400 backdrop-blur-md transition-all duration-200 hover:border-indigo-300 hover:bg-indigo-50/70 hover:text-indigo-500 active:scale-95 disabled:opacity-50"
-                >
-                  <ImagePlus className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
-                  <span className="text-[10px]">앨범</span>
-                </button>
+                {isOwner && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setCameraStage(stage.id)}
+                      disabled={isUploading}
+                      aria-label={`${stage.label} 사진 촬영`}
+                      className="group flex aspect-square flex-col items-center justify-center gap-0.5 rounded-md border border-slate-200/70 bg-white/60 text-slate-400 backdrop-blur-md transition-all duration-200 hover:border-indigo-300 hover:bg-indigo-50/70 hover:text-indigo-500 active:scale-95 disabled:opacity-50"
+                    >
+                      {isUploading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <>
+                          <Camera className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
+                          <span className="text-[10px]">촬영</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => inputRefs[stage.id].current?.click()}
+                      disabled={isUploading}
+                      aria-label={`${stage.label} 앨범에서 선택`}
+                      className="group flex aspect-square flex-col items-center justify-center gap-0.5 rounded-md border border-slate-200/70 bg-white/60 text-slate-400 backdrop-blur-md transition-all duration-200 hover:border-indigo-300 hover:bg-indigo-50/70 hover:text-indigo-500 active:scale-95 disabled:opacity-50"
+                    >
+                      <ImagePlus className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
+                      <span className="text-[10px]">앨범</span>
+                    </button>
+                  </>
+                )}
               </div>
-              <input
-                type="text"
-                value={captions[stage.id]}
-                onChange={(e) => setCaptions((prev) => ({ ...prev, [stage.id]: e.target.value }))}
-                placeholder="메모(선택)"
-                className="w-full min-w-0 rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-600 outline-none placeholder:text-slate-300 focus:border-blue-400"
-              />
+              {isOwner && (
+                <input
+                  type="text"
+                  value={captions[stage.id]}
+                  onChange={(e) => setCaptions((prev) => ({ ...prev, [stage.id]: e.target.value }))}
+                  placeholder="메모(선택)"
+                  className="w-full min-w-0 rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-600 outline-none placeholder:text-slate-300 focus:border-blue-400"
+                />
+              )}
               {/* capture 속성은 쓰지 않는다 — 기본 카메라 앱이 열리면 촬영본이 폰
                   갤러리에 그대로 쌓인다. 이 입력은 앨범에서 고를 때만 쓴다. */}
-              <input
-                ref={inputRefs[stage.id]}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => handleFile(stage.id, e)}
-              />
+              {isOwner && (
+                <input
+                  ref={inputRefs[stage.id]}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => handleFile(stage.id, e)}
+                />
+              )}
             </div>
           );
         })}
@@ -210,53 +233,59 @@ export default function SitePhotoGallery({ jobId, initialPhotos, initialBlogPost
                 >
                   블로그에서 보기 <ExternalLink className="h-3 w-3" />
                 </Link>
-                <button
-                  type="button"
-                  onClick={handleDeleteBlog}
-                  onBlur={() => setConfirmingDelete(false)}
-                  disabled={deleting}
-                  className={`flex items-center gap-1 text-xs font-medium disabled:opacity-50 ${
-                    confirmingDelete ? "text-red-600" : "text-slate-400 hover:text-red-500"
-                  }`}
-                >
-                  {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
-                  {deleting ? "삭제 중..." : confirmingDelete ? "한 번 더 누르면 삭제" : "삭제"}
-                </button>
+                {isOwner && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteBlog}
+                    onBlur={() => setConfirmingDelete(false)}
+                    disabled={deleting}
+                    className={`flex items-center gap-1 text-xs font-medium disabled:opacity-50 ${
+                      confirmingDelete ? "text-red-600" : "text-slate-400 hover:text-red-500"
+                    }`}
+                  >
+                    {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                    {deleting ? "삭제 중..." : confirmingDelete ? "한 번 더 누르면 삭제" : "삭제"}
+                  </button>
+                )}
               </div>
             </div>
             <p className="line-clamp-3 whitespace-pre-line text-xs text-slate-500">{blogPost.content}</p>
 
-            <button
-              type="button"
-              onClick={handleGenerateBlog}
-              disabled={generating}
-              className="text-xs font-medium text-slate-400 hover:text-slate-600 disabled:opacity-50"
-            >
-              {generating ? "다시 생성하는 중..." : "다시 생성하기"}
-            </button>
+            {isOwner && (
+              <button
+                type="button"
+                onClick={handleGenerateBlog}
+                disabled={generating}
+                className="text-xs font-medium text-slate-400 hover:text-slate-600 disabled:opacity-50"
+              >
+                {generating ? "다시 생성하는 중..." : "다시 생성하기"}
+              </button>
+            )}
           </div>
         ) : (
-          <>
-            <button
-              type="button"
-              onClick={handleGenerateBlog}
-              disabled={generating || photos.length === 0}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-            >
-              {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              {generating ? "AI가 블로그 글을 쓰는 중..." : "AI로 블로그 글 쓰기"}
-            </button>
-            {photos.length === 0 && (
-              <p className="mt-1.5 text-center text-[11px] text-slate-300">
-                현장 사진을 먼저 올리면 생성할 수 있습니다
-              </p>
-            )}
-          </>
+          isOwner && (
+            <>
+              <button
+                type="button"
+                onClick={handleGenerateBlog}
+                disabled={generating || photos.length === 0}
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                {generating ? "AI가 블로그 글을 쓰는 중..." : "AI로 블로그 글 쓰기"}
+              </button>
+              {photos.length === 0 && (
+                <p className="mt-1.5 text-center text-[11px] text-slate-300">
+                  현장 사진을 먼저 올리면 생성할 수 있습니다
+                </p>
+              )}
+            </>
+          )
         )}
       </div>
 
       <CameraSheet
-        open={cameraStage !== null}
+        open={isOwner && cameraStage !== null}
         onCapture={(file) => {
           if (cameraStage) void uploadPhoto(cameraStage, file);
         }}

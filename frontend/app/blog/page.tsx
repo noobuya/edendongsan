@@ -3,10 +3,10 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { AlertCircle, Loader2, Search, Trash2 } from "lucide-react";
+import { AlertCircle, Loader2, Search } from "lucide-react";
 import AssetImage from "@/components/AssetImage";
 import BusinessBanner from "@/components/BusinessBanner";
-import { deleteBlogPost, listBlogPosts } from "@/lib/api";
+import { listBlogPosts } from "@/lib/api";
 import type { BlogSummary } from "@/types";
 import { useAndroidBack } from "@/lib/useAndroidBack";
 
@@ -28,8 +28,6 @@ export default function BlogListPage() {
   const [posts, setPosts] = useState<BlogSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [confirmingId, setConfirmingId] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -40,26 +38,6 @@ export default function BlogListPage() {
     }, 250);
     return () => clearTimeout(handle);
   }, [query]);
-
-  async function handleDelete(e: React.MouseEvent, jobId: string) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (confirmingId !== jobId) {
-      setConfirmingId(jobId);
-      return;
-    }
-    setError(null);
-    setDeletingId(jobId);
-    try {
-      await deleteBlogPost(jobId);
-      setPosts((prev) => prev?.filter((p) => p.job_id !== jobId) ?? prev);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "후기 삭제에 실패했습니다.");
-    } finally {
-      setDeletingId(null);
-      setConfirmingId(null);
-    }
-  }
 
   return (
     <main className="mx-auto min-h-dvh max-w-4xl px-4 py-10 xs:px-6">
@@ -125,24 +103,8 @@ export default function BlogListPage() {
                 </div>
               )}
             </div>
-            <button
-              type="button"
-              onClick={(e) => handleDelete(e, post.job_id)}
-              onBlur={() => setConfirmingId(null)}
-              disabled={deletingId === post.job_id}
-              className={`absolute right-2 top-2 flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium shadow-sm backdrop-blur transition-colors disabled:opacity-50 ${
-                confirmingId === post.job_id
-                  ? "bg-red-600 text-white"
-                  : "bg-white/90 text-slate-500 hover:bg-white hover:text-red-500"
-              }`}
-            >
-              {deletingId === post.job_id ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <Trash2 className="h-3 w-3" />
-              )}
-              {confirmingId === post.job_id ? "한 번 더 누르면 삭제" : "삭제"}
-            </button>
+            {/* 삭제는 사장님 기기의 결과 화면(작업사진 패널)에서만 한다 — 이 페이지는
+                누구나 열 수 있는 공개 페이지라 삭제 버튼을 두지 않는다. */}
             <div className="space-y-1.5 p-4">
               <p className="line-clamp-2 text-sm font-semibold text-slate-900">{post.title}</p>
               <p className="line-clamp-2 text-xs text-slate-500">{post.excerpt}</p>

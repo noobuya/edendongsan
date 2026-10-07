@@ -2,9 +2,10 @@ import io
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
 
+from app.owner_auth import is_owner
 from app.quotes_store import (
     append_work_photo,
     clear_blog_post,
@@ -22,7 +23,15 @@ from app.schemas import (
 )
 from app.services.blog_writer import generate_blog_post
 
-router = APIRouter(prefix="/api/quotes", tags=["quotes"])
+
+def _require_owner(x_admin_token: str | None = Header(default=None)) -> None:
+    """견적서 목록·현장 사진·블로그 글은 고객 이름·금액이 들어 있는 사장님 전용 자료다.
+    저장된 견적서를 누구나(학생 기기 포함) 인증 없이 조회·수정할 수 있던 문제를 막는다."""
+    if not is_owner(x_admin_token):
+        raise HTTPException(status_code=401, detail="사장님 기기에서만 쓸 수 있어요.")
+
+
+router = APIRouter(prefix="/api/quotes", tags=["quotes"], dependencies=[Depends(_require_owner)])
 
 
 def _to_static_url(storage_path: str) -> str:

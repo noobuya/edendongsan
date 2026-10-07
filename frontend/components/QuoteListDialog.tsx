@@ -11,6 +11,8 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onSelect: (jobId: string) => void;
+  /** 견적서 목록은 사장님 전용 자료라 토큰이 있어야 조회된다. */
+  ownerToken: string;
 }
 
 function formatDate(iso: string): string {
@@ -30,7 +32,7 @@ function won(amount: number): string {
   return `${amount.toLocaleString("ko-KR")}원`;
 }
 
-export default function QuoteListDialog({ open, onClose, onSelect }: Props) {
+export default function QuoteListDialog({ open, onClose, onSelect, ownerToken }: Props) {
   const [quotes, setQuotes] = useState<QuoteSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -40,10 +42,10 @@ export default function QuoteListDialog({ open, onClose, onSelect }: Props) {
     setQuotes(null);
     setError(null);
     setQuery("");
-    listQuotes()
+    listQuotes(ownerToken)
       .then(setQuotes)
       .catch((err) => setError(err instanceof Error ? err.message : "불러오기에 실패했습니다."));
-  }, [open]);
+  }, [open, ownerToken]);
 
   const filteredQuotes = useMemo(() => {
     if (!quotes) return null;

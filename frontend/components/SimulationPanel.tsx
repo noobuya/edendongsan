@@ -26,9 +26,12 @@ const EDIT_TIMEOUT_MS = 90_000;
 
 export default function SimulationPanel({
   job,
+  ownerToken,
   onSecretHold,
 }: {
   job: JobStatusResponse;
+  /** 사장님 기기의 관리자 토큰. 현장 사진 업로드·블로그 글 작성은 사장님 전용이다. */
+  ownerToken: string | null;
   /** 견적서 안 상호 뱃지를 3초 길게 눌렀을 때 — 단가 설정을 연다. */
   onSecretHold?: () => void;
 }) {
@@ -300,6 +303,7 @@ export default function SimulationPanel({
           jobId={liveJob.job_id}
           initialPhotos={liveJob.work_photos}
           initialBlogPost={liveJob.blog_post}
+          ownerToken={ownerToken}
         />
       </div>
     </div>

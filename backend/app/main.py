@@ -28,6 +28,14 @@ app.include_router(admin.router)
 app.include_router(admin_automation.router)
 
 
+# 프론트가 켜질 때마다 "서버에 닿는지"만 확인하는 공개 핑. 인증이나 고객 데이터가
+# 없는 엔드포인트라야 한다 — 예전엔 /api/quotes로 확인했는데, 그 라우터를 사장님
+# 전용으로 잠그면서 학생 기기에서는 서버가 멀쩡해도 "연결 안 됨"으로 잘못 떴다.
+@app.get("/api/health")
+async def health() -> dict:
+    return {"ok": True}
+
+
 # 견적 계산기(estimator_app, Flask)를 같은 서버 아래 /estimator 로 함께 서비스한다.
 # ngrok 무료 플랜은 고정 도메인이 하나뿐이라, 이렇게 해야 같은 주소로 두 화면을 다 열 수 있다.
 # 실패해도 메인 백엔드는 그대로 떠야 하므로 예외는 삼키고 경고만 남긴다.
