@@ -479,6 +479,7 @@ export interface AutomationField {
   label: string;
   type: "text" | "number" | "password" | "textarea";
   required: boolean;
+  secret: boolean;
   placeholder: string;
 }
 export interface AutomationTask {
@@ -534,6 +535,13 @@ export const automationCreate = (code: string, task: string, params: Record<stri
 export const automationCancel = (code: string, id: string) =>
   automationFetch<{ ok: boolean }>(`/jobs/${id}`, code, { method: "DELETE" });
 
+/** 수강생 피드백. 작업 한 건(job_id)에 대한 것이거나 일반 의견이다. */
+export type FeedbackKind = "bug" | "improve" | "other";
+export const automationSendFeedback = (
+  code: string,
+  payload: { kind: FeedbackKind; message: string; job_id?: string },
+) => automationFetch<{ id: string }>("/feedback", code, { method: "POST", body: JSON.stringify(payload) });
+
 /** 관리자 화면 전용: 수강생 코드 목록·추가·삭제. 토큰은 서버 .env의 ADMIN_TOKEN과 같아야 한다. */
 export type AdminStudent = {
   name: string;
@@ -583,3 +591,59 @@ export const adminAddStudent = (token: string, name: string) =>
   adminFetch<AdminStudent>("", token, { method: "POST", body: JSON.stringify({ name }) });
 export const adminRemoveStudent = (token: string, name: string) =>
   adminFetch<{ ok: boolean }>(`/${encodeURIComponent(name)}`, token, { method: "DELETE" });
+
+/* 관리자 자동화 화면 (/admin/automation). 토큰은 X-Admin-Token으로 보낸다. */
+export type FeedbackStatus = "received" | "reviewing" | "done" | "hold";
+export interface AutomationFeedback {
+  id: string;
+  owner: string;
+  kind: FeedbackKind;
+  message: string;
+  job_id: string | null;
+  status: FeedbackStatus;
+  admin_note: string;
+  created: number;
+  context: {
+    task?: string;
+    status?: AutomationJob["status"];
+    error?: string | null;
+    params?: Record<string, string>;
+    log_tail?: string[];
+    missing?: boolean;
+  };
+}
+export interface AdminAutomationJob {
+  id: string;
+  owner: string;
+  task: string;
+  status: AutomationJob["status"];
+  params: Record<string, string>;
+  log: string[];
+  error: string | null;
+  created: number;
+  finished: number | null;
+}
+
+async function adminAutomationFetch<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
+  const res = await apiFetch(`${API_BASE}/api/admin/automation${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", "X-Admin-Token": token, ...init.headers },
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "요청에 실패했습니다."));
+  return res.json();
+}
+
+export const adminAutomationTasks = (token: string) => adminAutomationFetch<AutomationTask[]>("/tasks", token);
+export const adminAutomationJobs = (token: string) => adminAutomationFetch<AdminAutomationJob[]>("/jobs", token);
+export const adminAutomationFeedback = (token: string) =>
+  adminAutomationFetch<AutomationFeedback[]>("/feedback", token);
+export const adminAutomationUpdateFeedback = (token: string, id: string, status: FeedbackStatus, adminNote: string) =>
+  adminAutomationFetch<AutomationFeedback>(`/feedback/${encodeURIComponent(id)}`, token, {
+    method: "PATCH",
+    body: JSON.stringify({ status, admin_note: adminNote }),
+  });
+export const adminAutomationRerun = (token: string, jobId: string, params: Record<string, string>) =>
+  adminAutomationFetch<AutomationJob>(`/jobs/${encodeURIComponent(jobId)}/rerun`, token, {
+    method: "POST",
+    body: JSON.stringify({ params }),
+  });

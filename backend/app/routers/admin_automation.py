@@ -50,7 +50,10 @@ async def admin_rerun(job_id: str, req: RerunIn, x_admin_token: str | None = Hea
         if len(value) > 2000:
             raise HTTPException(422, f"'{f.label}'이(가) 너무 깁니다.")
         (secrets if f.secret else params)[f.key] = value
-    return store.enqueue_rerun(owner, task.id, params, secrets)
+    try:
+        return store.enqueue(owner, task.id, params, secrets)
+    except ValueError as exc:
+        raise HTTPException(429, str(exc)) from exc
 
 
 @router.get("/feedback")

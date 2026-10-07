@@ -37,6 +37,12 @@ def _conn():
             status TEXT NOT NULL, log TEXT NOT NULL DEFAULT '', result TEXT,
             error TEXT, created REAL NOT NULL, started REAL, finished REAL)"""
     )
+    con.execute(
+        """CREATE TABLE IF NOT EXISTS feedback (
+            id TEXT PRIMARY KEY, owner TEXT NOT NULL, kind TEXT NOT NULL,
+            message TEXT NOT NULL, job_id TEXT, status TEXT NOT NULL DEFAULT 'received',
+            admin_note TEXT NOT NULL DEFAULT '', created REAL NOT NULL)"""
+    )
     try:
         yield con
     finally:
@@ -160,3 +166,96 @@ def recover_stuck() -> None:
             "secrets='{}', finished=? WHERE status='running'",
             (time.time(),),
         )
+
+
+# ---- 피드백 (수강생 → 관리자) ----
+
+def _job_context(con: sqlite3.Connection, job_id: str | None) -> dict:
+    """피드백에 붙여 보여줄 작업 정보. secrets는 빼고 파라미터와 로그 끝부분만 준다."""
+    if not job_id:
+        return {}
+    row = con.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+    if row is None:
+        return {"missing": True}
+    return {
+        "task": row["task"],
+        "status": row["status"],
+        "error": row["error"],
+        "params": json.loads(row["params"]),
+        "log_tail": row["log"].splitlines()[-20:],
+    }
+
+
+def _feedback_view(row: sqlite3.Row, con: sqlite3.Connection) -> dict:
+    return {
+        "id": row["id"],
+        "owner": row["owner"],
+        "kind": row["kind"],
+        "message": row["message"],
+        "job_id": row["job_id"],
+        "status": row["status"],
+        "admin_note": row["admin_note"],
+        "created": row["created"],
+        "context": _job_context(con, row["job_id"]),
+    }
+
+
+def add_feedback(owner: str, kind: str, message: str, job_id: str | None) -> dict:
+    with _conn() as con:
+        if job_id and con.execute(
+            "SELECT 1 FROM jobs WHERE id=? AND owner=?", (job_id, owner)
+        ).fetchone() is None:
+            raise LookupError("작업을 찾을 수 없어요.")
+        fid = uuid.uuid4().hex[:12]
+        con.execute(
+            "INSERT INTO feedback (id, owner, kind, message, job_id, created) VALUES (?,?,?,?,?,?)",
+            (fid, owner, kind, message, job_id or None, time.time()),
+        )
+        return _feedback_view(con.execute("SELECT * FROM feedback WHERE id=?", (fid,)).fetchone(), con)
+
+
+def list_feedback() -> list[dict]:
+    with _conn() as con:
+        rows = con.execute("SELECT * FROM feedback ORDER BY created DESC").fetchall()
+        return [_feedback_view(r, con) for r in rows]
+
+
+def set_feedback_status(fid: str, status: str, note: str) -> dict | None:
+    with _conn() as con:
+        cur = con.execute("UPDATE feedback SET status=?, admin_note=? WHERE id=?", (status, note, fid))
+        if cur.rowcount == 0:
+            return None
+        return _feedback_view(con.execute("SELECT * FROM feedback WHERE id=?", (fid,)).fetchone(), con)
+
+
+# ---- 관리자 작업 로그·재실행 ----
+
+def list_all_for_admin(limit: int = 200) -> list[dict]:
+    with _conn() as con:
+        rows = con.execute("SELECT * FROM jobs ORDER BY created DESC LIMIT ?", (limit,)).fetchall()
+        return [
+            {
+                "id": r["id"],
+                "owner": r["owner"],
+                "task": r["task"],
+                "status": r["status"],
+                "params": json.loads(r["params"]),
+                "log": r["log"].splitlines()[-200:],
+                "error": r["error"],
+                "created": r["created"],
+                "finished": r["finished"],
+            }
+            for r in rows
+        ]
+
+
+def get_job_context(job_id: str) -> dict | None:
+    with _conn() as con:
+        row = con.execute("SELECT task, params FROM jobs WHERE id=?", (job_id,)).fetchone()
+        return {"task": row["task"], "params": json.loads(row["params"])} if row else None
+
+
+def get_owner(job_id: str) -> str | None:
+    with _conn() as con:
+        row = con.execute("SELECT owner FROM jobs WHERE id=?", (job_id,)).fetchone()
+        return row["owner"] if row else None

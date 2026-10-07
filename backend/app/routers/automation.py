@@ -2,6 +2,7 @@
 import datetime
 import hmac
 import re
+from typing import Literal
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
@@ -135,3 +136,21 @@ async def cancel_job(job_id: str, x_access_code: str | None = Header(default=Non
     if not store.cancel(job_id, _owner(x_access_code)):
         raise HTTPException(409, "대기 중인 작업만 취소할 수 있어요.")
     return {"ok": True}
+
+
+class FeedbackIn(BaseModel):
+    kind: Literal["bug", "improve", "other"]
+    message: str = Field(min_length=1, max_length=1000)
+    job_id: str | None = None
+
+
+@router.post("/feedback")
+async def send_feedback(req: FeedbackIn, x_access_code: str | None = Header(default=None)):
+    owner = _owner(x_access_code)
+    message = req.message.strip()
+    if not message:
+        raise HTTPException(422, "내용을 입력해 주세요.")
+    try:
+        return store.add_feedback(owner, req.kind, message, req.job_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
