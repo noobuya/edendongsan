@@ -62,7 +62,7 @@ async def create_job(
             # 눕혀진 사진이 파이프라인에 들어가 SAM/Gemini 인식률이 크게 떨어진다
             # (실제 업로드본 중 90도 누운 채로 저장된 건이 있었다).
             normalized = ImageOps.exif_transpose(img).convert("RGB")
-    except (UnidentifiedImageError, OSError) as exc:
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         raise HTTPException(
             status_code=422,
             detail="사진 파일을 읽을 수 없습니다. 파일이 손상되었거나 지원하지 않는 형식일 수 있습니다 "
@@ -135,7 +135,7 @@ def _decode_mask(raw: bytes, size: tuple[int, int]) -> Image.Image:
     try:
         with Image.open(io.BytesIO(raw)) as mask:
             gray = mask.convert("L")
-    except (UnidentifiedImageError, OSError) as exc:
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         raise ValueError("이미지를 열 수 없습니다") from exc
 
     if gray.size != size:

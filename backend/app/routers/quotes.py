@@ -74,7 +74,7 @@ async def upload_work_photo(
     try:
         with Image.open(io.BytesIO(raw_bytes)) as img:
             normalized = img.convert("RGB")
-    except (UnidentifiedImageError, OSError) as exc:
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         raise HTTPException(
             status_code=422,
             detail="사진 파일을 읽을 수 없습니다. 파일이 손상되었거나 지원하지 않는 형식일 수 있습니다.",

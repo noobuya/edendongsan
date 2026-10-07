@@ -148,7 +148,7 @@ async def save_edited_image(job_id: str, image: UploadFile = File(...)):
     try:
         with Image.open(io.BytesIO(raw_bytes)) as img:
             normalized = img.convert("RGB")
-    except (UnidentifiedImageError, OSError) as exc:
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         raise HTTPException(status_code=422, detail="편집 결과 이미지를 읽을 수 없습니다.") from exc
 
     edited_path = f"storage/results/{job_id}_edited_{uuid.uuid4().hex[:8]}.png"
@@ -264,7 +264,7 @@ def _decode_mask(raw: bytes, size: tuple[int, int]) -> Image.Image:
     try:
         with Image.open(io.BytesIO(raw)) as mask:
             gray = mask.convert("L")
-    except (UnidentifiedImageError, OSError) as exc:
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         raise ValueError("이미지를 열 수 없습니다") from exc
     if gray.size != size:
         gray = gray.resize(size, Image.NEAREST)
