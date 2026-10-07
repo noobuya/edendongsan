@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   AppWindow,
   ArrowLeft,
+  BrickWall,
   CheckSquare,
   DoorClosed,
   Info,
@@ -46,7 +47,7 @@ const MARGIN_OFFSET_STEP_MM = 5;
 const QTY_MIN = 1;
 const QTY_MAX = 20;
 
-type Category = "sash" | "door" | "cabinet" | "molding";
+type Category = "sash" | "door" | "cabinet" | "molding" | "wall";
 
 // [문짝 파라메트릭 도안 시스템 — 현장 실무 피드백 반영]
 // 문짝이 전부 평평한 통판(민짜문)은 아니다. 알판/격자문은 홈이 파여 있어 통판 한 장으로
@@ -179,6 +180,18 @@ const CATEGORIES: CategoryConfig[] = [
     note: "긴 길이(m) 기준 — 양 끝에만 여유분을 둡니다",
     presets: [{ label: "걸레받이", lengthM: 2.4, stripWidthMm: 100 }],
   },
+  {
+    id: "wall",
+    label: "벽면",
+    shortLabel: "벽",
+    icon: BrickWall,
+    tone: "bg-rose-500/15 text-rose-300",
+    mapColor: "#fb7185",
+    linear: false,
+    defaultThicknessMm: 0,
+    note: "벽마다 크기가 달라 표준 규격이 없어요 — 가로×세로 실측을 입력하세요",
+    presets: [],
+  },
 ];
 
 function categoryOf(id: Category): CategoryConfig {
@@ -214,7 +227,7 @@ interface CutItem {
 }
 
 const STORAGE_KEY = "eden_cutting_list_v1";
-const EMPTY_SEQ: Record<Category, number> = { sash: 0, door: 0, cabinet: 0, molding: 0 };
+const EMPTY_SEQ: Record<Category, number> = { sash: 0, door: 0, cabinet: 0, molding: 0, wall: 0 };
 
 /** localStorage에 저장해 둔 재단 리스트를 읽는다. 컴포넌트 state를 만드는 시점에
  *  (useState의 지연 초기화로) 바로 불러 써야 저장/불러오기 순서가 어긋날 일이 없다. */
@@ -466,7 +479,12 @@ const VOICE_CATEGORY_PATTERNS: [RegExp, Category][] = [
   [/싱크대|옷장|도어|캐비닛/, "cabinet"],
   [/샷시|창틀|창문/, "sash"],
   [/걸레받이|몰딩/, "molding"],
+  [/벽면|벽/, "wall"],
 ];
+/** 마이크를 누르면 보여줄 말투 예시. 표준 규격이 있는 부위는 "부위 + 개수"만 알아듣는다
+ *  (위 VOICE_CATEGORY_PATTERNS·KOREAN_COUNT_WORDS 참고). 샷시·벽면처럼 표준 규격이 없는
+ *  부위는 예시에서 뺀다 — 말해도 "치수를 직접 입력해 주세요"로 돌아가기 때문이다. */
+const VOICE_EXAMPLES = ["방문 두 개 추가", "싱크대 도어 세 개", "걸레받이 한 개"];
 const KOREAN_COUNT_WORDS: Record<string, number> = {
   한: 1,
   하나: 1,
@@ -860,7 +878,7 @@ export default function CuttingCalculatorPage() {
     setLastHeard(text);
     const { category: cat, qty } = parseVoiceCommand(text);
     if (!cat) {
-      showToast(`"${text}" — 부위를 못 알아들었어요. 방문·샷시·싱크대·걸레받이 중 말씀해 주세요`);
+      showToast(`"${text}" — 부위를 못 알아들었어요. 방문·샷시·싱크대·걸레받이·벽면 중 말씀해 주세요`);
       return;
     }
     const cfg = categoryOf(cat);
@@ -998,7 +1016,7 @@ export default function CuttingCalculatorPage() {
         </header>
 
         {/* 부위 선택 */}
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-5 gap-2">
           {CATEGORIES.map((c) => {
             const Icon = c.icon;
             const active = c.id === category;
@@ -1065,6 +1083,19 @@ export default function CuttingCalculatorPage() {
           <p className="mt-1.5 flex items-center gap-1.5 px-1 text-[11.5px] text-[#6b7480]">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" />이 브라우저는 음성 인식을 지원하지 않아요(삼성 인터넷 일부 버전 등)
           </p>
+        )}
+        {/* 마이크를 누르는 순간 "어떻게 말해야 하는지" 예시를 보여준다 — 누르고 나서
+            무슨 말을 해야 할지 몰라 머뭇거리다 인식 시간이 끝나버리는 일이 없게. */}
+        {listening && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 px-1 text-[11.5px] text-[#9aa4b2]">
+            <Mic className="h-3.5 w-3.5 shrink-0 animate-pulse text-red-400" />
+            이렇게 말해보세요:
+            {VOICE_EXAMPLES.map((ex) => (
+              <span key={ex} className="rounded-full bg-[#16191f] px-2.5 py-1 font-medium text-[#f2f4f6]">
+                &ldquo;{ex}&rdquo;
+              </span>
+            ))}
+          </div>
         )}
         {lastHeard && (
           <p className="mt-1.5 px-1 text-[11.5px] text-[#6b7480]">
