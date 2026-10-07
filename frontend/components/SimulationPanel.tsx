@@ -225,6 +225,14 @@ export default function SimulationPanel({
                   onSelectRegion={handleSelectRegion}
                   editingRegionId={liveJob.editing ? liveJob.editing_region_id : null}
                 />
+                {/* 부위를 고르면(점선 테두리) 색을 바꾸는 곳은 바로 옆 탭이다 —
+                    고객 앞 결과지에는 색상 칩을 섞지 않는다는 원칙을 지키면서도
+                    "선택은 했는데 아무 반응이 없다"는 느낌이 없도록 다음 동작을 알려준다. */}
+                {selectedRegionId && !liveJob.editing && (
+                  <p className="border-t border-slate-200 bg-indigo-50/60 px-4 py-2.5 text-[12px] font-semibold text-indigo-700">
+                    {selectedRegionLabel} 선택됨 — 위 [구역 부분 편집] 탭에서 색상을 고르면 바로 적용돼요
+                  </p>
+                )}
               </div>
             ) : (
               <div className="flex aspect-[4/3] items-center justify-center text-sm text-slate-400">
@@ -240,6 +248,33 @@ export default function SimulationPanel({
                   jobId={liveJob.job_id}
                   imageUrl={resultUrl}
                   busy={liveJob.editing}
+                  extras={
+                    resolvedRegions.length > 0 ? (
+                      <div className="space-y-3">
+                        <div>
+                          <p className="text-[13px] font-bold text-slate-800">인식된 부위 색상 바꾸기</p>
+                          <p className="mt-0.5 text-[12px] leading-relaxed text-slate-500">
+                            [시공 결과] 탭 사진에서 바꿀 부위를 눌러 선택한 뒤, 여기서 색을 고르면 그 부위만 바로 다시 칠해요.
+                          </p>
+                        </div>
+                        <p className="text-[12px] font-semibold text-slate-600">
+                          {selectedRegionId ? `${selectedRegionLabel} 선택됨` : "아직 선택한 부위가 없어요"}
+                        </p>
+                        <div className={liveJob.editing ? "pointer-events-none opacity-40" : ""}>
+                          <SwatchPicker swatches={PATTERN_SWATCHES} selectedId={lastColorId} onSelect={handleSwatchSelect} size="sm" />
+                        </div>
+                        {pickHint && (
+                          <p className="flex items-center gap-1.5 text-[12px] font-semibold text-rose-600">
+                            <MousePointerClick className="h-3.5 w-3.5 shrink-0" />
+                            먼저 [시공 결과] 탭 사진에서 바꿀 부위를 눌러 선택해 주세요
+                          </p>
+                        )}
+                        {liveJob.edit_error && (
+                          <p className="text-[12px] font-semibold text-rose-600">{liveJob.edit_error}</p>
+                        )}
+                      </div>
+                    ) : undefined
+                  }
                   onSubmitted={() => {
                     setLiveJob((prev) => ({ ...prev, editing: true, edit_error: undefined }));
                     startEditPolling(liveJob.job_id);
