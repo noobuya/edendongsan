@@ -32,13 +32,6 @@ TOILET_SPECS = {
     "bidet_combo": {"name": "비데 일체형 변기", "prompt_keyword": "integrated bidet smart toilet"},
 }
 
-# 유리 시공 종류. 썬팅은 면적(㎡)당, 일러스트(컷팅 그래픽)는 건당으로 계산한다.
-GLASS_WORK_TYPES = {
-    "tint": {"name": "썬팅만"},
-    "illust": {"name": "일러스트만"},
-    "both": {"name": "썬팅 + 일러스트"},
-}
-
 GLASS_TINT_TYPES = {
     "clear": {"name": "투명 (자외선 차단)", "prompt_keyword": "clear transparent UV window film"},
     "frosted": {"name": "반투명 (불투명 시야차단)", "prompt_keyword": "frosted translucent privacy window film"},

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
+  Archive,
   AppWindow,
   ArrowLeft,
   BrickWall,
@@ -47,7 +48,7 @@ const MARGIN_OFFSET_STEP_MM = 5;
 const QTY_MIN = 1;
 const QTY_MAX = 20;
 
-type Category = "sash" | "door" | "cabinet" | "molding" | "wall";
+type Category = "sash" | "door" | "cabinet" | "decor" | "molding" | "wall";
 
 // [문짝 파라메트릭 도안 시스템 — 현장 실무 피드백 반영]
 // 문짝이 전부 평평한 통판(민짜문)은 아니다. 알판/격자문은 홈이 파여 있어 통판 한 장으로
@@ -83,7 +84,7 @@ function pieceCountOf(layout: DoorLayout): number {
 }
 const DEFAULT_FRAME_WIDTH_MM = 120; // 기둥·가로대(테두리) 폭의 현장 통용 기본값 — 화면에서 바로 고칠 수 있다
 // 문짝만 이 구조 선택지가 의미 있다(문틀/상하부장 등은 애초에 통판 개념이 없다).
-const DOOR_LIKE_CATEGORIES: Category[] = ["door", "cabinet"];
+const DOOR_LIKE_CATEGORIES: Category[] = ["door", "cabinet", "decor"];
 
 // [문짝은 입체다 — 기본적으로 앞/뒤 양면 시공]
 // 방문은 벽에 매달려 양쪽에서 다 보이는 입체물이라, 원칙적으로 앞면·뒷면 둘 다 필름을
@@ -168,6 +169,19 @@ const CATEGORIES: CategoryConfig[] = [
     presets: [{ label: "싱크대 도어", wMm: 400, hMm: 800 }],
   },
   {
+    id: "decor",
+    label: "장식장",
+    shortLabel: "장",
+    icon: Archive,
+    tone: "bg-violet-500/15 text-violet-300",
+    mapColor: "#a78bfa",
+    linear: false,
+    defaultThicknessMm: 18,
+    defaultFrameWidthMm: DEFAULT_FRAME_WIDTH_MM,
+    note: "장식장 문짝 두께(보통 15~18mm)만큼 옆면을 감싸 계산합니다. 크기가 제각각이라 표준 규격은 없어요",
+    presets: [],
+  },
+  {
     id: "molding",
     label: "걸레받이/몰딩",
     shortLabel: "걸",
@@ -227,7 +241,7 @@ interface CutItem {
 }
 
 const STORAGE_KEY = "eden_cutting_list_v1";
-const EMPTY_SEQ: Record<Category, number> = { sash: 0, door: 0, cabinet: 0, molding: 0, wall: 0 };
+const EMPTY_SEQ: Record<Category, number> = { sash: 0, door: 0, cabinet: 0, decor: 0, molding: 0, wall: 0 };
 
 /** localStorage에 저장해 둔 재단 리스트를 읽는다. 컴포넌트 state를 만드는 시점에
  *  (useState의 지연 초기화로) 바로 불러 써야 저장/불러오기 순서가 어긋날 일이 없다. */
@@ -476,6 +490,8 @@ function buildCutGuide(shelves: NestingShelf[]): CutGuideLine[] {
 // 범위를 좁혔다 — 표준 규격이 없는 샷시는 음성으로 추가할 수 없고, 화면에도 그렇게 안내한다.
 const VOICE_CATEGORY_PATTERNS: [RegExp, Category][] = [
   [/방문|문짝|문틀/, "door"],
+  // "장식장"은 "도어"를 포함해 말하는 경우가 많아(예: "장식장 도어") 싱크대 패턴보다 먼저 확인한다.
+  [/장식장|진열장/, "decor"],
   [/싱크대|옷장|도어|캐비닛/, "cabinet"],
   [/샷시|창틀|창문/, "sash"],
   [/걸레받이|몰딩/, "molding"],
@@ -878,7 +894,7 @@ export default function CuttingCalculatorPage() {
     setLastHeard(text);
     const { category: cat, qty } = parseVoiceCommand(text);
     if (!cat) {
-      showToast(`"${text}" — 부위를 못 알아들었어요. 방문·샷시·싱크대·걸레받이·벽면 중 말씀해 주세요`);
+      showToast(`"${text}" — 부위를 못 알아들었어요. 방문·샷시·싱크대·걸레받이·벽면·장식장 중 말씀해 주세요`);
       return;
     }
     const cfg = categoryOf(cat);
@@ -1016,7 +1032,7 @@ export default function CuttingCalculatorPage() {
         </header>
 
         {/* 부위 선택 */}
-        <div className="grid grid-cols-5 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           {CATEGORIES.map((c) => {
             const Icon = c.icon;
             const active = c.id === category;

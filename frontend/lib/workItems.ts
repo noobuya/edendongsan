@@ -112,7 +112,7 @@ export const DEFAULT_OPTIONS: JobOptionsState = {
     doors: [],
     doorframes: [],
   },
-  glass: { workType: "tint", tintType: "frosted", panels: [], illustCount: 0 },
+  glass: { workType: "tint", tintType: "frosted", panels: [] },
   // 개수 기본값은 0으로 둔다 — 사용자가 조명/실링팬 폼을 건드리지 않았는데도
   // 기본값(1대/4개)이 그대로 제출돼, 필름만 테스트하려던 사진에 실링팬·다운라이트
   // 아이콘이 뜬금없이 합성되는 문제가 있었다.
@@ -341,10 +341,8 @@ export function summarizeItem(item: WorkItemId, options: JobOptionsState): strin
     return count > 0 ? `창틀 ${count}개` : "창틀 크기를 입력해주세요";
   }
   if (item === "glass") {
-    const g = options.glass;
-    const labels: Record<string, string> = { tint: "썬팅", illust: "일러스트", both: "썬팅+일러스트" };
-    const panels = panelCount(g.panels);
-    return `${labels[g.workType]} · 유리 ${panels}장${g.illustCount ? ` · 그래픽 ${g.illustCount}건` : ""}`;
+    const panels = panelCount(options.glass.panels);
+    return `썬팅 · 유리 ${panels}장`;
   }
   if (item === "lighting") {
     const l = options.lighting;

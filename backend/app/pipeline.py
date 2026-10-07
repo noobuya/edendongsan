@@ -687,7 +687,7 @@ def _build_scene_instructions(
 
     if "glass" in selected_items and options.glass:
         glass = options.glass
-        if glass.work_type in ("tint", "both") and any(p.count > 0 for p in glass.panels):
+        if glass.work_type == "tint" and any(p.count > 0 for p in glass.panels):
             tint_phrase = GLASS_TINT_TYPES[glass.tint_type]["prompt_keyword"]
             instructions.append(
                 f"Apply {tint_phrase} to the glass door and glass panels, evenly covering the "

@@ -8,7 +8,7 @@ WorkItemId = Literal[
 ]
 MeshType = Literal["fine_20", "ultra_30", "pet_proof"]
 ToiletSpec = Literal["standard", "one_piece", "bidet_combo"]
-GlassWorkType = Literal["tint", "illust", "both"]
+GlassWorkType = Literal["tint"]
 GlassTintType = Literal["clear", "frosted", "mirror", "blackout"]
 CeilingMaterial = Literal["gypsum", "concrete", "wood_reinforced"]
 LightingInch = Literal["3", "4", "5"]
@@ -112,14 +112,11 @@ class SashOptions(BaseModel):
 
 
 class GlassOptions(BaseModel):
-    """유리문/유리창 썬팅 및 일러스트(컷팅 그래픽) 시공."""
+    """유리문/유리창 썬팅 시공. 일러스트(컷팅 그래픽)는 사장님 전용 "illustration" 항목으로 분리됐다."""
 
     work_type: GlassWorkType = "tint"
     tint_type: GlassTintType = "frosted"
     panels: list[PanelItem] = Field(default_factory=list)  # 유리 규격(가로×세로mm)×개수
-    # 예전 유리 일러스트 입력. 일러스트는 사장님 전용 "illustration" 항목으로 분리되어
-    # 견적 계산과 시공 지시문에서 더는 쓰지 않는다(저장된 견적 호환용으로만 남긴다).
-    illust_count: int = 0
 
 
 class IllustrationOptions(BaseModel):

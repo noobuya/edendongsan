@@ -15,7 +15,7 @@ export type WorkItemId =
   | "wardrobe"
   | "wall_film"
   | "illustration";
-export type GlassWorkType = "tint" | "illust" | "both";
+export type GlassWorkType = "tint";
 export type GlassTintType = "clear" | "frosted" | "mirror" | "blackout";
 export type CeilingMaterial = "gypsum" | "concrete" | "wood_reinforced";
 export type LightingInch = "3" | "4" | "5";
@@ -106,7 +106,6 @@ export interface GlassOptions {
   workType: GlassWorkType;
   tintType: GlassTintType;
   panels: PanelItem[];
-  illustCount: number;
 }
 
 /** 사장님 전용 일러스트 항목. 학생 기기에서는 선택할 수 없다. */

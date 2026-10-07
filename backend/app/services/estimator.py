@@ -447,7 +447,7 @@ def _glass_line_item(opts: GlassOptions) -> dict:
     details = []
     area_m2 = _panels_area_m2(opts.panels)
 
-    if opts.work_type in ("tint", "both") and area_m2 > 0:
+    if opts.work_type == "tint" and area_m2 > 0:
         unit_price = table["tint_material_per_m2"][opts.tint_type]
         spec = f"{GLASS_TINT_TYPES[opts.tint_type]['name']} · {_panels_spec_text(opts.panels)}"
         details.append(_detail("썬팅 필름 자재비", area_m2, "㎡", unit_price, "material", spec))

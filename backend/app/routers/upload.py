@@ -34,11 +34,9 @@ async def create_job(
         request = CreateJobRequest.model_validate_json(payload)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors()) from exc
-    # 일러스트는 사장님 전용 항목이다. 학생 기기가 항목·문구·그림·유리 일러스트를 보내면 거절한다.
-    wants_illustration = (
-        "illustration" in request.selected_items
-        or bool(request.illustration_text.strip() or request.illustration_description.strip())
-        or bool(request.options.glass and request.options.glass.work_type in ("illust", "both"))
+    # 일러스트는 사장님 전용 항목이다. 학생 기기가 항목·문구·그림을 보내면 거절한다.
+    wants_illustration = "illustration" in request.selected_items or bool(
+        request.illustration_text.strip() or request.illustration_description.strip()
     )
     if wants_illustration and not is_owner(x_admin_token):
         raise HTTPException(status_code=403, detail="일러스트는 사장님 기기에서만 쓸 수 있어요.")
