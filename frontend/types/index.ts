@@ -163,8 +163,6 @@ export interface CreateJobParams {
   manualRegions: MappedRegion[];
   /** 사장님 기기의 관리자 토큰. 일러스트 문구를 보낼 때 함께 보낸다. */
   ownerToken?: string | null;
-  /** 수강생 승인 코드. 사장님 기기가 아니면 견적을 만들 때 반드시 필요하다. */
-  accessCode?: string | null;
 }
 
 export interface LineItemDetail {
