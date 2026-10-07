@@ -566,6 +566,18 @@ async function adminFetch<T>(path: string, token: string, init: RequestInit = {}
 
 export const adminListStudents = (token: string) => adminFetch<AdminStudent[]>("", token);
 
+/** 저장된 사장님 토큰이 아직 맞는지 서버에 물어본다.
+ *  "rejected"는 토큰이 틀렸다는 뜻이고, "offline"은 서버에 닿지 못했다는 뜻이다(토큰은 지우지 않는다). */
+export async function checkOwnerToken(token: string): Promise<"ok" | "rejected" | "offline"> {
+  try {
+    const res = await apiFetch(`${API_BASE}/api/admin/students`, { headers: { "X-Admin-Token": token } });
+    if (res.ok) return "ok";
+    return res.status === 401 || res.status === 403 ? "rejected" : "offline";
+  } catch {
+    return "offline";
+  }
+}
+
 export type AdminRequest = {
   id: string;
   name: string;

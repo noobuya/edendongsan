@@ -14,7 +14,7 @@ import StepItems from "@/components/steps/StepItems";
 import StepMapping from "@/components/steps/StepMapping";
 import StepSite from "@/components/steps/StepSite";
 import StudentGate from "@/components/StudentGate";
-import { createJob, getJobStatus, listQuotes, resolveAssetUrl } from "@/lib/api";
+import { checkOwnerToken, createJob, getJobStatus, listQuotes, resolveAssetUrl } from "@/lib/api";
 import { clearOwnerToken, readOwnerToken, saveOwnerToken } from "@/lib/ownerToken";
 import { useAndroidBack } from "@/lib/useAndroidBack";
 import { DEFAULT_OPTIONS, DEFAULT_WORK_ITEMS, taskTypeOf } from "@/lib/workItems";
@@ -72,9 +72,19 @@ export default function HomePage() {
   // 사장님 기기 표시(관리자 토큰). 서버 렌더링 때는 모르므로 mount 후에 이 기기에서 읽는다.
   const [ownerToken, setOwnerTokenState] = useState<string | null>(null);
   const [ownerReady, setOwnerReady] = useState(false);
+  // 저장된 값만 믿지 않는다. 서버가 토큰을 맞다고 할 때만 사장님 기기로 연다.
+  // 틀리면 저장된 토큰을 지우고, 서버에 닿지 않으면 이번에는 열지 않되 토큰은 남긴다.
   useEffect(() => {
-    setOwnerTokenState(readOwnerToken());
-    setOwnerReady(true);
+    const saved = readOwnerToken();
+    if (!saved) {
+      setOwnerReady(true);
+      return;
+    }
+    void checkOwnerToken(saved).then((result) => {
+      if (result === "ok") setOwnerTokenState(saved);
+      else if (result === "rejected") clearOwnerToken();
+      setOwnerReady(true);
+    });
   }, []);
   // 수강생 승인 코드(이 기기에서 승인받은 학생). 사장님 기기가 아니면 이 코드가 있어야 견적을 쓸 수 있다.
   const [studentCode, setStudentCode] = useState<string | null>(null);
