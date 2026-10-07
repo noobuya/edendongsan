@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -17,7 +19,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/static", StaticFiles(directory=settings.storage_dir), name="static")
+# storage_dir 전체를 그대로 공개하지 않는다 — 그 안에는 학생 이름·생년월일·전화번호·
+# 접근 코드가 든 students.json/student_requests.json과 automation.db·community.db·
+# journal.db(피드백·일지 내용)도 함께 있다. /static/uploads, /static/results로 실제
+# 시공 사진·마스크만 내보내는 하위 폴더 두 개만 각각 마운트한다(그 바깥 경로는 애초에
+# 존재하지 않아 StaticFiles가 404를 돌려준다). _to_static_url()이 만드는 URL 모양
+# ("/static/uploads/...", "/static/results/...")은 그대로라 다른 코드는 안 건드려도 된다.
+_storage_root = Path(settings.storage_dir)
+for _public_dir in ("uploads", "results"):
+    (_storage_root / _public_dir).mkdir(parents=True, exist_ok=True)
+    app.mount(f"/static/{_public_dir}", StaticFiles(directory=_storage_root / _public_dir), name=f"static_{_public_dir}")
 app.include_router(upload.router)
 app.include_router(jobs.router)
 app.include_router(quotes.router)
