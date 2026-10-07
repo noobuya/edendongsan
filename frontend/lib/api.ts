@@ -211,7 +211,10 @@ export async function createJob(
   const res = await apiFetch(`${API_BASE}/api/jobs`, {
     method: "POST",
     body: form,
-    headers: ownerHeaders(params.ownerToken),
+    headers: {
+      ...ownerHeaders(params.ownerToken),
+      ...(params.accessCode ? { "X-Access-Code": params.accessCode } : {}),
+    },
   });
   if (!res.ok) throw new Error(await extractErrorMessage(res, "업로드에 실패했습니다."));
   return res.json();

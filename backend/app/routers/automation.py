@@ -154,3 +154,11 @@ async def send_feedback(req: FeedbackIn, x_access_code: str | None = Header(defa
         return store.add_feedback(owner, req.kind, message, req.job_id)
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from exc
+
+
+def student_name_for(code: str | None) -> str | None:
+    """수강생 코드면 이름을, 아니면 None을 돌려준다. 견적 API처럼 다른 곳에서 접근을 확인할 때 쓴다."""
+    try:
+        return _owner(code)
+    except HTTPException:
+        return None

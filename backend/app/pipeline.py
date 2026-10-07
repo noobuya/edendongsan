@@ -38,6 +38,7 @@ from app.services.scene_render import render_scene
 from app.services.ai_service import render_region
 from app.services.segmentation import segment_surfaces
 from app.services.vision_client import analyze_room
+from app.services.rendering import film_color_delta
 
 
 # 초기 렌더링에서 선택한 색을 자동 적용할 인식 부위 최대 개수.
@@ -206,6 +207,11 @@ def run_pipeline(
         elif needs_segmentation:
             _stage(job_id, "영역 인식 중")
             masks = segment_surfaces(current_path, job_id, selected_items, needs_ceiling_ref)
+
+        # AI 장면 생성이 응답을 줘도 필름 색이 실제로 입혀졌다는 보장은 없다. 대상 부위가 목표 색과
+        # 크게 다르면 같은 부위를 결정적 리컬러로 다시 칠하고, 그 사실을 안내로 남긴다.
+        if scene_rendered and not manual_regions and masks is not None and "film" in selected_items and options.film:
+            current_path = _ensure_film_applied(job_id, current_path, masks, options)
 
         if masks is not None:
             ceiling_mask_path = masks.get("ceiling_mask_path")
@@ -767,6 +773,46 @@ def _film_target_phrases(film) -> list[str]:
     # 아무 부위도 입력하지 않았으면 주방장 전체를 기본 대상으로 삼는다 —
     # 색상만 고르고 치수는 나중에 넣는 사용 흐름이 흔하기 때문이다.
     return targets or ["upper and lower kitchen cabinet doors"]
+
+
+# 필름 대상 부위 평균 색이 목표 색과 이 거리(LAB) 이내면 AI 결과가 제대로 입혀진 것으로 본다.
+# 실측: 리컬러 결과는 약 8, AI 결과가 색을 못 바꾼 원본(베이지)은 약 100이었다. 중간쯤으로 잡았다.
+FILM_MATCH_MAX_DELTA = 30.0
+
+
+def _ensure_film_applied(job_id: str, image_path: str, masks: dict, options: JobOptions) -> str:
+    """AI가 그린 장면에서 필름 대상 부위가 목표 색으로 바뀌었는지 확인하고, 아니면 리컬러로 다시 칠한다."""
+    pattern_meta = PATTERNS.get(options.film.pattern_id, PATTERNS["matte-white"])
+    # 문짝·문틀은 수량을 입력했을 때만 대상이다. 입력하지 않은 방문까지 칠하지 않도록 뺀다.
+    doors_requested = any(i.count > 0 for i in options.film.doors + options.film.doorframes)
+    candidates = [
+        r
+        for r in masks.get("regions", [])
+        if r.get("is_panel", True) and (doors_requested or r.get("category") not in ("door", "doorframe"))
+    ]
+    film_mask_paths = [r["mask_path"] for r in candidates][:MAX_AUTO_FILM_REGIONS]
+    if not film_mask_paths:
+        return image_path
+
+    film_mask_path = f"storage/results/{job_id}_film_check_mask.png"
+    combine_masks(film_mask_paths).save(film_mask_path)
+    delta = film_color_delta(image_path, film_mask_path, pattern_meta["color_hex"])
+    if delta is None or delta <= FILM_MATCH_MAX_DELTA:
+        return image_path
+
+    print(f"[pipeline] AI 장면의 필름 색이 목표와 {delta:.0f} 차이 — 리컬러로 보정")
+    corrected_path = f"storage/results/{job_id}_film_corrected.png"
+    recolor_surface(
+        image_path,
+        film_mask_path,
+        pattern_meta["color_hex"],
+        corrected_path,
+        wood_grain=_is_wood(options.film.pattern_id),
+    )
+    JOBS[job_id].setdefault("notices", []).append(
+        "AI 시공 사진에 필름 색이 충분히 입혀지지 않아, 필름 대상 부위를 직접 다시 칠했어요."
+    )
+    return corrected_path
 
 
 def _is_wood(pattern_id: str) -> bool:

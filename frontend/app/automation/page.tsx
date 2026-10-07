@@ -14,6 +14,7 @@ import {
   type AutomationJob,
   type AutomationTask,
 } from "@/lib/api";
+import FeedbackForm from "@/components/automation/FeedbackForm";
 
 const CODE_KEY = "eden-automation-code";
 // 승인 요청을 보낸 기기의 요청 번호. 이 번호로만 자기 요청 상태를 확인한다.
@@ -59,6 +60,9 @@ function statusLabel(job: AutomationJob): string {
 
 export default function AutomationPage() {
   const [code, setCode] = useState("");
+  // 피드백: 작업 한 건에 대한 의견(펼친 작업의 id)과 일반 의견, 보낸 뒤 알림
+  const [feedbackJobId, setFeedbackJobId] = useState<string | null>(null);
+  const [feedbackNote, setFeedbackNote] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);
   const [codeInput, setCodeInput] = useState("");
   // 코드가 없는 학생: 이름으로 승인을 요청하거나(signup), 이미 받은 코드를 입력한다(code).
@@ -415,8 +419,42 @@ export default function AutomationPage() {
                       취소
                     </button>
                   )}
+                  {feedbackJobId === job.id ? (
+                    <div className="mt-2">
+                      <FeedbackForm
+                        code={code}
+                        jobId={job.id}
+                        onSent={() => {
+                          setFeedbackJobId(null);
+                          setFeedbackNote("이 작업에 대한 의견을 보냈어요. 선생님이 확인할게요.");
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setFeedbackJobId(job.id);
+                        setFeedbackNote(null);
+                      }}
+                      className="mt-2 h-11 text-[14px] font-semibold text-indigo-600"
+                    >
+                      이 작업에 대해 의견 남기기
+                    </button>
+                  )}
                 </article>
               ))}
+            </section>
+
+            <section className="space-y-3 rounded-2xl bg-white p-5 shadow-sm">
+              <div>
+                <h2 className="text-[15px] font-bold text-slate-700">불편한 점·오류 알려주기</h2>
+                <p className="text-[13px] text-slate-500">작업과 관계없이 쓰면서 불편했던 점이나 고쳤으면 하는 점을 남겨 주세요.</p>
+              </div>
+              <FeedbackForm
+                code={code}
+                onSent={() => setFeedbackNote("의견을 보냈어요. 감사합니다.")}
+              />
+              {feedbackNote && <p className="text-[14px] font-semibold text-emerald-700">{feedbackNote}</p>}
             </section>
           </>
         )}

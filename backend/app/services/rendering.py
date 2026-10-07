@@ -572,3 +572,22 @@ def combine_masks(mask_paths: list[str]) -> Image.Image:
             mask = mask.resize(combined.size, Image.NEAREST)
         combined = ImageChops.lighter(combined, mask)
     return combined
+
+
+def film_color_delta(image_path: str, mask_path: str, color_hex: str) -> float | None:
+    """마스크 영역의 평균 색이 목표 필름 색에서 얼마나 떨어져 있는지(LAB 거리, 0에 가까울수록 같은 색).
+
+    명도(L)와 색(a·b)을 함께 본다. 목표가 밝은 매트 화이트일 때 원본 베이지와 AI 결과는
+    색(a·b)은 거의 같고 명도만 100 가까이 차이 나므로, 색만 보면 둘을 구분할 수 없다.
+    영역이 비어 있으면 None."""
+    img = Image.open(image_path).convert("RGB")
+    mask = Image.open(mask_path).convert("L")
+    if mask.size != img.size:
+        mask = mask.resize(img.size, Image.NEAREST)
+    sel = np.asarray(mask) > 127
+    if not sel.any():
+        return None
+    lab = cv2.cvtColor(np.asarray(img), cv2.COLOR_RGB2LAB).astype(np.float32)
+    mean = lab[sel].mean(axis=0)
+    target = cv2.cvtColor(np.uint8([[_hex_to_rgb(color_hex)]]), cv2.COLOR_RGB2LAB).reshape(3).astype(np.float32)
+    return float(np.linalg.norm(mean - target))

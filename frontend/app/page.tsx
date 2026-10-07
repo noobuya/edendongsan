@@ -13,6 +13,7 @@ import ManualMaskStage, { type MaskStageHandle } from "@/components/ManualMaskSt
 import StepItems from "@/components/steps/StepItems";
 import StepMapping from "@/components/steps/StepMapping";
 import StepSite from "@/components/steps/StepSite";
+import StudentGate from "@/components/StudentGate";
 import { createJob, getJobStatus, listQuotes, resolveAssetUrl } from "@/lib/api";
 import { clearOwnerToken, readOwnerToken, saveOwnerToken } from "@/lib/ownerToken";
 import { useAndroidBack } from "@/lib/useAndroidBack";
@@ -70,9 +71,13 @@ export default function HomePage() {
   const regionIdRef = useRef(1);
   // 사장님 기기 표시(관리자 토큰). 서버 렌더링 때는 모르므로 mount 후에 이 기기에서 읽는다.
   const [ownerToken, setOwnerTokenState] = useState<string | null>(null);
+  const [ownerReady, setOwnerReady] = useState(false);
   useEffect(() => {
     setOwnerTokenState(readOwnerToken());
+    setOwnerReady(true);
   }, []);
+  // 수강생 승인 코드(이 기기에서 승인받은 학생). 사장님 기기가 아니면 이 코드가 있어야 견적을 쓸 수 있다.
+  const [studentCode, setStudentCode] = useState<string | null>(null);
 
   // 맞춰둔 도형 + 고른 자재를 한 세트(Region)로 묶어 저장하고, 캔버스를 비워
   // 다음 영역을 지정할 수 있게 한다.
@@ -318,6 +323,7 @@ export default function HomePage() {
         illustrationText: withIllustration ? options.illustration.text : "",
         illustrationDescription: withIllustration ? options.illustration.description : "",
         ownerToken,
+        accessCode: studentCode,
         renderMode,
         autoDescription,
         manualRegions: renderMode === "manual" ? mappedRegions : [],
@@ -374,6 +380,16 @@ export default function HomePage() {
   const stagePhotoUrl =
     step === 3 && job?.rendered_image_url ? resolveAssetUrl(job.rendered_image_url) : previewUrl;
 
+  // 승인 전에는 견적 화면을 보여주지 않는다. 기기 확인이 끝나기 전에는 빈 화면만 둔다.
+  if (!ownerReady) return <main className="min-h-dvh bg-[#f2f4f6]" />;
+  if (!ownerToken && !studentCode) {
+    return (
+      <StudentGate
+        onEnter={(code) => setStudentCode(code)}
+        onOwner={(token) => setOwnerTokenState(token)}
+      />
+    );
+  }
 
   return (
     <main className="relative h-dvh overflow-hidden">

@@ -9,6 +9,7 @@ from app.catalog import manual_base_prompt
 from app.jobs_store import JOBS
 from app.owner_auth import is_owner
 from app.pipeline import run_pipeline
+from app.routers.automation import student_name_for
 from app.schemas import CreateJobRequest, JobCreateResponse
 
 try:
@@ -29,7 +30,11 @@ async def create_job(
     # 수동 모드에서 칠한 영역 마스크들. 원본 사진과 같은 요청으로 함께 올라온다.
     masks: list[UploadFile] = File(default=[]),
     x_admin_token: str | None = Header(default=None),
+    x_access_code: str | None = Header(default=None),
 ):
+    # 견적은 수강생 코드(승인 완료) 또는 사장님 토큰이 있어야 만든다. 회원가입 없이 바로 쓰지 못하게 막는다.
+    if not is_owner(x_admin_token) and student_name_for(x_access_code) is None:
+        raise HTTPException(status_code=401, detail="수강생 승인 후 이용할 수 있어요.")
     try:
         request = CreateJobRequest.model_validate_json(payload)
     except ValidationError as exc:
