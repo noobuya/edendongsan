@@ -50,6 +50,27 @@ def remove_work_photo(job_id: str, photo_id: str) -> dict | None:
     return quote
 
 
+def set_signature(job_id: str, signature: dict) -> dict | None:
+    """고객이 현장에서 그린 서명을 저장한다. 이미 서명이 있으면 덮어쓰지 않는다
+    (한 번 서명하면 끝 — 실수로 다시 그려 덮어쓰는 사고를 막는다. 다시 받아야
+    하면 clear_signature로 먼저 지운다)."""
+    quote = load_quote(job_id)
+    if quote is None or quote.get("signature"):
+        return None
+    quote["signature"] = signature
+    save_quote(job_id, quote)
+    return quote
+
+
+def clear_signature(job_id: str) -> dict | None:
+    quote = load_quote(job_id)
+    if quote is None:
+        return None
+    quote.pop("signature", None)
+    save_quote(job_id, quote)
+    return quote
+
+
 def set_blog_post(job_id: str, blog_post: dict) -> dict | None:
     quote = load_quote(job_id)
     if quote is None:

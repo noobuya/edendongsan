@@ -5,8 +5,9 @@ import { CheckCircle2, Download, Hammer, Leaf, Lock, MessageCircle, Share2, Shie
 import BusinessBadge from "@/components/BusinessBanner";
 import QuoteIcon, { toneOfWorkItem } from "@/components/quote/QuoteIcon";
 import BusinessStamp from "@/components/BusinessStamp";
+import SignaturePad from "@/components/SignaturePad";
 import { BUSINESS_NAME, BUSINESS_PHONE } from "@/lib/businessInfo";
-import type { EstimateBreakdown, WorkItemId } from "@/types";
+import type { EstimateBreakdown, Signature, WorkItemId } from "@/types";
 
 function won(amount: number): string {
   return `${Math.round(amount).toLocaleString("ko-KR")}원`;
@@ -79,6 +80,12 @@ function issueDateLabel(): string {
   return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function signedAtLabel(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
 // 문자로 견적서를 보낼 때 미리 채워 넣는 안내 문구. sms: 링크는 파일을 첨부하지 못하므로
 // (표준 자체에 없다), 사진은 별도로 갤러리에 저장해 사장님이 문자 앱에서 직접 첨부해야 한다.
 const SMS_BODY = `안녕하세요, ${BUSINESS_NAME} 인테리어 필름 견적서입니다.`;
@@ -122,6 +129,10 @@ interface ReceiptViewProps {
   estimateNo: string;
   /** 상호 뱃지를 3초 길게 눌렀을 때 — 단가 설정(개발자 모드)을 연다. */
   onSecretHold?: () => void;
+  /** 이미 서명된 견적이면 이 값이 있다 — 있으면 서명판 대신 서명 이미지를 보여준다.
+   *  jobId가 없는 화면(빠른 견적 등)에서는 onSign을 안 넘기면 서명 UI 자체가 안 뜬다. */
+  signature?: Signature | null;
+  onSign?: (dataUrl: string) => Promise<void>;
 }
 
 /** 견적 API(메인 백엔드)의 EstimateBreakdown을 영수증으로 그린다. */
@@ -129,10 +140,14 @@ export default function PremiumReceipt({
   estimate,
   jobId,
   onSecretHold,
+  signature,
+  onSign,
 }: {
   estimate: EstimateBreakdown;
   jobId: string;
   onSecretHold?: () => void;
+  signature?: Signature | null;
+  onSign?: (dataUrl: string) => Promise<void>;
 }) {
   const rows: ReceiptRow[] = estimate.line_items.map((li) => ({
     key: li.item_id,
@@ -151,6 +166,8 @@ export default function PremiumReceipt({
       expenseTotal={estimate.expense_total}
       estimateNo={`ED-${jobId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 6).toUpperCase()}`}
       onSecretHold={onSecretHold}
+      signature={signature}
+      onSign={onSign}
     />
   );
 }
@@ -164,6 +181,8 @@ export function PremiumReceiptView({
   expenseTotal,
   estimateNo,
   onSecretHold,
+  signature,
+  onSign,
 }: ReceiptViewProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [stealthOpen, setStealthOpen] = useState(false);
@@ -402,7 +421,33 @@ export function PremiumReceiptView({
           </div>
           <BusinessStamp className="-mb-1 -mr-1" />
         </div>
+
+        {/* 고객 서명 — 받은 뒤에는 이 영수증 이미지 자체에 포함돼 그대로 증빙이 된다.
+            서명 전에는 이 카드에 아무것도 안 넣는다(빈 서명판이 캡처되면 안 되므로,
+            쓰는 UI는 카드 바깥에 따로 둔다). */}
+        {signature && (
+          <div className="mt-5 flex items-center justify-between gap-3 border-t border-[#eef0f2] pt-4">
+            <div>
+              <p className="text-[12px] font-semibold text-[#6b7684]">고객 서명</p>
+              <p className="mt-0.5 text-[11px] text-[#9aa4b2]">{signedAtLabel(signature.signed_at)} 동의</p>
+            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element -- data URL이라 AssetImage(fetch 기반) 대상이 아니다 */}
+            <img src={signature.image} alt="고객 서명" className="h-14 w-28 rounded-lg border border-[#eef0f2] object-contain" />
+          </div>
+        )}
       </div>
+
+      {onSign && !signature && (
+        <section className="rounded-[24px] bg-white p-5 shadow-[0_1px_2px_rgba(25,31,40,0.05),0_12px_32px_-12px_rgba(25,31,40,0.16)]">
+          <p className="text-[14px] font-bold text-[#191f28]">고객 서명</p>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-[#6b7684]">
+            위 견적 내용에 동의하시면 아래에 서명해 주세요. 서명은 이 견적서에 기록되고, 이후에는 지울 수 없어요.
+          </p>
+          <div className="mt-3">
+            <SignaturePad onSign={onSign} />
+          </div>
+        </section>
+      )}
 
       <button
         type="button"

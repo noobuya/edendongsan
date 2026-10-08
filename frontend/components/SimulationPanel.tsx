@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Loader2, MousePointerClick, SlidersHorizontal, Sparkles, Users, Wand2 } from "lucide-react";
 import type { JobStatusResponse } from "@/types";
-import { getJobStatus, requestIllustration, requestInpaint, resolveAssetUrl } from "@/lib/api";
+import { getJobStatus, requestIllustration, requestInpaint, resolveAssetUrl, signJob } from "@/lib/api";
 import AssetImage from "@/components/AssetImage";
 import BeforeAfterSlider from "@/components/BeforeAfterSlider";
 import PremiumReceipt from "@/components/PremiumReceipt";
@@ -196,6 +196,11 @@ export default function SimulationPanel({
     }
   }
 
+  async function handleSign(dataUrl: string) {
+    const updated = await signJob(liveJob.job_id, dataUrl);
+    setLiveJob((prev) => ({ ...prev, signature: updated.signature }));
+  }
+
   // 결 방향을 바꾸면, 지금 우드 색이 이미 적용돼 있을 때만 그 방향으로 다시 칠한다
   // (색을 아직 안 골랐으면 다음에 고를 때 이 방향이 쓰이도록 상태만 저장해둔다).
   function handleGrainChange(horizontal: boolean) {
@@ -360,7 +365,13 @@ export default function SimulationPanel({
       </div>
 
       <div className="space-y-4 foldLandscape:h-full foldLandscape:w-2/5 foldLandscape:overflow-y-auto foldLandscape:pb-32">
-        <PremiumReceipt estimate={liveJob.estimate} jobId={liveJob.job_id} onSecretHold={onSecretHold} />
+        <PremiumReceipt
+          estimate={liveJob.estimate}
+          jobId={liveJob.job_id}
+          onSecretHold={onSecretHold}
+          signature={liveJob.signature}
+          onSign={handleSign}
+        />
 
         <button
           type="button"

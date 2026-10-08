@@ -272,6 +272,17 @@ class BlogPost(BaseModel):
     created_at: str
 
 
+class Signature(BaseModel):
+    """현장에서 고객이 화면에 직접 그린 서명 — 견적서 파일에만 저장된다(blog_post와 같은 방식)."""
+
+    image: str  # "data:image/png;base64,..." 통째로 저장 — 다른 사진처럼 /static 경로가 아니다.
+    signed_at: str
+
+
+class SignatureRequest(BaseModel):
+    image: str
+
+
 class JobStatusResponse(BaseModel):
     job_id: str
     status: Literal["queued", "processing", "done", "failed"]
@@ -298,6 +309,7 @@ class JobStatusResponse(BaseModel):
     # 항상 비어 있다가 조회 시점에 저장된 견적서에서 덧붙여진다.
     work_photos: list[WorkPhoto] = Field(default_factory=list)
     blog_post: Optional[BlogPost] = None
+    signature: Optional[Signature] = None
 
 
 class InpaintRequest(BaseModel):

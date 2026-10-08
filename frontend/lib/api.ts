@@ -254,6 +254,28 @@ export async function requestInpaint(
   if (!res.ok) throw new Error(await extractErrorMessage(res, "AI 편집 요청에 실패했습니다."));
 }
 
+/** 현장에서 고객이 그린 서명을 저장한다. 다른 현장 기록처럼 인증이 필요 없다
+ *  (job_id를 아는 그 화면 — 사장님이 보여주고 있는 바로 그 폰 — 에서만 가능). */
+export async function signJob(jobId: string, imageDataUrl: string): Promise<JobStatusResponse> {
+  const res = await apiFetch(`${API_BASE}/api/jobs/${jobId}/signature`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image: imageDataUrl }),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "서명 저장에 실패했습니다."));
+  return res.json();
+}
+
+/** 서명을 다시 받아야 할 때 지운다 — 사장님 전용. */
+export async function clearJobSignature(jobId: string, ownerToken: string): Promise<JobStatusResponse> {
+  const res = await apiFetch(`${API_BASE}/api/jobs/${jobId}/signature`, {
+    method: "DELETE",
+    headers: ownerHeaders(ownerToken),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "서명 삭제에 실패했습니다."));
+  return res.json();
+}
+
 /** 사장님 기기일 때만 관리자 토큰 헤더를 붙인다(학생 기기는 헤더 없이 보낸다). */
 function ownerHeaders(token?: string | null): Record<string, string> {
   return token ? { "X-Admin-Token": token } : {};

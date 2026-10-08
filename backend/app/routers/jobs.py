@@ -2,6 +2,7 @@ import io
 import json
 import os
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, Header, HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
@@ -17,13 +18,18 @@ from app.pipeline import (
     run_inpaint_edit,
     run_remask,
 )
-from app.quotes_store import load_quote, save_quote
+from app.quotes_store import clear_signature, load_quote, save_quote, set_signature
 from app.schemas import (
     IllustrationRequest,
     InpaintAcceptedResponse,
     InpaintRequest,
     JobStatusResponse,
+    SignatureRequest,
 )
+
+# 손가락으로 그린 서명치고 지나치게 큰 데이터(악의적으로 큰 이미지를 밀어넣는 경우)를
+# 막는다. 실제 서명 PNG는 보통 수십 KB대라 여유 있게 잡았다.
+MAX_SIGNATURE_BYTES = 500_000
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -58,6 +64,7 @@ async def get_job(job_id: str):
             created_at=job.get("created_at"),
             work_photos=(quote or {}).get("work_photos", []),
             blog_post=(quote or {}).get("blog_post"),
+            signature=(quote or {}).get("signature"),
         )
 
     # 서버가 재시작돼 인메모리 JOBS에서 사라졌거나(브라우저를 오래 열어둔 경우 등)
@@ -256,6 +263,47 @@ async def remask(
     job["edit_error"] = None
     background_tasks.add_task(run_remask, job_id, regions)
     return InpaintAcceptedResponse(accepted=True)
+
+
+@router.post("/{job_id}/signature", response_model=JobStatusResponse)
+async def sign_job(job_id: str, request: SignatureRequest):
+    """현장에서 고객이 화면에 직접 그려 견적에 서명한다.
+
+    다른 현장 기록(작업사진 등)과 같은 이유로 인증을 요구하지 않는다 — 추측 불가능한
+    job_id를 아는 사람(사장님 기기로 보여주고 있는 바로 그 화면)만 서명할 수 있고,
+    이 서명은 사장님이 그 자리에서 고객에게 폰을 건네 받는 것이지 로그인 계정이
+    없는 고객이 따로 들어와서 하는 동작이 아니다."""
+    quote = load_quote(job_id)
+    if quote is None:
+        raise HTTPException(status_code=404, detail="이 견적서를 찾을 수 없습니다.")
+    if quote.get("signature"):
+        raise HTTPException(status_code=409, detail="이미 서명이 완료된 견적서입니다.")
+    if not request.image.startswith("data:image/png;base64,"):
+        raise HTTPException(status_code=422, detail="서명 이미지 형식이 올바르지 않습니다.")
+    if len(request.image) > MAX_SIGNATURE_BYTES:
+        raise HTTPException(status_code=413, detail="서명 이미지가 너무 큽니다.")
+
+    signature = {
+        "image": request.image,
+        "signed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    updated = set_signature(job_id, signature)
+    if updated is None:
+        # load_quote 이후 거의 동시에 다른 요청이 먼저 서명한 드문 경합.
+        raise HTTPException(status_code=409, detail="이미 서명이 완료된 견적서입니다.")
+    return JobStatusResponse(**updated)
+
+
+@router.delete("/{job_id}/signature", response_model=JobStatusResponse)
+async def reset_job_signature(job_id: str, x_admin_token: str | None = Header(default=None)):
+    """서명을 다시 받아야 할 때(잘못 그렸거나 고객이 바뀐 경우) 지운다.
+    서명은 "고객이 동의했다"는 기록이라 사장님만 지울 수 있다."""
+    if not is_owner(x_admin_token):
+        raise HTTPException(status_code=401, detail="사장님 기기에서만 지울 수 있어요.")
+    updated = clear_signature(job_id)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="이 견적서를 찾을 수 없습니다.")
+    return JobStatusResponse(**updated)
 
 
 def _decode_mask(raw: bytes, size: tuple[int, int]) -> Image.Image:

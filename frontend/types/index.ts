@@ -267,6 +267,13 @@ export interface JobStatusResponse {
   created_at?: string;
   work_photos: WorkPhoto[];
   blog_post?: BlogPost;
+  signature?: Signature | null;
+}
+
+/** 현장에서 고객이 화면에 직접 그린 서명. */
+export interface Signature {
+  image: string;
+  signed_at: string;
 }
 
 export interface PatternSwatch {
