@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { AlertCircle, ArrowLeft, ArrowRight, Bot, Calculator, FolderOpen, Loader2, Newspaper, Ruler, Sparkles, Users } from "lucide-react";
 import BusinessBadge from "@/components/BusinessBanner";
 import CanvasStage from "@/components/CanvasStage";
+import FeatureIntroDialog from "@/components/FeatureIntroDialog";
 import PricingSheet from "@/components/PricingSheet";
 import QuoteListDialog from "@/components/QuoteListDialog";
 import SimulationPanel from "@/components/SimulationPanel";
@@ -63,6 +64,10 @@ export default function HomePage() {
   // 수동 마스킹 중 조작 패널을 접어둔 상태 — 사진을 화면 가득 쓰기 위한 것.
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [exitHint, setExitHint] = useState(false);
+  // 처음 켜봤을 때만 "이런 기능도 있어요" 안내를 한 번 띄운다 — 기기에 본 적이
+  // 있다고 적어두면 다시는 안 띄운다. SSR에서는 localStorage가 없으니 항상 false로
+  // 시작하고, 마운트된 뒤 useEffect에서만 실제로 확인한다(hydration 불일치 방지).
+  const [featureIntroOpen, setFeatureIntroOpen] = useState(false);
   // 카메라 시트도 "떠 있는 것"이라 뒤로 가기가 먼저 닫아야 한다 — 그래서 여기서 든다.
   const [cameraOpen, setCameraOpen] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -79,6 +84,24 @@ export default function HomePage() {
       if (result === "ok") setOwnerTokenState(saved);
       else if (result === "rejected") clearOwnerToken();
     });
+  }, []);
+
+  // 이 기기에서 처음 켠 거면 "이런 기능도 있어요" 안내를 한 번 띄운다.
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem("eden_feature_intro_seen")) setFeatureIntroOpen(true);
+    } catch {
+      // 프라이빗 모드 등으로 localStorage를 못 읽는 드문 환경 — 안내 없이 조용히 넘어간다.
+    }
+  }, []);
+
+  const dismissFeatureIntro = useCallback(() => {
+    setFeatureIntroOpen(false);
+    try {
+      localStorage.setItem("eden_feature_intro_seen", "1");
+    } catch {
+      // 못 저장해도 이번 방문 동안은 이미 닫혔으니 문제 없다.
+    }
   }, []);
 
   // 맞춰둔 도형 + 고른 자재를 한 세트(Region)로 묶어 저장하고, 캔버스를 비워
@@ -666,6 +689,8 @@ export default function HomePage() {
           새 현장 견적 시작
         </button>
       )}
+
+      <FeatureIntroDialog open={featureIntroOpen} onClose={dismissFeatureIntro} />
 
       <PricingSheet open={pricingOpen} onClose={() => setPricingOpen(false)} />
 

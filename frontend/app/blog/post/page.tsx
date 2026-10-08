@@ -7,6 +7,7 @@ import { AlertCircle, ArrowLeft, Loader2 } from "lucide-react";
 import AssetImage from "@/components/AssetImage";
 import BusinessBanner from "@/components/BusinessBanner";
 import CallBanner from "@/components/CallBanner";
+import ShareLinkButton from "@/components/ShareLinkButton";
 import { getBlogDetail } from "@/lib/api";
 import type { BlogDetail, WorkPhoto, WorkPhotoStage } from "@/types";
 import { useAndroidBack } from "@/lib/useAndroidBack";
@@ -106,11 +107,12 @@ export default function BlogDetailPage() {
 
       {/* 삭제는 사장님 기기의 결과 화면(작업사진 패널)에서만 한다 — 이 페이지는
           누구나 열 수 있는 공개 페이지라 삭제 버튼을 두지 않는다. */}
-      <div className="mb-6">
+      <div className="mb-6 flex items-center justify-between gap-2">
         <Link href="/blog" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700">
           <ArrowLeft className="h-4 w-4" />
           목록으로
         </Link>
+        <ShareLinkButton url={typeof window !== "undefined" ? window.location.href : ""} title={post.title} />
       </div>
 
       <article>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertCircle, ArrowLeft, Loader2, Trash2 } from "lucide-react";
 import BusinessBanner from "@/components/BusinessBanner";
+import ShareLinkButton from "@/components/ShareLinkButton";
 import { deleteSharedEstimate, getSharedEstimate } from "@/lib/api";
 import { readOwnerToken } from "@/lib/ownerToken";
 import type { SharedEstimate } from "@/types";
@@ -105,20 +106,23 @@ export default function CommunityEstimatePage() {
           <ArrowLeft className="h-4 w-4" />
           목록으로
         </Link>
-        {/* 삭제는 모더레이션용으로 사장님 기기에서만 보인다. */}
-        {ownerToken && (
-          <button
-            type="button"
-            onClick={handleDelete}
-            disabled={deleting}
-            className={`flex items-center gap-1 text-xs font-medium disabled:opacity-50 ${
-              confirmingDelete ? "text-red-600" : "text-slate-400 hover:text-red-500"
-            }`}
-          >
-            {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-            {deleting ? "삭제 중..." : confirmingDelete ? "한 번 더 누르면 삭제" : "삭제"}
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          <ShareLinkButton url={typeof window !== "undefined" ? window.location.href : ""} title={`${estimate.author}님의 견적 공유`} />
+          {/* 삭제는 모더레이션용으로 사장님 기기에서만 보인다. */}
+          {ownerToken && (
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={deleting}
+              className={`flex items-center gap-1 text-xs font-medium disabled:opacity-50 ${
+                confirmingDelete ? "text-red-600" : "text-slate-400 hover:text-red-500"
+              }`}
+            >
+              {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+              {deleting ? "삭제 중..." : confirmingDelete ? "한 번 더 누르면 삭제" : "삭제"}
+            </button>
+          )}
+        </div>
       </div>
 
       <article className="space-y-6">

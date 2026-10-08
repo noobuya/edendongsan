@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AlertCircle, Loader2, Search, Users } from "lucide-react";
@@ -29,6 +29,9 @@ export default function CommunityPage() {
   const [estimates, setEstimates] = useState<SharedEstimate[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  // 목록 안에서 품목으로 한 번 더 좁혀 보는 칩. 검색어는 서버로 보내지만
+  // 이건 이미 불러온 목록을 클라이언트에서만 추가로 거르는 거라 서버 호출이 없다.
+  const [activeTag, setActiveTag] = useState<string | null>(null);
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -39,6 +42,17 @@ export default function CommunityPage() {
     }, 250);
     return () => clearTimeout(handle);
   }, [query]);
+
+  // 지금 불러온 목록에 실제로 등장하는 품목만, 많이 나온 순서로 최대 10개 보여준다.
+  const tags = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const e of estimates ?? []) {
+      for (const name of e.item_names) counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name]) => name);
+  }, [estimates]);
+
+  const visibleEstimates = activeTag ? estimates?.filter((e) => e.item_names.includes(activeTag)) : estimates;
 
   return (
     <main className="mx-auto min-h-dvh max-w-4xl px-4 py-10 xs:px-6">
@@ -67,6 +81,25 @@ export default function CommunityPage() {
         />
       </div>
 
+      {tags.length > 0 && (
+        <div className="mx-auto mb-8 flex max-w-md flex-wrap justify-center gap-1.5">
+          {tags.map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              onClick={() => setActiveTag((cur) => (cur === tag ? null : tag))}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                activeTag === tag
+                  ? "bg-indigo-600 text-white"
+                  : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+              }`}
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
+      )}
+
       {error && (
         <div className="mx-auto flex max-w-md items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3.5 py-3 text-sm text-red-700">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -81,14 +114,18 @@ export default function CommunityPage() {
         </div>
       )}
 
-      {!error && estimates !== null && estimates.length === 0 && (
+      {!error && estimates !== null && visibleEstimates?.length === 0 && (
         <p className="py-16 text-center text-sm text-slate-400">
-          {query ? `"${query}"에 대한 견적을 찾지 못했습니다` : "아직 공유된 견적이 없습니다"}
+          {activeTag
+            ? `"${activeTag}" 품목이 들어간 견적이 없습니다`
+            : query
+              ? `"${query}"에 대한 견적을 찾지 못했습니다`
+              : "아직 공유된 견적이 없습니다"}
         </p>
       )}
 
       <div className="grid gap-4 xs:grid-cols-2">
-        {estimates?.map((e) => (
+        {visibleEstimates?.map((e) => (
           <Link
             key={e.id}
             href={`/community/post?id=${e.id}`}
