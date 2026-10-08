@@ -22,6 +22,7 @@ def recolor_surface(
     color_hex: str,
     output_path: str,
     wood_grain: bool = False,
+    grain_horizontal: bool = True,
 ) -> str:
     """마스크 영역을 목표 색으로 "실제 시공된 것처럼" 다시 칠한다.
 
@@ -46,7 +47,7 @@ def recolor_surface(
     if mask.size != base.size:
         mask = mask.resize(base.size, Image.NEAREST)
 
-    recolored = _recolor_pixels(base, mask, color_hex, wood_grain)
+    recolored = _recolor_pixels(base, mask, color_hex, wood_grain, grain_horizontal)
 
     # 경계를 살짝 흐려 합성 자국이 칼로 오린 듯 보이지 않게 한다.
     feather = max(1.0, base.width * 0.0025)
@@ -82,7 +83,7 @@ _TEXTURE_KEEP_WOOD = 0.45
 
 
 def _recolor_pixels(
-    base: Image.Image, mask: Image.Image, color_hex: str, wood_grain: bool
+    base: Image.Image, mask: Image.Image, color_hex: str, wood_grain: bool, grain_horizontal: bool = True
 ) -> Image.Image:
     lab = np.asarray(base.convert("LAB"), dtype=np.float32)
     sel = np.asarray(mask, dtype=np.float32) > 127
@@ -116,7 +117,7 @@ def _recolor_pixels(
     new_l = low + (new_l - low) * keep
 
     if wood_grain:
-        new_l = new_l + _wood_grain_layer(base.size) * _GRAIN_AMPLITUDE
+        new_l = new_l + _wood_grain_layer(base.size, grain_horizontal) * _GRAIN_AMPLITUDE
 
     out = lab.copy()
     out[..., 0] = np.clip(new_l, 0, 255)
@@ -130,19 +131,25 @@ def _hex_to_rgb(color_hex: str) -> tuple[int, int, int]:
     return tuple(int(h[i : i + 2], 16) for i in (0, 2, 4))  # type: ignore[return-value]
 
 
-def _wood_grain_layer(size: tuple[int, int]) -> np.ndarray:
-    """가로로 길게 흐르는 미세한 나뭇결을 절차적으로 만든다 (-1~1 정규화).
+def _wood_grain_layer(size: tuple[int, int], horizontal: bool = True) -> np.ndarray:
+    """가로 또는 세로로 길게 흐르는 미세한 나뭇결을 절차적으로 만든다 (-1~1 정규화).
 
-    x 방향으로는 천천히, y 방향으로는 촘촘하게 변하는 노이즈를 만들면 결이
-    가로로 길게 이어진다 — 낮은 해상도로 뽑은 노이즈를 세로로만 크게 늘리는
-    방식으로 구현한다 (매번 같은 결이 나오도록 시드를 고정).
-    """
+    결이 흐르는 방향으로는 천천히, 그 반대 방향으로는 촘촘하게 변하는 노이즈를
+    만들면 결이 그 방향으로 길게 이어진다 — 낮은 해상도로 뽑은 노이즈를 크게
+    늘리는 방식으로 구현한다 (매번 같은 결이 나오도록 시드를 고정).
+
+    horizontal=False(세로 결)는 가로/세로를 맞바꾼 캔버스에서 똑같이 만든 뒤
+    90도 돌려서 되돌린다 — 보간 없이 정확히 돌아가므로 결이 흐트러지지 않는다."""
     width, height = size
+    gen_size = size if horizontal else (height, width)
+    gw, gh = gen_size
     rng = np.random.default_rng(20240517)
-    coarse = rng.standard_normal((max(4, height // 3), max(4, width // 48))).astype(np.float32)
+    coarse = rng.standard_normal((max(4, gh // 3), max(4, gw // 48))).astype(np.float32)
 
     noise_img = Image.fromarray(((coarse * 40) + 128).clip(0, 255).astype(np.uint8), mode="L")
-    stretched = noise_img.resize(size, Image.BICUBIC).filter(ImageFilter.GaussianBlur(0.6))
+    stretched = noise_img.resize(gen_size, Image.BICUBIC).filter(ImageFilter.GaussianBlur(0.6))
+    if not horizontal:
+        stretched = stretched.transpose(Image.ROTATE_90)
 
     arr = np.asarray(stretched, dtype=np.float32)
     spread = float(arr.std()) or 1.0

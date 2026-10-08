@@ -39,6 +39,8 @@ class FilmOptions(BaseModel):
     pattern_id: str = "matte-white"
     unit_price_per_m: int = 10_000  # 원/m — 표준 장폭 1.22m 원단 기준 사용자가 직접 입력/조정하는 단가
     needs_primer: bool = False
+    # InpaintRequest.grain_horizontal과 같은 의미 — 우드 계열 자재일 때만 쓰인다.
+    grain_horizontal: bool = True
     upper_cabinets: list[PanelItem] = Field(default_factory=list)
     lower_cabinets: list[PanelItem] = Field(default_factory=list)
     island_tables: list[PanelItem] = Field(default_factory=list)
@@ -301,6 +303,10 @@ class JobStatusResponse(BaseModel):
 class InpaintRequest(BaseModel):
     region_id: str
     pattern_id: str
+    # 우드 계열 자재에서만 의미가 있다(그 외엔 조용히 무시됨) — 결(나뭇결)이 가로로
+    # 흐르는지 세로로 흐르는지. 문짝처럼 세로로 긴 면은 세로 결이 실제 시공과 더
+    # 비슷하게 보이는 경우가 많아 사용자가 고를 수 있게 뒀다.
+    grain_horizontal: bool = True
 
 
 class IllustrationRequest(BaseModel):

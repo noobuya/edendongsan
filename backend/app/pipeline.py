@@ -276,6 +276,7 @@ def run_pipeline(
                     pattern_meta["color_hex"],
                     pattern_applied_path,
                     wood_grain=_is_wood(options.film.pattern_id),
+                    grain_horizontal=options.film.grain_horizontal,
                 )
                 current_path = pattern_applied_path
 
@@ -343,7 +344,7 @@ def run_pipeline(
         JOBS[job_id].update(status="failed", stage=None, error=str(exc))
 
 
-def run_inpaint_edit(job_id: str, region_id: str, pattern_id: str) -> None:
+def run_inpaint_edit(job_id: str, region_id: str, pattern_id: str, grain_horizontal: bool = True) -> None:
     """클릭으로 선택한 부위 하나만 선택한 색으로 다시 칠한다.
 
     결정적 리컬러라 외부 API 호출이 없어 즉시(수십 ms) 끝난다 — 예전에는 부위
@@ -363,6 +364,7 @@ def run_inpaint_edit(job_id: str, region_id: str, pattern_id: str) -> None:
             pattern["color_hex"],
             edit_path,
             wood_grain=_is_wood(pattern_id),
+            grain_horizontal=grain_horizontal,
         )
 
         job["current_image_path"] = edit_path
@@ -659,10 +661,16 @@ def _build_scene_instructions(
         color_phrase = FAN_BLADE_COLOR_PROMPTS.get(options.film.pattern_id, "matte white")
         targets = _film_target_phrases(options.film)
         if targets:
+            grain_clause = ""
+            if _is_wood(options.film.pattern_id):
+                # 마스크가 없는 이 전체 장면 경로에서는 결정론적 리컬러처럼 결 방향을
+                # 코드로 보장할 수 없다 — 생성형 모델에게 말로 부탁하는 최선형이다.
+                direction = "horizontally" if options.film.grain_horizontal else "vertically"
+                grain_clause = f" The wood grain must run {direction}."
             instructions.append(
                 f"Refinish the {', '.join(targets)} with a {color_phrase} interior film — "
                 "keep the existing door/panel shapes, handles and hinges exactly as they are, "
-                "only the surface finish changes."
+                f"only the surface finish changes.{grain_clause}"
             )
 
     if "door_frame" in selected_items and options.door_frame:
@@ -808,6 +816,7 @@ def _ensure_film_applied(job_id: str, image_path: str, masks: dict, options: Job
         pattern_meta["color_hex"],
         corrected_path,
         wood_grain=_is_wood(options.film.pattern_id),
+        grain_horizontal=options.film.grain_horizontal,
     )
     JOBS[job_id].setdefault("notices", []).append(
         "AI 시공 사진에 필름 색이 충분히 입혀지지 않아, 필름 대상 부위를 직접 다시 칠했어요."
@@ -816,7 +825,16 @@ def _ensure_film_applied(job_id: str, image_path: str, masks: dict, options: Job
 
 
 def _is_wood(pattern_id: str) -> bool:
-    """우드 계열 필름은 단색이 아니라 나뭇결이 보여야 실제 시공처럼 보인다."""
+    """우드 계열 필름은 단색이 아니라 나뭇결이 보여야 실제 시공처럼 보인다.
+
+    [버그 수정] 예전엔 pattern_id 문자열에 "wood"가 들어있는지만 봤다. 그런데
+    현대보닥(BODAQ) 우드 제품은 id가 "bodaq-w015"처럼 제품코드라 "wood"라는
+    글자가 안 들어있어서, catalog.py에 분명히 wood_grain=True로 적어뒀는데도
+    이 함수가 늘 False를 돌려줘 나뭇결이 전혀 안 그려지고 있었다. catalog의
+    실제 플래그를 먼저 보고, 플래그가 없는 옛/기본 항목만 이름으로 추정한다."""
+    pattern = PATTERNS.get(pattern_id)
+    if pattern is not None and "wood_grain" in pattern:
+        return bool(pattern["wood_grain"])
     return "wood" in pattern_id
 
 

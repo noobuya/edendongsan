@@ -29,6 +29,10 @@ import { packShelves, type NestingPiece, type NestingShelf } from "@/lib/cutNest
 // 보이면 사장님이 어느 쪽을 믿어야 할지 헷갈린다.
 const ROLL_WIDTH_MM = 1220;
 const DEFAULT_LOSS_PERCENT = 15;
+// 업계 표준 여유 구매율(로스율) 범위. 범위 밖으로 입력해도 계산은 그대로 입력값을
+// 쓰되(강제로 틀어막지 않음), 범위를 벗어났다는 걸 눈에 띄게 알려준다.
+const LOSS_PERCENT_MIN = 15;
+const LOSS_PERCENT_MAX = 20;
 
 // [필름 시공 절대 규칙]
 // 1) 원단 폭은 무조건 1,220mm 고정(위 ROLL_WIDTH_MM).
@@ -1668,6 +1672,12 @@ export default function CuttingCalculatorPage() {
                 %
               </span>
             </label>
+            {(lossRate < LOSS_PERCENT_MIN || lossRate > LOSS_PERCENT_MAX) && (
+              <p className="mt-2 text-[11.5px] leading-relaxed text-amber-200">
+                업계 표준 여유 구매율은 보통 {LOSS_PERCENT_MIN}~{LOSS_PERCENT_MAX}% 사이예요. 이 값으로도 계산은
+                되지만, 너무 낮으면 자재가 부족할 수 있고 너무 높으면 낭비가 커요.
+              </p>
+            )}
             {/* 물량 폭증 방지 안내 — 양면 시공이 반영되면 전보다 길이가 확 늘어 보일 수
                 있어, 놀라지 않게 왜 늘었는지 작게 짚어 준다. */}
             {items.some((it) => it.category === "door") && (

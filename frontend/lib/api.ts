@@ -240,11 +240,16 @@ export async function getJobStatus(jobId: string): Promise<JobStatusResponse> {
   return res.json();
 }
 
-export async function requestInpaint(jobId: string, regionId: string, patternId: string): Promise<void> {
+export async function requestInpaint(
+  jobId: string,
+  regionId: string,
+  patternId: string,
+  grainHorizontal = true
+): Promise<void> {
   const res = await apiFetch(`${API_BASE}/api/jobs/${jobId}/inpaint`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ region_id: regionId, pattern_id: patternId }),
+    body: JSON.stringify({ region_id: regionId, pattern_id: patternId, grain_horizontal: grainHorizontal }),
   });
   if (!res.ok) throw new Error(await extractErrorMessage(res, "AI 편집 요청에 실패했습니다."));
 }

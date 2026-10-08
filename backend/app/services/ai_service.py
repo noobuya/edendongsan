@@ -260,7 +260,10 @@ def render_region(
         edit_source = base.crop(crop_box) if crop_box else base
 
         try:
-            edited = _run_edit(edit_source, build_instruction(option_id, category, design, door_material))
+            edited = _run_edit(
+                edit_source,
+                build_instruction(option_id, category, design, door_material, _perspective_hint(mask)),
+            )
         except Exception as exc:  # noqa: BLE001 - 외부 AI 실패는 아래 폴백으로 받는다
             # [AI가 실패해도 "색이 안 바뀌는" 일은 없어야 한다]
             # 외부 편집 모델(Replicate 경유 OpenAI)은 ReadTimeout·과부하로 종종 실패하고,
@@ -493,7 +496,45 @@ PRESERVE_HINTS = {
 WOOD_TYPICAL_CATEGORIES = {"film", "door_frame", "wardrobe"}
 
 
-def build_instruction(option_id: str, category: str, design: str, door_material: str = "wood") -> str:
+def _perspective_hint(mask: Image.Image) -> str:
+    """마스크 모양만 보고 "이 면이 카메라 쪽에서 위/아래 중 어느 쪽으로 좁아지는지"를
+    계산해 문장으로 돌려준다.
+
+    진짜 깊이 추정(ControlNet-depth 같은)이 아니라 마스크의 위쪽/아래쪽 폭 비율만
+    보는 값싼 근사치다 — 그래도 추가 API 호출 없이, 지금까지 프롬프트에 전혀 없던
+    "이 면은 기울어 보인다"는 정보를 공짜로 준다. 거의 수직으로(정면으로) 보이는
+    면은 비율이 1에 가까우므로 아무 말도 안 보태 괜한 지시로 결과를 흔들지 않는다."""
+    bbox = mask.getbbox()
+    if not bbox:
+        return ""
+    left, top, right, bottom = bbox
+    height = bottom - top
+    if height < 20:  # 너무 작은 영역은 위/아래 폭 비교가 노이즈라 의미 없다
+        return ""
+    arr = np.asarray(mask) > 127
+    band = max(4, int(height * 0.15))
+    top_width = int(arr[top : top + band, left:right].any(axis=0).sum())
+    bottom_width = int(arr[bottom - band : bottom, left:right].any(axis=0).sum())
+    if top_width < 4 or bottom_width < 4:
+        return ""
+    ratio = top_width / bottom_width
+    if 0.88 <= ratio <= 1.12:
+        return ""  # 거의 정면 — 특별히 말할 게 없다
+    narrow_side = "top" if ratio < 1 else "bottom"
+    return (
+        f" This surface is seen at an angle where it visibly narrows toward the {narrow_side} "
+        f"(it recedes away from the camera at the {narrow_side}) — render the film so it follows "
+        f"that same taper, narrower at the {narrow_side}, not as an even frontal rectangle."
+    )
+
+
+def build_instruction(
+    option_id: str,
+    category: str,
+    design: str,
+    door_material: str = "wood",
+    perspective_hint: str = "",
+) -> str:
     """시공 지시문. 색만 말하지 않고 "기존 질감을 완전히 덮되 형태는 지키라"까지 적는다.
 
     [왜 문 재질을 따로 받는가 — 방화문 사진에서 AI가 실패/이상한 결과를 내던 원인]
@@ -521,8 +562,8 @@ def build_instruction(option_id: str, category: str, design: str, door_material:
 
     text = (
         f"Change the {surface} in this photo to have a flawless, completely opaque "
-        f"{material} interior vinyl film applied.{surface_note} Make it look highly detailed and "
-        f"photorealistic, and ensure the new thick film texture {covers_clause}, "
+        f"{material} interior vinyl film applied.{surface_note}{perspective_hint} Make it look "
+        f"highly detailed and photorealistic, and ensure the new thick film texture {covers_clause}, "
         f"while perfectly preserving {preserve}. Do not change anything else in the room."
     )
     if design:

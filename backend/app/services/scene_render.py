@@ -35,6 +35,21 @@ BASE_INSTRUCTION = (
     "described below. Keep the same camera angle, perspective, room layout, wall positions, "
     "window position and ceiling height. Do not add, remove or move any furniture that is not "
     "mentioned. Do not write any text, label, watermark or logo anywhere in the image. "
+    # [원근/깊이 문제 대응] 실제 사진 비교에서, 비스듬히 보이는 면(문틀 안쪽, 각진
+    # 싱크대 옆면 등)에 필름을 "정면에서 찍은 사각형"처럼 평평하게 붙여버리는 경우가
+    # 있었다. 이 모델에는 깊이맵을 따로 못 주니(ControlNet 입력을 못 받는 모델),
+    # "이 사진에서 실제로 보이는 각도를 따라가라"고 구체적으로 말로 지시한다.
+    "For every surface being refinished, follow that exact surface's own visible angle and "
+    "foreshortening as it actually appears in this photo — if a surface recedes away from the "
+    "camera or is seen at a slant, the new film/material must appear correspondingly compressed "
+    "and perspective-correct in that same direction, never pasted on as a flat frontal rectangle "
+    "regardless of the surface's real orientation. "
+    # [빛·그림자 보존] 이것도 평면적으로 보이는 또 다른 원인 — 필름을 입히면서 원래
+    # 있던 명암(창에서 들어오는 빛, 그림자)까지 같이 지워버리면 그 자리만 조명이 다른
+    # 것처럼 붕 떠 보인다.
+    "Preserve the exact lighting conditions already visible in the original photo — keep the "
+    "same highlights, reflections and shadow pattern falling across each surface, so the new "
+    "material looks lit by the room's own existing light rather than relit from scratch. "
     "The result must look like a real photograph taken after the work was finished: "
     "photorealistic, natural lighting consistent with the original photo, "
     "professional real-estate interior photography quality.\n\nRenovation work performed:\n"

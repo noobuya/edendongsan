@@ -124,7 +124,9 @@ async def inpaint_job_region(job_id: str, request: InpaintRequest, background_ta
     job["editing"] = True
     job["editing_region_id"] = request.region_id
     job["edit_error"] = None
-    background_tasks.add_task(run_inpaint_edit, job_id, request.region_id, request.pattern_id)
+    background_tasks.add_task(
+        run_inpaint_edit, job_id, request.region_id, request.pattern_id, request.grain_horizontal
+    )
     return InpaintAcceptedResponse(accepted=True)
 
 

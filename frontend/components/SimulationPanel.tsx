@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Loader2, MousePointerClick, Sparkles, Users, Wand2 } from "lucide-react";
+import { AlertCircle, Loader2, MousePointerClick, SlidersHorizontal, Sparkles, Users, Wand2 } from "lucide-react";
 import type { JobStatusResponse } from "@/types";
 import { getJobStatus, requestIllustration, requestInpaint, resolveAssetUrl } from "@/lib/api";
 import AssetImage from "@/components/AssetImage";
+import BeforeAfterSlider from "@/components/BeforeAfterSlider";
 import PremiumReceipt from "@/components/PremiumReceipt";
 import ShareEstimateDialog from "@/components/community/ShareEstimateDialog";
 import InteractiveResultCanvas from "@/components/InteractiveResultCanvas";
@@ -37,11 +38,16 @@ export default function SimulationPanel({
   onSecretHold?: () => void;
 }) {
   const [tab, setTab] = useState<ViewTab>("result");
+  // 결과 탭에서 "AI 영역 선택" 모드와 "시공 전후 비교" 모드를 토글한다 — 기본은
+  // 기존 영역 클릭 기능(InteractiveResultCanvas)이고, 비교는 눌렀을 때만 보여준다.
+  const [compareMode, setCompareMode] = useState(false);
   const [liveJob, setLiveJob] = useState(job);
   const [shareOpen, setShareOpen] = useState(false);
   const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
   const [selectedRegionLabel, setSelectedRegionLabel] = useState<string | null>(null);
   const [lastColorId, setLastColorId] = useState(PATTERN_SWATCHES[0].id);
+  // 우드 계열(오크/월넛)을 고를 때만 보이는 결 방향. 기본은 가로결.
+  const [grainHorizontal, setGrainHorizontal] = useState(true);
   const [pickHint, setPickHint] = useState(false);
   const [illustText, setIllustText] = useState("");
   const [illustDesc, setIllustDesc] = useState("");
@@ -143,6 +149,7 @@ export default function SimulationPanel({
   }
 
   const resultUrl = liveJob.rendered_image_url ? resolveAssetUrl(liveJob.rendered_image_url) : undefined;
+  const beforeUrl = liveJob.original_image_url ? resolveAssetUrl(liveJob.original_image_url) : undefined;
 
   function handleSelectRegion(regionId: string | null, label: string | null) {
     setSelectedRegionId(regionId);
@@ -166,7 +173,7 @@ export default function SimulationPanel({
     }
   }
 
-  async function handleSwatchSelect(colorId: string) {
+  async function handleSwatchSelect(colorId: string, horizontal = grainHorizontal) {
     setLastColorId(colorId);
     if (!selectedRegionId) {
       setPickHint(true);
@@ -177,7 +184,7 @@ export default function SimulationPanel({
 
     setLiveJob((prev) => ({ ...prev, editing: true, editing_region_id: selectedRegionId, edit_error: undefined }));
     try {
-      await requestInpaint(liveJob.job_id, selectedRegionId, colorId);
+      await requestInpaint(liveJob.job_id, selectedRegionId, colorId, horizontal);
       startEditPolling(liveJob.job_id);
     } catch (err) {
       setLiveJob((prev) => ({
@@ -186,6 +193,15 @@ export default function SimulationPanel({
         editing_region_id: undefined,
         edit_error: err instanceof Error ? err.message : "AI 편집 요청에 실패했습니다.",
       }));
+    }
+  }
+
+  // 결 방향을 바꾸면, 지금 우드 색이 이미 적용돼 있을 때만 그 방향으로 다시 칠한다
+  // (색을 아직 안 골랐으면 다음에 고를 때 이 방향이 쓰이도록 상태만 저장해둔다).
+  function handleGrainChange(horizontal: boolean) {
+    setGrainHorizontal(horizontal);
+    if (selectedRegionId && lastColorId.includes("wood") && !liveJob.editing) {
+      void handleSwatchSelect(lastColorId, horizontal);
     }
   }
 
@@ -218,25 +234,48 @@ export default function SimulationPanel({
           {tab === "result" &&
             (resultUrl ? (
               <div className="space-y-0">
-                {/* [최종 뷰어]
-                    이 탭은 고객에게 보여주고 그대로 인쇄(PDF)하는 화면이다. 색상 스와치,
-                    문구 입력, "AI로 시공 사진 만들기" 같은 조작 UI는 전부 [구역 부분 편집]
-                    탭으로 옮겼다 — 결과지에 편집 도구가 섞여 있으면 지저분하고, 고객 앞에서
-                    실수로 눌러 결과가 바뀌는 사고도 난다. */}
-                <InteractiveResultCanvas
-                  imageUrl={resultUrl}
-                  regions={resolvedRegions}
-                  selectedRegionId={selectedRegionId}
-                  onSelectRegion={handleSelectRegion}
-                  editingRegionId={liveJob.editing ? liveJob.editing_region_id : null}
-                />
-                {/* 부위를 고르면(점선 테두리) 색을 바꾸는 곳은 바로 옆 탭이다 —
-                    고객 앞 결과지에는 색상 칩을 섞지 않는다는 원칙을 지키면서도
-                    "선택은 했는데 아무 반응이 없다"는 느낌이 없도록 다음 동작을 알려준다. */}
-                {selectedRegionId && !liveJob.editing && (
-                  <p className="border-t border-slate-200 bg-indigo-50/60 px-4 py-2.5 text-[12px] font-semibold text-indigo-700">
-                    {selectedRegionLabel} 선택됨 — 위 [구역 부분 편집] 탭에서 색상을 고르면 바로 적용돼요
-                  </p>
+                {/* 시공 전 사진이 있을 때만 비교 버튼을 보여준다(수동 재편집 등으로
+                    원본이 없는 옛 작업은 버튼 자체가 안 뜬다). */}
+                {beforeUrl && (
+                  <div className="flex justify-end border-b border-slate-200 bg-white px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => setCompareMode((v) => !v)}
+                      className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold transition ${
+                        compareMode ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      <SlidersHorizontal className="h-3.5 w-3.5" />
+                      {compareMode ? "영역 선택 모드로" : "시공 전후 비교"}
+                    </button>
+                  </div>
+                )}
+
+                {compareMode && beforeUrl ? (
+                  <BeforeAfterSlider beforeSrc={beforeUrl} afterSrc={resultUrl} className="aspect-[4/3] w-full" />
+                ) : (
+                  <>
+                    {/* [최종 뷰어]
+                        이 탭은 고객에게 보여주고 그대로 인쇄(PDF)하는 화면이다. 색상 스와치,
+                        문구 입력, "AI로 시공 사진 만들기" 같은 조작 UI는 전부 [구역 부분 편집]
+                        탭으로 옮겼다 — 결과지에 편집 도구가 섞여 있으면 지저분하고, 고객 앞에서
+                        실수로 눌러 결과가 바뀌는 사고도 난다. */}
+                    <InteractiveResultCanvas
+                      imageUrl={resultUrl}
+                      regions={resolvedRegions}
+                      selectedRegionId={selectedRegionId}
+                      onSelectRegion={handleSelectRegion}
+                      editingRegionId={liveJob.editing ? liveJob.editing_region_id : null}
+                    />
+                    {/* 부위를 고르면(점선 테두리) 색을 바꾸는 곳은 바로 옆 탭이다 —
+                        고객 앞 결과지에는 색상 칩을 섞지 않는다는 원칙을 지키면서도
+                        "선택은 했는데 아무 반응이 없다"는 느낌이 없도록 다음 동작을 알려준다. */}
+                    {selectedRegionId && !liveJob.editing && (
+                      <p className="border-t border-slate-200 bg-indigo-50/60 px-4 py-2.5 text-[12px] font-semibold text-indigo-700">
+                        {selectedRegionLabel} 선택됨 — 위 [구역 부분 편집] 탭에서 색상을 고르면 바로 적용돼요
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
             ) : (
@@ -268,6 +307,31 @@ export default function SimulationPanel({
                         <div className={liveJob.editing ? "pointer-events-none opacity-40" : ""}>
                           <SwatchPicker swatches={PATTERN_SWATCHES} selectedId={lastColorId} onSelect={handleSwatchSelect} size="sm" />
                         </div>
+                        {/* 오크/월넛처럼 결이 있는 자재를 골랐을 때만 보인다 — 단색에는 의미가 없다. */}
+                        {lastColorId.includes("wood") && (
+                          <div className={`flex items-center gap-2 ${liveJob.editing ? "pointer-events-none opacity-40" : ""}`}>
+                            <span className="text-[12px] font-medium text-slate-500">나뭇결 방향</span>
+                            <div className="flex gap-1 rounded-full bg-slate-100 p-1">
+                              {([
+                                { horizontal: true, label: "가로결" },
+                                { horizontal: false, label: "세로결" },
+                              ] as const).map((opt) => (
+                                <button
+                                  key={opt.label}
+                                  type="button"
+                                  onClick={() => handleGrainChange(opt.horizontal)}
+                                  className={`rounded-full px-3 py-1 text-[12px] font-semibold transition ${
+                                    grainHorizontal === opt.horizontal
+                                      ? "bg-white text-indigo-600 shadow-sm"
+                                      : "text-slate-500"
+                                  }`}
+                                >
+                                  {opt.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                         {pickHint && (
                           <p className="flex items-center gap-1.5 text-[12px] font-semibold text-rose-600">
                             <MousePointerClick className="h-3.5 w-3.5 shrink-0" />

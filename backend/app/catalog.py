@@ -77,12 +77,14 @@ PATTERNS = {
         "color_hex": "#B08B5A",
         "texture_path": "assets/patterns/oak-wood.png",
         "prompt_keyword": "natural oak wood grain interior film finish",
+        "wood_grain": True,
     },
     "walnut-wood": {
         "name": "월넛 우드",
         "color_hex": "#5C3A28",
         "texture_path": "assets/patterns/walnut-wood.png",
         "prompt_keyword": "dark walnut wood grain interior film finish",
+        "wood_grain": True,
     },
     "deep-navy": {
         "name": "딥 네이비",
