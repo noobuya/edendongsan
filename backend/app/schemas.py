@@ -283,6 +283,28 @@ class SignatureRequest(BaseModel):
     image: str
 
 
+class SubstrateChecklist(BaseModel):
+    """시공 전 하지(바탕면) 점검 — 일본 3M 다이노크 시공 매뉴얼의 핵심 점검 항목을
+    그대로 따른다(이 다섯 가지가 접착 불량의 가장 흔한 원인이다)."""
+
+    dust_removed: bool = False  # 먼지·기름기·오염 제거
+    no_unevenness: bool = False  # 요철·단차·균열 없음(있으면 퍼티로 평탄화)
+    surface_dry: bool = False  # 표면 건조(함수율 8% 이하 기준)
+    primer_applied: bool = False  # 약한 바탕재(석고보드 등)는 프라이머 보강
+    temperature_ok: bool = False  # 시공 적정 온도(15~25℃) 확인
+
+
+class SiteConditions(BaseModel):
+    temperature_c: Optional[float] = None
+    checklist: SubstrateChecklist = Field(default_factory=SubstrateChecklist)
+    recorded_at: str
+
+
+class SiteConditionsRequest(BaseModel):
+    temperature_c: Optional[float] = None
+    checklist: SubstrateChecklist = Field(default_factory=SubstrateChecklist)
+
+
 class JobStatusResponse(BaseModel):
     job_id: str
     status: Literal["queued", "processing", "done", "failed"]
@@ -310,6 +332,7 @@ class JobStatusResponse(BaseModel):
     work_photos: list[WorkPhoto] = Field(default_factory=list)
     blog_post: Optional[BlogPost] = None
     signature: Optional[Signature] = None
+    site_conditions: Optional[SiteConditions] = None
 
 
 class InpaintRequest(BaseModel):

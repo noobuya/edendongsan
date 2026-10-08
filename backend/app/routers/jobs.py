@@ -18,13 +18,14 @@ from app.pipeline import (
     run_inpaint_edit,
     run_remask,
 )
-from app.quotes_store import clear_signature, load_quote, save_quote, set_signature
+from app.quotes_store import clear_signature, load_quote, save_quote, set_signature, set_site_conditions
 from app.schemas import (
     IllustrationRequest,
     InpaintAcceptedResponse,
     InpaintRequest,
     JobStatusResponse,
     SignatureRequest,
+    SiteConditionsRequest,
 )
 
 # 손가락으로 그린 서명치고 지나치게 큰 데이터(악의적으로 큰 이미지를 밀어넣는 경우)를
@@ -65,6 +66,7 @@ async def get_job(job_id: str):
             work_photos=(quote or {}).get("work_photos", []),
             blog_post=(quote or {}).get("blog_post"),
             signature=(quote or {}).get("signature"),
+            site_conditions=(quote or {}).get("site_conditions"),
         )
 
     # 서버가 재시작돼 인메모리 JOBS에서 사라졌거나(브라우저를 오래 열어둔 경우 등)
@@ -301,6 +303,23 @@ async def reset_job_signature(job_id: str, x_admin_token: str | None = Header(de
     if not is_owner(x_admin_token):
         raise HTTPException(status_code=401, detail="사장님 기기에서만 지울 수 있어요.")
     updated = clear_signature(job_id)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="이 견적서를 찾을 수 없습니다.")
+    return JobStatusResponse(**updated)
+
+
+@router.put("/{job_id}/site_conditions", response_model=JobStatusResponse)
+async def save_site_conditions(job_id: str, request: SiteConditionsRequest):
+    """시공 현장의 온도·하지(바탕면) 점검 기록. 일본 3M 다이노크 시공 매뉴얼의
+    핵심 점검 항목을 그대로 따른다 — 적정 온도(15~25℃) 밖이거나 하지 점검을
+    건너뛰면 접착 불량(들뜸·기포·박리)으로 이어지는 가장 흔한 원인이라, 체크리스트로
+    남겨두면 나중에 하자 원인을 추적하거나 예방 교육에도 쓸 수 있다."""
+    conditions = {
+        "temperature_c": request.temperature_c,
+        "checklist": request.checklist.model_dump(),
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    updated = set_site_conditions(job_id, conditions)
     if updated is None:
         raise HTTPException(status_code=404, detail="이 견적서를 찾을 수 없습니다.")
     return JobStatusResponse(**updated)

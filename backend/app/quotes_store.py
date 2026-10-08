@@ -71,6 +71,17 @@ def clear_signature(job_id: str) -> dict | None:
     return quote
 
 
+def set_site_conditions(job_id: str, conditions: dict) -> dict | None:
+    """시공 현장 조건(온도·하지 점검)을 기록한다. 서명과 달리 작업 중 수시로 다시
+    확인할 수 있는 작업 기록이라(법적 합의가 아니다), 덮어쓰기를 막지 않는다."""
+    quote = load_quote(job_id)
+    if quote is None:
+        return None
+    quote["site_conditions"] = conditions
+    save_quote(job_id, quote)
+    return quote
+
+
 def set_blog_post(job_id: str, blog_post: dict) -> dict | None:
     quote = load_quote(job_id)
     if quote is None:

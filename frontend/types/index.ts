@@ -268,12 +268,28 @@ export interface JobStatusResponse {
   work_photos: WorkPhoto[];
   blog_post?: BlogPost;
   signature?: Signature | null;
+  site_conditions?: SiteConditions | null;
 }
 
 /** 현장에서 고객이 화면에 직접 그린 서명. */
 export interface Signature {
   image: string;
   signed_at: string;
+}
+
+/** 시공 전 하지(바탕면) 점검 — 일본 3M 다이노크 시공 매뉴얼의 핵심 점검 항목. */
+export interface SubstrateChecklist {
+  dust_removed: boolean;
+  no_unevenness: boolean;
+  surface_dry: boolean;
+  primer_applied: boolean;
+  temperature_ok: boolean;
+}
+
+export interface SiteConditions {
+  temperature_c: number | null;
+  checklist: SubstrateChecklist;
+  recorded_at: string;
 }
 
 export interface PatternSwatch {

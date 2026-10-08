@@ -10,6 +10,7 @@ import PremiumReceipt from "@/components/PremiumReceipt";
 import ShareEstimateDialog from "@/components/community/ShareEstimateDialog";
 import InteractiveResultCanvas from "@/components/InteractiveResultCanvas";
 import SectorReedit from "@/components/SectorReedit";
+import SiteConditionsCard from "@/components/SiteConditionsCard";
 import SitePhotoGallery from "@/components/SitePhotoGallery";
 import SwatchPicker from "@/components/ui/SwatchPicker";
 import { PATTERN_SWATCHES } from "@/lib/patternSwatches";
@@ -384,6 +385,8 @@ export default function SimulationPanel({
         {liveJob.estimate && (
           <ShareEstimateDialog estimate={liveJob.estimate} open={shareOpen} onClose={() => setShareOpen(false)} />
         )}
+
+        <SiteConditionsCard key={`${liveJob.job_id}-conditions`} jobId={liveJob.job_id} initial={liveJob.site_conditions} />
 
         {/* job_id를 key로 줘서, 다른 견적을 불러올 때 이전 견적의 사진/블로그 로컬
             상태가 그대로 남아 뒤섞이지 않고 새로 마운트되게 한다. */}

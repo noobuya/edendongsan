@@ -11,6 +11,7 @@ import type {
   PricingField,
   QuoteSummary,
   SharedEstimate,
+  SubstrateChecklist,
   WorkPhoto,
   WorkPhotoStage,
 } from "@/types";
@@ -263,6 +264,22 @@ export async function signJob(jobId: string, imageDataUrl: string): Promise<JobS
     body: JSON.stringify({ image: imageDataUrl }),
   });
   if (!res.ok) throw new Error(await extractErrorMessage(res, "서명 저장에 실패했습니다."));
+  return res.json();
+}
+
+/** 시공 현장 조건(온도·하지 점검)을 기록한다. 서명과 달리 작업 중 수시로
+ *  다시 저장할 수 있다(법적 합의가 아니라 품질관리 기록이라서). */
+export async function saveSiteConditions(
+  jobId: string,
+  temperatureC: number | null,
+  checklist: SubstrateChecklist
+): Promise<JobStatusResponse> {
+  const res = await apiFetch(`${API_BASE}/api/jobs/${jobId}/site_conditions`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ temperature_c: temperatureC, checklist }),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "현장 조건 저장에 실패했습니다."));
   return res.json();
 }
 
