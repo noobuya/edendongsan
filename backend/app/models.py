@@ -22,6 +22,12 @@ class UserRole(str, enum.Enum):
     STUDENT = "STUDENT"
 
 
+class ApprovalStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+
 class JobStatus(str, enum.Enum):
     OPEN = "OPEN"
     CLOSED = "CLOSED"
@@ -35,6 +41,11 @@ class ApplicationStatus(str, enum.Enum):
 
 
 class User(Base):
+    """가입 신청과 승인된 계정을 같은 테이블로 다룬다 — 신청 시점엔
+    approval_status=PENDING·access_code=None이고, 관리자가 승인하면서
+    access_code를 정해줘야 그 코드로 나머지 API를 쓸 수 있다
+    (자동화 기능의 student_requests.py + admin.py 승인 흐름과 같은 방식)."""
+
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -42,6 +53,15 @@ class User(Base):
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), nullable=False)
     phone_number: Mapped[str] = mapped_column(String, nullable=False)
     daily_wage: Mapped[int] = mapped_column(Integer, default=0)
+
+    approval_status: Mapped[ApprovalStatus] = mapped_column(Enum(ApprovalStatus), default=ApprovalStatus.PENDING)
+    # 관리자가 승인하면서 직접 정해주는 코드(자동화 기능과 동일한 방식) — 이게 있어야
+    # X-Access-Code로 본인 확인이 된다. 승인 전엔 None.
+    access_code: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
+    # 가입 신청자 본인만 자기 승인 상태를 조회할 수 있게 하는 추측 불가능한 토큰.
+    # 관리자 화면(목록 조회)에는 절대 내려주지 않는다.
+    request_token: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     badges: Mapped[list["UserBadge"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     posted_jobs: Mapped[list["FieldJob"]] = relationship(back_populates="expert", foreign_keys="FieldJob.expert_id")
