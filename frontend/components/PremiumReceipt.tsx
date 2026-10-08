@@ -7,7 +7,7 @@ import QuoteIcon, { toneOfWorkItem } from "@/components/quote/QuoteIcon";
 import BusinessStamp from "@/components/BusinessStamp";
 import SignaturePad from "@/components/SignaturePad";
 import { BUSINESS_NAME, BUSINESS_PHONE } from "@/lib/businessInfo";
-import type { EstimateBreakdown, Signature, WorkItemId } from "@/types";
+import type { EstimateBreakdown, MaterialOrderLine, Signature, WorkItemId } from "@/types";
 
 function won(amount: number): string {
   return `${Math.round(amount).toLocaleString("ko-KR")}원`;
@@ -126,6 +126,8 @@ interface ReceiptViewProps {
   /** 원가 분석(사장님 전용)에만 쓰인다. 고객 화면·캡처 이미지에는 나오지 않는다. */
   materialTotal: number;
   expenseTotal: number;
+  /** 품번별 자재 발주 집계(사장님 전용). 없으면(빠른 견적 등 구버전 응답) 섹션 자체를 숨긴다. */
+  materialOrders?: MaterialOrderLine[];
   estimateNo: string;
   /** 상호 뱃지를 3초 길게 눌렀을 때 — 단가 설정(개발자 모드)을 연다. */
   onSecretHold?: () => void;
@@ -164,6 +166,7 @@ export default function PremiumReceipt({
       total={estimate.total_cost}
       materialTotal={estimate.material_total}
       expenseTotal={estimate.expense_total}
+      materialOrders={estimate.material_orders}
       estimateNo={`ED-${jobId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 6).toUpperCase()}`}
       onSecretHold={onSecretHold}
       signature={signature}
@@ -179,6 +182,7 @@ export function PremiumReceiptView({
   total,
   materialTotal,
   expenseTotal,
+  materialOrders,
   estimateNo,
   onSecretHold,
   signature,
@@ -498,6 +502,36 @@ export function PremiumReceiptView({
               </dd>
             </div>
           </dl>
+
+          {/* 품번별 자재 발주 집계 — 일본 クロス職人(크로스 기공) 업계 앱(採寸くん 등)처럼
+              같은 색을 여러 항목에서 골랐어도 발주는 한 번에 하도록 품번 기준으로 합쳐 보여준다. */}
+          {materialOrders && materialOrders.length > 0 && (
+            <div className="mt-4 border-t border-[#eef0f2] pt-4">
+              <p className="text-[13px] font-semibold text-[#5b6573]">자재 발주 집계 (품번별)</p>
+              <ul className="mt-2.5 space-y-2.5">
+                {materialOrders.map((o) => (
+                  <li key={o.pattern_id} className="flex items-start gap-2.5">
+                    <span
+                      className="mt-0.5 h-4 w-4 shrink-0 rounded-full border border-[#e5e8eb]"
+                      style={{ backgroundColor: o.color_hex || "#e5e8eb" }}
+                      aria-hidden
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="min-w-0 text-[13.5px] font-semibold leading-snug text-[#191f28]">{o.name}</p>
+                        <p className="shrink-0 text-[13.5px] font-bold tabular-nums text-[#191f28]">
+                          발주 {o.order_length_m.toLocaleString("ko-KR")}m
+                        </p>
+                      </div>
+                      <p className="mt-0.5 text-[12px] text-[#8b95a1]">
+                        {o.item_names.join(" · ")} · 소요 {o.total_length_m.toLocaleString("ko-KR")}m
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <label className="mt-4 flex items-center justify-between gap-3 border-t border-[#eef0f2] pt-4 text-[14px] text-[#5b6573]">
             협의 공급가액

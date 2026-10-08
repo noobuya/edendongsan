@@ -223,6 +223,10 @@ class LineItemDetail(BaseModel):
     unit_price: int = 0
     amount: int
     category: DetailCategory = "material"
+    # 원단(필름) 자재 행에서만 채워진다 — app.catalog.PATTERNS의 id. 여러 항목(싱크대
+    # 필름, 문짝/문틀 등)이 같은 색을 골라도 발주는 한 품번으로 묶어야 해서, 이 값으로
+    # 품번별 자재 발주 집계(EstimateBreakdown.material_orders)를 만든다.
+    material_code: str = ""
 
 
 class LineItem(BaseModel):
@@ -230,6 +234,18 @@ class LineItem(BaseModel):
     item_name: str
     details: list[LineItemDetail]
     subtotal: int
+
+
+class MaterialOrderLine(BaseModel):
+    """사장님 전용 자재 발주 집계 한 줄 — 같은 품번(색상/패턴)을 여러 항목(싱크대
+    필름, 문짝/문틀, 벽면 등)에서 같이 골랐으면 발주는 한 번에 하므로 여기서 합친다."""
+
+    pattern_id: str
+    name: str  # app.catalog.PATTERNS의 표시명(현대보닥 품번은 "BODAQ S261" 같은 실제 코드 포함)
+    color_hex: str = ""
+    total_length_m: float  # 각 항목 청구 길이(로스율 반영) 합계
+    order_length_m: float  # 발주 편의상 정수 미터로 올림한 값
+    item_names: list[str] = Field(default_factory=list)  # 이 색을 쓴 항목들(예: "인테리어 필름", "문짝/문틀 시공")
 
 
 class EstimateBreakdown(BaseModel):
@@ -241,6 +257,7 @@ class EstimateBreakdown(BaseModel):
     supply_amount: int
     vat: int
     total_cost: int
+    material_orders: list[MaterialOrderLine] = Field(default_factory=list)
 
 
 class Region(BaseModel):

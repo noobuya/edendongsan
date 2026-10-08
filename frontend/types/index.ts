@@ -172,6 +172,17 @@ export interface LineItemDetail {
   unit_price: number;
   amount: number;
   category: DetailCategory;
+  material_code: string;
+}
+
+/** 품번(패턴 id) 기준 자재 발주 집계 한 줄 — 사장님 전용(고객 비공개). */
+export interface MaterialOrderLine {
+  pattern_id: string;
+  name: string;
+  color_hex: string;
+  total_length_m: number;
+  order_length_m: number;
+  item_names: string[];
 }
 
 export interface LineItem {
@@ -190,6 +201,7 @@ export interface EstimateBreakdown {
   supply_amount: number;
   vat: number;
   total_cost: number;
+  material_orders: MaterialOrderLine[];
 }
 
 export interface Region {
