@@ -249,13 +249,23 @@ const EMPTY_SEQ: Record<Category, number> = { sash: 0, door: 0, cabinet: 0, deco
 
 /** localStorage에 저장해 둔 재단 리스트를 읽는다. 컴포넌트 state를 만드는 시점에
  *  (useState의 지연 초기화로) 바로 불러 써야 저장/불러오기 순서가 어긋날 일이 없다. */
-function readStoredCutting(): { items: CutItem[]; lossPercent?: string; marginOffsetMm?: string } {
+function readStoredCutting(): { items: CutItem[]; lossPercent?: string; marginOffsetMm?: string; patternRepeatMm?: string } {
   if (typeof window === "undefined") return { items: [] };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { items: [] };
-    const saved = JSON.parse(raw) as { items?: CutItem[]; lossPercent?: string; marginOffsetMm?: string };
-    return { items: saved.items ?? [], lossPercent: saved.lossPercent, marginOffsetMm: saved.marginOffsetMm };
+    const saved = JSON.parse(raw) as {
+      items?: CutItem[];
+      lossPercent?: string;
+      marginOffsetMm?: string;
+      patternRepeatMm?: string;
+    };
+    return {
+      items: saved.items ?? [],
+      lossPercent: saved.lossPercent,
+      marginOffsetMm: saved.marginOffsetMm,
+      patternRepeatMm: saved.patternRepeatMm,
+    };
   } catch {
     return { items: [] }; // 저장된 값이 깨져 있어도 빈 리스트로 시작한다
   }
@@ -278,24 +288,31 @@ function roundUpTo(value: number, step: number): number {
 }
 
 /** 패널 하나의 실제 재단 치수. 여유분(사방) = 두께 + 20mm + 옵셋을 가로·세로 양쪽에
- *  두르고, 마지막으로 재단 눈금 단위(가로 10mm·세로 50mm)로 올림한다 — 실제로 그
- *  단위로만 끊어 자르기 때문에, 어중간한 mm는 어차피 다음 눈금까지 잘려 나간다. */
-function computePanel(wMm: number, hMm: number, dMm: number, offsetMm: number) {
+ *  두르고, 재단 눈금 단위(가로 10mm·세로 50mm)로 올림한 뒤 — 무늬 자재라면 결
+ *  방향(세로, cutHMm)을 다시 무늬 리피트 길이의 배수로 한 번 더 올림한다. 일본
+ *  クロス職人(크로스 기공) 업계의 "에스티모바이르" 같은 적산 앱이 쓰는 방식과 같다:
+ *  무늬가 반복되는 간격(리피트)보다 짧게 끊어 이어 붙이면 옆 조각과 무늬가 어긋나
+ *  보이므로, 리피트 배수로만 끊어야 한다. repeatMm가 0(기본값, 무지·민무늬 자재)이면
+ *  기존과 똑같이 동작한다. */
+function computePanel(wMm: number, hMm: number, dMm: number, offsetMm: number, repeatMm = 0) {
   // 업계 절대 규칙: 사방 여유분은 30mm 밑으로 절대 안 내려간다. 두께가 있으면
   // 두께+20mm이 30mm를 넘어서므로 그 값을 쓰고, 얇은 부위라도 30mm는 보장한다.
   // 옵셋은 그 위에 더(음수도 가능하지만)만 조정 — 최종값도 30mm 밑으로는 안 뺀다.
   const marginMm = Math.max(MARGIN_MIN_MM, dMm + MARGIN_EXTRA_MM + offsetMm);
   const cutWMm = roundUpTo(wMm + marginMm * 2, CUT_STEP_W_MM);
-  const cutHMm = roundUpTo(hMm + marginMm * 2, CUT_STEP_H_MM);
+  let cutHMm = roundUpTo(hMm + marginMm * 2, CUT_STEP_H_MM);
+  if (repeatMm > 0) cutHMm = roundUpTo(cutHMm, repeatMm);
   return { marginMm, cutWMm, cutHMm, areaM2: (cutWMm / 1000) * (cutHMm / 1000) };
 }
 
 /** 몰딩(걸레받이)은 감싸는 두께가 없는 납작한 띠라도, 사방 여유분 30mm 하한 규칙은
- *  똑같이 적용된다. 길이(긴 방향)만 세로 눈금(50mm)으로 올림한다. 폭은 재단하는
- *  값이 아니라 이미 그 폭으로 나온 원단이라 그대로 둔다. */
-function computeMolding(lengthM: number, stripWidthMm: number, offsetMm: number) {
+ *  똑같이 적용된다. 길이(긴 방향, 무늬 결 방향)만 세로 눈금(50mm)으로 올림한 뒤,
+ *  무늬 자재면 리피트 길이의 배수로 한 번 더 올림한다(computePanel과 같은 이유).
+ *  폭은 재단하는 값이 아니라 이미 그 폭으로 나온 원단이라 그대로 둔다. */
+function computeMolding(lengthM: number, stripWidthMm: number, offsetMm: number, repeatMm = 0) {
   const marginMm = Math.max(MARGIN_MIN_MM, MARGIN_EXTRA_MM + offsetMm);
-  const cutWMm = roundUpTo(lengthM * 1000 + marginMm * 2, CUT_STEP_H_MM);
+  let cutWMm = roundUpTo(lengthM * 1000 + marginMm * 2, CUT_STEP_H_MM);
+  if (repeatMm > 0) cutWMm = roundUpTo(cutWMm, repeatMm);
   const cutHMm = stripWidthMm;
   return { marginMm, cutWMm, cutHMm, areaM2: (cutWMm / 1000) * (cutHMm / 1000) };
 }
@@ -608,6 +625,9 @@ export default function CuttingCalculatorPage() {
   // 시접 등 현장 사정으로 기본 여유분에 더하거나 빼는 보정값. 이 집을 재는 동안은
   // 부위를 바꿔도 유지되고, 다음 방문에도 남아 있게 저장된다.
   const [marginOffsetMm, setMarginOffsetMm] = useState(() => readStoredCutting().marginOffsetMm ?? "0");
+  // 무늬(패턴) 자재의 리피트(무늬 반복) 길이 — 0이면 민무늬 자재로 간주해 기존과 똑같이
+  // 계산한다. 벽면 시트지처럼 무늬가 있는 자재를 쓸 때만 채운다.
+  const [patternRepeatMm, setPatternRepeatMm] = useState(() => readStoredCutting().patternRepeatMm ?? "0");
   const seqRef = useRef<Record<Category, number>>(initialSeqMap(readStoredCutting().items));
   // [하이드레이션 불일치 방지] 위 지연 초기화들은 "불러오기/저장하기 순서 race"는
   // 없애 주지만, 서버 렌더링(HTML을 처음 만드는 시점, localStorage 접근 불가 →
@@ -678,13 +698,14 @@ export default function CuttingCalculatorPage() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ items, lossPercent, marginOffsetMm }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ items, lossPercent, marginOffsetMm, patternRepeatMm }));
     } catch {
       /* 저장 실패해도(용량 초과 등) 화면 동작에는 지장이 없다 */
     }
-  }, [items, lossPercent, marginOffsetMm]);
+  }, [items, lossPercent, marginOffsetMm, patternRepeatMm]);
 
   const offset = parseFloat(marginOffsetMm) || 0;
+  const repeat = Math.max(0, parseFloat(patternRepeatMm) || 0);
 
   // 지금 입력창의 값으로 실시간 미리보기 — 리스트에 추가하기 전에도 재단 치수가 바로 보인다.
   const preview = useMemo(() => {
@@ -693,13 +714,13 @@ export default function CuttingCalculatorPage() {
       const len = parseFloat(lengthM) || 0;
       const strip = Math.max(0, parseFloat(stripWidthMm) || 0);
       if (len <= 0 || strip <= 0) return null;
-      return computeMolding(len, strip, offset);
+      return computeMolding(len, strip, offset, repeat);
     }
     const w = parseFloat(wMm) || 0;
     const h = parseFloat(hMm) || 0;
     if (w <= 0 || h <= 0) return null;
-    return computePanel(w, h, d, offset);
-  }, [config.linear, wMm, hMm, lengthM, stripWidthMm, dMm, offset]);
+    return computePanel(w, h, d, offset, repeat);
+  }, [config.linear, wMm, hMm, lengthM, stripWidthMm, dMm, offset, repeat]);
 
   // 문짝(패널)은 도안이 민짜문이 아니거나 양면 시공일 때(통판도 앞/뒤 2피스로 쪼개야
   // 하므로), 문틀(케이싱)은 항상(ㄷ자 Girth 띠장), 샷시는 항상(가운데 유리라 통판
@@ -733,12 +754,15 @@ export default function CuttingCalculatorPage() {
     const rawSpecs = getFramePieceSpecs(category, w, h, frame, currentLayout, doorPart, girthMm);
     if (!rawSpecs) return null;
     const finalSpecs = shouldDoubleSided ? applyDoorSided(rawSpecs, doorSided, d) : rawSpecs.map((spec) => ({ spec, pieceDMm: d }));
-    const pieces = finalSpecs.map(({ spec, pieceDMm }) => ({ ...spec, computed: computePanel(spec.wMm, spec.hMm, pieceDMm, offset) }));
+    const pieces = finalSpecs.map(({ spec, pieceDMm }) => ({
+      ...spec,
+      computed: computePanel(spec.wMm, spec.hMm, pieceDMm, offset, repeat),
+    }));
     const totalAreaM2 = pieces.reduce((sum, p) => sum + p.computed.areaM2, 0);
-    const flatAreaM2 = computePanel(w, h, d, offset).areaM2;
+    const flatAreaM2 = computePanel(w, h, d, offset, repeat).areaM2;
     const extraPercent = flatAreaM2 > 0 ? Math.round(((totalAreaM2 - flatAreaM2) / flatAreaM2) * 100) : 0;
     return { pieces, totalAreaM2, extraPercent };
-  }, [isStripMode, category, currentLayout, doorPart, girthMm, shouldDoubleSided, doorSided, wMm, hMm, dMm, frameWidthMm, offset]);
+  }, [isStripMode, category, currentLayout, doorPart, girthMm, shouldDoubleSided, doorSided, wMm, hMm, dMm, frameWidthMm, offset, repeat]);
 
   /** 리스트에 한 항목을 더하는 공용 함수 — 수동 입력, 표준 규격 원터치, 음성 명령이
    *  전부 이 함수 하나로 모인다. cat이 몰딩이면 dims에서 length/strip을, 아니면 w/h를 쓴다. */
@@ -749,11 +773,11 @@ export default function CuttingCalculatorPage() {
     if (cfg.linear) {
       const len = dims.lengthM ?? 0;
       const strip = dims.stripWidthMm ?? cfg.defaultStripWidthMm ?? 150;
-      if (len > 0 && strip > 0) computed = computeMolding(len, strip, offset);
+      if (len > 0 && strip > 0) computed = computeMolding(len, strip, offset, repeat);
     } else {
       const w = dims.wMm ?? 0;
       const h = dims.hMm ?? 0;
-      if (w > 0 && h > 0) computed = computePanel(w, h, d, offset);
+      if (w > 0 && h > 0) computed = computePanel(w, h, d, offset, repeat);
     }
     if (!computed) return false;
 
@@ -808,7 +832,7 @@ export default function CuttingCalculatorPage() {
     seqRef.current[cat] += 1;
     const seq = seqRef.current[cat];
     const newItems: CutItem[] = finalSpecs.map(({ spec, pieceDMm }) => {
-      const computed = computePanel(spec.wMm, spec.hMm, pieceDMm, offset);
+      const computed = computePanel(spec.wMm, spec.hMm, pieceDMm, offset, repeat);
       return {
         id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
         category: cat,
@@ -1676,6 +1700,31 @@ export default function CuttingCalculatorPage() {
               <p className="mt-2 text-[11.5px] leading-relaxed text-amber-200">
                 업계 표준 여유 구매율은 보통 {LOSS_PERCENT_MIN}~{LOSS_PERCENT_MAX}% 사이예요. 이 값으로도 계산은
                 되지만, 너무 낮으면 자재가 부족할 수 있고 너무 높으면 낭비가 커요.
+              </p>
+            )}
+            {/* 무늬 리피트 — 패턴(무늬)이 있는 자재는 일정 간격마다 같은 무늬가 반복된다.
+                리피트 길이보다 짧게 끊어 이으면 옆 조각과 무늬가 어긋나 보이므로, 세로(결
+                방향) 재단 길이를 리피트 배수로 올려 잡는다. 민무늬 자재는 0으로 두면
+                기존과 똑같이 계산된다 — 일본 크로스(壁紙) 업계 적산 앱의 "리피트 계산"과 같다. */}
+            <label className="mt-3 flex items-center justify-between gap-3 border-t border-white/20 pt-3 text-[13px] text-indigo-100">
+              무늬 리피트 길이(무늬 있는 자재만)
+              <span className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  value={patternRepeatMm}
+                  onChange={(e) => setPatternRepeatMm(e.target.value)}
+                  onFocus={(e) => e.target.select()}
+                  placeholder="0"
+                  className="h-10 w-16 rounded-lg border border-white/30 bg-white/10 text-center text-[15px] font-bold tabular-nums text-white outline-none placeholder:text-white/50 focus:border-white/70"
+                />
+                mm
+              </span>
+            </label>
+            {repeat > 0 && (
+              <p className="mt-2 text-[11.5px] leading-relaxed text-indigo-200/80">
+                세로(결 방향) 재단 길이를 {repeat.toLocaleString("ko-KR")}mm 배수로 올려 무늬가 이어지도록 계산해요
               </p>
             )}
             {/* 물량 폭증 방지 안내 — 양면 시공이 반영되면 전보다 길이가 확 늘어 보일 수

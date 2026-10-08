@@ -1,11 +1,14 @@
 import io
 import uuid
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
 
+from app.business_info import BUSINESS_NAME
 from app.owner_auth import is_owner
+from app.services.blackboard import stamp_blackboard
 from app.quotes_store import (
     append_work_photo,
     clear_blog_post,
@@ -65,7 +68,8 @@ async def upload_work_photo(
     caption: str = Form(""),
     photo: UploadFile = File(...),
 ):
-    if load_quote(job_id) is None:
+    quote = load_quote(job_id)
+    if quote is None:
         raise HTTPException(status_code=404, detail="견적서를 찾을 수 없습니다.")
 
     raw_bytes = await photo.read()
@@ -80,9 +84,20 @@ async def upload_work_photo(
             detail="사진 파일을 읽을 수 없습니다. 파일이 손상되었거나 지원하지 않는 형식일 수 있습니다.",
         ) from exc
 
+    # 전자흑판 — 현장명·촬영일·업체명·단계를 사진에 각인한다(일본 蔵衛門 등 공사사진
+    # 앱의 핵심 기능). 이 사진이 그대로 시공후기 블로그의 비포/애프터 증거가 된다.
+    recorded_at_label = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y.%m.%d")
+    stamped = stamp_blackboard(
+        normalized,
+        business_name=BUSINESS_NAME,
+        customer_name=quote.get("customer_name") or "",
+        stage=stage,
+        recorded_at_label=recorded_at_label,
+    )
+
     photo_id = uuid.uuid4().hex[:10]
     storage_path = f"storage/uploads/{job_id}_site_{photo_id}.jpg"
-    normalized.save(storage_path, "JPEG", quality=88)
+    stamped.save(storage_path, "JPEG", quality=88)
 
     entry = {
         "id": photo_id,

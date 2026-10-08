@@ -26,6 +26,7 @@ from app.catalog import (
     FAUCET_TYPES,
     GLASS_TINT_TYPES,
     MESH_TYPES,
+    PATTERNS,
     SINK_BOWL_SPECS,
     TOILET_SPECS,
     WORK_ITEMS,
@@ -77,7 +78,13 @@ def _prices() -> dict:
 
 
 def _detail(
-    label: str, quantity: float, unit: str, unit_price: int, category: str, spec: str = ""
+    label: str,
+    quantity: float,
+    unit: str,
+    unit_price: int,
+    category: str,
+    spec: str = "",
+    material_code: str = "",
 ) -> dict:
     return {
         "label": label,
@@ -87,6 +94,7 @@ def _detail(
         "unit_price": unit_price,
         "amount": round(quantity * unit_price),
         "category": category,
+        "material_code": material_code,
     }
 
 
@@ -193,6 +201,7 @@ def _film_line_item(opts: FilmOptions) -> dict:
             opts.unit_price_per_m,
             "material",
             f"총 시공 면적 {round(total_area_m2, 2)}㎡ (로스율 15% · 장폭 {FILM_ROLL_WIDTH_M}m 반영)",
+            material_code=opts.pattern_id,
         )
     ]
 
@@ -240,6 +249,7 @@ def _sash_line_item(opts: SashOptions) -> dict:
             opts.unit_price_per_m,
             "material",
             f"창틀 면적 {round(area_m2, 2)}㎡ (로스율 15% · 장폭 {FILM_ROLL_WIDTH_M}m 반영)",
+            material_code=opts.pattern_id,
         )
     ]
     if opts.needs_primer:
@@ -274,6 +284,7 @@ def _door_frame_line_item(opts: DoorFrameOptions) -> dict:
             "material",
             f"문짝 {round(door_area, 2)}㎡(앞·뒤 2면) + 문틀 {round(frame_area, 2)}㎡ "
             f"(로스율 15% · 장폭 {FILM_ROLL_WIDTH_M}m 반영)",
+            material_code=opts.pattern_id,
         )
     ]
 
@@ -323,7 +334,8 @@ def _wall_film_line_item(opts: WallFilmOptions) -> dict:
     spec = _panels_spec_text(opts.walls)
     details = [
         _detail("벽면 시트지 원단", billed, "m", opts.unit_price_per_m, "material",
-                f"벽 면적 {round(area, 2)}㎡ (로스율 15% · 장폭 {FILM_ROLL_WIDTH_M}m 반영)")
+                f"벽 면적 {round(area, 2)}㎡ (로스율 15% · 장폭 {FILM_ROLL_WIDTH_M}m 반영)",
+                material_code=opts.pattern_id)
     ]
     if opts.needs_primer:
         details.append(_detail("벽면 면처리(프라이머)", area, "㎡", table["primer_per_m2"], "expense", spec))
@@ -351,6 +363,7 @@ def _wardrobe_line_item(opts: WardrobeOptions) -> dict:
             "material",
             f"문짝 {round(door_area, 2)}㎡ + 몸통 {round(body_area, 2)}㎡ "
             f"(로스율 15% · 장폭 {FILM_ROLL_WIDTH_M}m 반영)",
+            material_code=opts.pattern_id,
         )
     ]
     door_count = sum(p.count for p in opts.doors)
@@ -526,6 +539,41 @@ def _sink_line_item(opts: SinkOptions) -> dict:
     return _line_item("sink", details)
 
 
+def _material_orders(line_items: list[dict]) -> list[dict]:
+    """품번(패턴 id)별 자재 발주 집계 — 일본 クロス職人(크로스 기공) 업계 앱(採寸くん 등)의
+    "품번별로 모아 한 번에 발주" 방식을 그대로 따른다. 사장님이 싱크대 필름과 문짝을
+    같은 색으로 고르면 발주도 한 번에 해야 하므로, 항목(item)이 달라도 pattern_id가
+    같으면 한 줄로 합친다. 자재가 아닌 행(인건비·경비)과 material_code가 없는 행
+    (조명·싱크볼 등 품번 개념이 없는 항목)은 집계에서 뺀다."""
+    by_code: dict[str, dict] = {}
+    for item in line_items:
+        for d in item["details"]:
+            code = d.get("material_code") or ""
+            if not code or d["category"] != "material":
+                continue
+            bucket = by_code.setdefault(code, {"total_length_m": 0.0, "item_names": []})
+            bucket["total_length_m"] += d["quantity"]
+            if item["item_name"] not in bucket["item_names"]:
+                bucket["item_names"].append(item["item_name"])
+
+    orders = []
+    for code, bucket in by_code.items():
+        pattern = PATTERNS.get(code, {})
+        orders.append(
+            {
+                "pattern_id": code,
+                "name": pattern.get("name", code),
+                "color_hex": pattern.get("color_hex", ""),
+                "total_length_m": round(bucket["total_length_m"], 1),
+                # 발주는 소수점 단위로 끊어 사지 않으므로 정수 미터로 올려 보여준다.
+                "order_length_m": math.ceil(bucket["total_length_m"]),
+                "item_names": bucket["item_names"],
+            }
+        )
+    orders.sort(key=lambda o: o["total_length_m"], reverse=True)
+    return orders
+
+
 def calculate_estimate(
     selected_items: list[str],
     options: JobOptions,
@@ -578,4 +626,5 @@ def calculate_estimate(
         "supply_amount": supply_amount,
         "vat": vat,
         "total_cost": total_cost,
+        "material_orders": _material_orders(line_items),
     }
