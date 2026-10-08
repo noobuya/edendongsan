@@ -13,6 +13,10 @@ interface Props {
   /** 시트 제목·설명. 기본값은 메인(AI 시뮬레이션) 견적의 단가 설정 문구다. */
   title?: string;
   description?: string;
+  /** 기본 단가 API(/api/pricing)는 사장님 기기에서만 보고 고칠 수 있어서 이 토큰이
+   *  필요하다. getFields/saveFields를 직접 넘기는 화면(빠른 견적)은 거기서 알아서
+   *  처리하므로 이 prop을 안 써도 된다. */
+  ownerToken?: string | null;
   /** 무엇의 단가를 읽고 쓸지. 기본값은 메인 견적(AI 시뮬레이션)의 /api/pricing이고,
    *  빠른 견적(estimator_app)처럼 다른 단가표를 쓰는 화면은 이 두 함수만 바꿔 끼우면
    *  같은 시트를 그대로 재사용할 수 있다. */
@@ -33,8 +37,9 @@ export default function PricingSheet({
   onClose,
   title = "단가 설정",
   description = "여기서 바꾼 단가는 이후 모든 견적에 바로 반영됩니다",
-  getFields = getPricing,
-  saveFields = savePricing,
+  ownerToken = null,
+  getFields = () => getPricing(ownerToken),
+  saveFields = (values) => savePricing(values, ownerToken),
 }: Props) {
   const [fields, setFields] = useState<PricingField[]>([]);
   const [edits, setEdits] = useState<Record<string, number>>({});

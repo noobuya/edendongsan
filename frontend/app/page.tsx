@@ -692,7 +692,7 @@ export default function HomePage() {
 
       <FeatureIntroDialog open={featureIntroOpen} onClose={dismissFeatureIntro} />
 
-      <PricingSheet open={pricingOpen} onClose={() => setPricingOpen(false)} />
+      <PricingSheet open={pricingOpen} onClose={() => setPricingOpen(false)} ownerToken={ownerToken} />
 
       <QuoteListDialog
         open={quoteDialogOpen}
