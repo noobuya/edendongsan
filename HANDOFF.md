@@ -494,3 +494,29 @@
 - **검증:** 로컬에서 로그인·순번·완료·타인 조회 차단·3건 제한 확인. 실서버에서 작업 1건이 대기 → 완료까지 가는 것과 틀린 코드 401, `/automation` 200 확인. 폰 화면 조작(버튼·폼)은 미확인.
 - **서버 자원:** 메모리 908MB(여유 약 450MB), 2코어, 스왑 2GB는 이미 있음. Chrome/Selenium은 동시에 못 돌린다 → 붙이기 전에 AWS 콘솔에서 t3.small(2GB) 이상으로 올리기를 권했다(사용자가 아직 결정 안 함). 워커가 1건씩만 처리하는 이유.
 - **남은 일:** ① Selenium 스크립트 받아 `tasks.py`에 이식하고 서버에 Chrome+드라이버 설치 ② 수강생 이름/코드 목록으로 `AUTOMATION_CODES` 확정 ③ 인스턴스 업그레이드 결정 ④ (선택) PWA 새 버전 자동 새로고침.
+
+## 일본 업계 전문 앱 기능 3종 접목 — main 병합 완료, 배포는 서버 자원 부족으로 중단 (2026-10-09)
+
+### 한 일
+- 사용자 요청으로 일본 내장재/크로스 시공업계 전문 앱(ANDPAD·蔵衛門·アイピア·에스티모바이르·採寸くん 등)을 조사하고, 세 가지를 골라 `worktree-jp-industry-features` 브랜치에서 구현·커밋했다.
+  1. **전자흑판 워터마크**(`backend/app/services/blackboard.py`): 현장 작업사진 업로드 시 업체명·현장명·단계·촬영일을 사진에 직접 각인(蔵衛門 방식). `backend/app/routers/quotes.py`의 `upload_work_photo`에서 호출.
+  2. **무늬 리피트 로스 계산**(`frontend/app/cutting/page.tsx`): 스마트 재단 계산기에 "무늬 리피트 길이" 입력 추가. 0(기본값)이면 기존과 동일, 값을 넣으면 결 방향 재단 길이를 리피트 배수로 올림.
+  3. **품번별 자재 발주 집계**(`backend/app/services/estimator.py`의 `_material_orders`, `backend/app/schemas.py`의 `MaterialOrderLine`): 같은 색(pattern_id)을 여러 항목에 걸쳐 골라도 발주는 한 번에 하도록 합산. `PremiumReceipt.tsx`의 사장님 전용 "내부 분석" 패널에 표시.
+- 세 기능 모두 백엔드 import/실행 검증, 프론트 `tsc --noEmit` 통과 확인 후 `worktree-jp-industry-features`를 `main`에 `--no-ff` 병합(`f8f68ce`)하고 `git push origin main` 완료 — **GitHub main은 최신 상태.**
+
+### 배포가 막힌 지점
+- `~/deploy.sh --force` 실행 → `npm ci`가 OOM-killer에게 죽음(dmesg 확인: `Out of memory: Killed process ... (npm ci)`). 재시도(스왑 2GB 추가 후에도) 세 번 모두 실패 — 두 번째·세 번째는 OOM이 아니라 **30분을 줘도 `node_modules` 파일 개수가 단 1개도 안 늘고(380개 그대로) 완전히 멈춤**(`loadavg` 13~18, 코어는 2개). `timeout 90`도 90초 안에 안 끝나고(`npm` 자체가 SIGTERM에 즉시 반응 못 함), 상세 로그(`--loglevel=http`)조차 90초 동안 단 한 줄도 안 찍힐 정도로 완전히 멎어 있었다.
+- **원인 추정:** 이 서버는 이미 메모리 908MB·2코어로 빠듯하다는 게 알려져 있었는데(바로 위 자동화 작업 절 참고 — 그때도 "t3.small 이상으로 올리기를 권했다"고 적혀 있음), 지금은 그 위에 **동시에 띄워진 다른 Claude Code 세션**(세션 `c056a846`, 프롬프트 "무늬 리피트 로스 계산 접목해줘" — 이번에 내가 이미 구현한 기능과 같은 요청이라 중복 작업일 가능성이 높다)과 VS Code Remote-SSH 서버까지 겹쳐 메모리를 다 써서, `npm ci`가 스왑 스래싱에 빠져 진행을 못 한 것으로 보인다. 다른 세션을 임의로 죽이지는 않았다(사용자 작업일 수 있어서).
+- **임시로 바꾼 시스템 상태:** `/swapfile2`(2GB, `swapon`으로 활성화) 추가 — 기존 `/swapfile` 2GB에 더해 총 스왑 4GB. 효과는 없었다(디스크 I/O가 병목이라 스왑 용량을 늘려도 스래싱 자체는 안 풀림). 필요 없으면 `sudo swapoff /swapfile2 && sudo rm /swapfile2`로 되돌릴 수 있다.
+
+### 지금 상태 (위험도 포함)
+- **서비스는 아직 안 내려갔다** — `deploy.sh`가 `systemctl restart`까지 가기 전에 멈췄기 때문에, `eden-backend`·`eden-frontend`는 여전히 **병합 전 구코드**(`2f09064` 시점)로 떠 있고 `/api/health`·`/`는 200을 반환한다. 즉 지금 당장 고객이 보는 화면은 멀쩡하다.
+- **그런데 `frontend/node_modules`는 반쯤 지워진 깨진 상태다**(`npm ci`가 삭제부터 하고 못 끝남 — `next` 패키지 자체가 없다). 지금 떠 있는 `next-server` 프로세스는 이미 메모리에 올라간 채로 버티고 있어서 당장은 괜찮지만, **서버가 재부팅되거나 `eden-frontend` 서비스가 어떤 이유로든 재시작되면 그 순간 사이트가 내려간다**(`next` 바이너리가 없어서 서비스가 못 뜬다). 참고로 앞서 `apt` 작업 중 "커널 업데이트 후 재부팅 권장" 안내를 봤다 — 재부팅 예정이 있다면 더 급하다.
+- 디스크 코드(워킹 트리)는 이미 병합된 새 커밋(`f8f68ce`)으로 `git reset --hard` 돼 있다 — 백엔드 쪽은 패키지 설치(`pip install`)까지는 끝났을 가능성이 높지만(그 단계는 로그에 실패 없이 지나감) 서비스 재시작 전이라 아직 반영 안 됨.
+
+### 다음 세션에서 바로 할 일
+1. `free -h`·`uptime`으로 메모리/로드가 가라앉았는지 먼저 확인.
+2. 다른 세션(들)이 아직도 떠 있는지 `ps aux | grep claude.exe`로 확인 — 사용자에게 "지금 다른 작업 중인 세션이 있는지" 물어보고, 있다면 끝날 때까지 기다리거나 사용자 동의하에 정리.
+3. 여유가 생기면 `cd /home/ubuntu/edendongsan/frontend && npm ci --no-audit --no-fund` 재시도(배포 스크립트 재실행이 아니라 이 단계만 먼저 성공시키는 걸 권장 — 성공하면 `cd /home/ubuntu/edendongsan && ~/deploy.sh --force`로 마무리, 이미 `git reset`은 끝나 있어 다시 받을 것도 없다).
+4. 그래도 계속 멈추면 인스턴스를 t3.small(2GB) 이상으로 올리는 걸 다시 고려할 것(이미 한 번 권했던 사항, 2026-10-01 자동화 절 참고).
+5. 성공 후 `/swapfile2` 계속 둘지 정리할지 사용자에게 확인(작은 인스턴스라 계속 두는 쪽을 권장하지만 영구 설정(`/etc/fstab`)은 아직 안 넣었다 — 재부팅하면 사라진다).
