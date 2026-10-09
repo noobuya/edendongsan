@@ -461,3 +461,51 @@ class BlogDetailResponse(BaseModel):
     after_image_url: Optional[str] = None
     work_photos: list[WorkPhoto] = Field(default_factory=list)
     line_item_names: list[str] = Field(default_factory=list)
+
+
+# ── AI 제안서(고객 발송용 상세페이지) ──────────────────────────────────
+# 블로그(SEO 공개 목록)와 분리된 "고객 1명에게 보내는 비공개 링크" 용도.
+# draft/review 상태에서는 공개 조회에서 숨기고, published만 외부에 노출한다.
+ProposalStatus = Literal["review", "published"]
+
+
+class Proposal(BaseModel):
+    id: str
+    status: ProposalStatus
+    created_at: str
+    published_at: Optional[str] = None
+    # 기존 완료된 견적에서 시작했으면 채워진다 — 있으면 그 견적의 sales_pitch를
+    # 카피 생성에 참고 문구로 넘긴다(estimator.py 참고). 사진 한 장만으로 독립
+    # 생성한 경우에는 None.
+    job_id: Optional[str] = None
+    source_image_url: str
+    wide_image_url: str
+    detail_image_url: str
+    headline: str
+    body: str
+
+
+class ProposalListResponse(BaseModel):
+    proposals: list[Proposal]
+
+
+FeedbackTarget = Literal["detail_image", "copy"]
+FeedbackAction = Literal["brighter", "darker", "shorter", "longer", "custom"]
+
+
+class ProposalFeedbackRequest(BaseModel):
+    target: FeedbackTarget
+    action: FeedbackAction
+    # action="custom"일 때만 쓰는 자연어 피드백("이 부분은 더 밝게 해줘" 등).
+    note: str = ""
+
+
+class ProposalPublicResponse(BaseModel):
+    """공개 공유 링크(/proposal?id=...)가 쓰는 뷰 — 내부 상태(status/job_id)는 뺀다."""
+
+    id: str
+    created_at: str
+    wide_image_url: str
+    detail_image_url: str
+    headline: str
+    body: str

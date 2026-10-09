@@ -504,6 +504,17 @@ export default function HomePage() {
               <FolderOpen className="h-5 w-5" />
             </button>
           )}
+          {/* 완료된 견적 없이도(사진 한 장만으로) 바로 만들 수 있는 독립 생성 경로 —
+              job에 묶인 경로(SitePhotoGallery 안의 버튼)와 별개로 여기서도 들어갈 수 있다. */}
+          {ownerToken && (
+            <Link
+              href="/proposal/new"
+              aria-label="AI 제안서 만들기"
+              className="glass-pill flex h-11 w-11 items-center justify-center text-slate-700 transition-transform active:scale-90"
+            >
+              <Sparkles className="h-5 w-5" />
+            </Link>
+          )}
         </div>
       </header>
 

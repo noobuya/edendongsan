@@ -544,3 +544,21 @@
 - 자원이 넉넉해진 뒤라 `npm ci`가 26~28초에 바로 성공했고, `~/deploy.sh --force`로 `next build`+서비스 재시작까지 정상 완료. 현재 서버 HEAD = `a14313c`, 서비스 4개(backend/frontend/worker/caddy) 모두 active, `/`·`/api/health` 200 — **일본 내장재 시공업계 기능 3종(전자흑판 워터마크·무늬 리피트 로스·품번별 발주 집계)이 실제로 배포됐다.**
 - 임시로 추가했던 `/swapfile2`는 `/etc/fstab`에 안 넣어서 재부팅으로 이미 사라졌다(원래 `/swapfile` 2GB만 남음) — 별도 정리 불필요.
 - **참고(안전 수칙):** 이번처럼 `node_modules`를 지우고 다시 설치하는 중간 상태로 두고 세션을 끝내면, 그 사이 서버가 재부팅되거나 서비스가 재시작될 때 실제 장애로 이어진다. `npm ci`를 시작했다면 가능하면 같은 세션에서 끝까지(빌드·재시작) 마치거나, 못 마치면 다음 세션에 "node_modules가 중간 상태"라고 명확히 남길 것.
+
+## AI 제안서(고객 발송용 상세페이지) 기능 추가 — 구현 완료, 커밋 전 (2026-10-09)
+
+사진 한 장만 올리면 AI가 와이드컷·디테일컷·영업 카피를 자동으로 만들어, 기공이 확인·피드백한 뒤 고객에게 카톡/문자로 바로 보낼 수 있는 공개 링크로 발행하는 기능. `/blog`(SEO 공개 목록)와는 의도적으로 분리했다 — 블로그는 "검색 유입"용, 제안서는 "이 고객 한 명에게 보내는 비공개 링크"용으로 목적이 다르기 때문(review 상태는 공개 조회에서 404, published만 노출).
+
+### 새로 만든 것
+- **백엔드**: `app/proposal_store.py`(JSON 파일 저장, quotes_store.py와 같은 방식), `app/services/proposal_writer.py`(Gemini Vision으로 디테일 크롭 bbox 요청 + PIL 크롭, 영업 카피 생성/재생성, PIL 밝기 조정), `app/routers/proposals.py`(생성/피드백/발행/목록/삭제는 사장님 전용 X-Admin-Token, 공개 조회는 별도 라우터로 분리).
+- **프론트**: `app/proposal/new/page.tsx`(독립 생성 경로 — 완료된 견적 없이 사진 한 장만으로도 시작 가능, `?job=`이 있으면 그 견적의 sales_pitch를 카피에 참고), `app/proposal/page.tsx`(공개 공유 페이지, `?id=` 쿼리스트링 — Capacitor 정적 내보내기는 동적 라우트 세그먼트를 못 써서 `/blog/post`와 같은 패턴), `components/proposal/ProposalGeneratingSheet.tsx`(기획→디테일컷→카피 단계별 진행 표시, 백엔드가 스트리밍을 안 줘서 타이머로 흉내냄), `components/proposal/ProposalReviewPanel.tsx`(이미지는 더 밝게/더 어둡게, 카피는 더 짧게/더 길게/직접 피드백 — 선택한 조각만 다시 만든다, 전체 재생성 아님). `SitePhotoGallery.tsx`와 `app/page.tsx` 상단 아이콘줄에 진입 버튼 추가.
+
+### 검증
+- 실제 Gemini API로 전체 플로우 통합 테스트(사진 업로드 → 크롭 2장 생성 → 카피 생성 → 피드백(밝기 조정 실제 AI 호출 없음/카피는 실제 재호출) → 발행 → 공개 조회 → 발행 후 수정 차단(409) → 삭제)와 브라우저 E2E(Playwright, 생성 단계 표시 → 리뷰 → "더 밝게"/"텍스트 더 짧게" → 발행 → 공유 링크 → 공개 페이지 렌더링 → 존재하지 않는 id 404 화면)까지 전부 실제로 돌려 확인함. 카피 품질도 실제로 괜찮았음(가격·브랜드 안 지어냄, 120자 안팎 유지).
+
+### 테스트 중 발견해서 고친 버그 2건
+1. **밝기 조정 시 URL이 안 바뀌는 문제**: `adjust_brightness`가 원본 크롭과 같은 파일명(`{proposal_id}_{target}.jpg`)에 덮어써서, 파일 내용은 바뀌어도 프론트가 같은 src를 들고 있으면 브라우저 캐시로 옛 이미지를 계속 보여줄 수 있었음 → 조정마다 짧은 uuid를 붙여 매번 새 파일명을 쓰도록 수정.
+2. **격리 테스트 중 발견한 더 큰 구조적 함정(버그는 아니지만 기록)**: `proposal_store.py`/`proposal_writer.py`/`routers/proposals.py`는 `quotes_store.py`·`pipeline.py`와 같은 기존 관례를 따라 `"storage/..."`를 **하드코딩된 상대경로**로 쓴다(`get_settings().storage_dir`을 안 씀). 평소엔 기본값이 둘 다 `"storage"`라 문제가 안 되지만, `STORAGE_DIR` 환경변수만 바꿔 격리 테스트를 하면(이번 세션 다른 기능들 테스트할 때처럼) 파일은 실제 운영 `backend/storage/`에 써지고 정적 서빙은 격리된 경로를 보게 돼 "이미지를 불러오지 못했습니다"가 뜬다. **앞으로 이 계열(quotes/jobs/pipeline/proposals) 코드를 격리 테스트할 땐 `STORAGE_DIR` 환경변수가 아니라 프로세스의 작업 디렉터리(cwd) 자체를 격리된 폴더로 두고 `PYTHONPATH`로 `app` 패키지를 가리켜야 한다.** (이번에 테스트 중 생성된 더미 파일이 실제 `backend/storage/`에 네 번 남았던 것을 전부 지웠음 — 고객 데이터 아님, 안전.)
+
+### 다음 세션에서 바로 할 일
+- 아직 **커밋 안 됨**. `backend/app/{proposal_store.py, routers/proposals.py, services/proposal_writer.py}`(신규), `backend/app/{main.py, schemas.py}`(수정), `frontend/app/proposal/`(신규), `frontend/components/proposal/`(신규), `frontend/{app/page.tsx, components/SitePhotoGallery.tsx, lib/api.ts, types/index.ts}`(수정) — 커밋·푸시·배포 확인부터 할 것.

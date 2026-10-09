@@ -284,6 +284,21 @@ export default function SitePhotoGallery({ jobId, initialPhotos, initialBlogPost
         )}
       </div>
 
+      {/* 블로그(SEO 공개 목록)와는 별개 — 고객 1명에게 바로 보내는 비공개 공유 링크를
+          만드는 경로다. 사진이 하나도 없어도(아직 블로그 글 안 쓴 상태여도) 들어갈 수
+          있다 — 이 화면에서 새로 사진을 올려도 되기 때문이다. */}
+      {isOwner && (
+        <div className="border-t border-slate-100 pt-3">
+          <Link
+            href={`/proposal/new?job=${jobId}`}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 py-2.5 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
+          >
+            <Sparkles className="h-4 w-4" />
+            AI 제안서 만들기(고객 발송용)
+          </Link>
+        </div>
+      )}
+
       <CameraSheet
         open={isOwner && cameraStage !== null}
         onCapture={(file) => {

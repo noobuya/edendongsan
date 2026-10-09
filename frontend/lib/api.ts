@@ -9,6 +9,10 @@ import type {
   MappedRegion,
   PanelItem,
   PricingField,
+  Proposal,
+  ProposalFeedbackAction,
+  ProposalFeedbackTarget,
+  ProposalPublic,
   QuoteSummary,
   RoiComparison,
   SharedEstimate,
@@ -406,6 +410,73 @@ export async function deleteBlogPost(jobId: string, ownerToken: string): Promise
     headers: ownerHeaders(ownerToken),
   });
   if (!res.ok) throw new Error(await extractErrorMessage(res, "블로그 글 삭제에 실패했습니다."));
+}
+
+/** AI 제안서(고객 발송용 상세페이지) — /blog(SEO 공개 목록)와 분리된, 고객 1명에게
+ *  보내는 비공개 공유 링크. 생성·피드백·발행은 사장님 전용(X-Admin-Token). */
+export async function createProposal(photo: File, jobId: string | undefined, ownerToken: string): Promise<Proposal> {
+  const form = new FormData();
+  form.append("photo", photo);
+  if (jobId) form.append("job_id", jobId);
+  const res = await apiFetch(`${API_BASE}/api/proposals`, {
+    method: "POST",
+    body: form,
+    headers: ownerHeaders(ownerToken),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "제안서 생성에 실패했습니다."));
+  return res.json();
+}
+
+export async function listProposals(ownerToken: string): Promise<Proposal[]> {
+  const res = await apiFetch(`${API_BASE}/api/proposals`, { headers: ownerHeaders(ownerToken) });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "제안서 목록을 불러오지 못했습니다."));
+  const data = await res.json();
+  return data.proposals;
+}
+
+export async function getProposal(id: string, ownerToken: string): Promise<Proposal> {
+  const res = await apiFetch(`${API_BASE}/api/proposals/${id}`, { headers: ownerHeaders(ownerToken) });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "제안서를 찾을 수 없습니다."));
+  return res.json();
+}
+
+export async function sendProposalFeedback(
+  id: string,
+  target: ProposalFeedbackTarget,
+  action: ProposalFeedbackAction,
+  ownerToken: string,
+  note = ""
+): Promise<Proposal> {
+  const res = await apiFetch(`${API_BASE}/api/proposals/${id}/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...ownerHeaders(ownerToken) },
+    body: JSON.stringify({ target, action, note }),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "다시 만들지 못했습니다."));
+  return res.json();
+}
+
+export async function publishProposal(id: string, ownerToken: string): Promise<Proposal> {
+  const res = await apiFetch(`${API_BASE}/api/proposals/${id}/publish`, {
+    method: "POST",
+    headers: ownerHeaders(ownerToken),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "발행에 실패했습니다."));
+  return res.json();
+}
+
+export async function deleteProposal(id: string, ownerToken: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/proposals/${id}`, {
+    method: "DELETE",
+    headers: ownerHeaders(ownerToken),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "제안서 삭제에 실패했습니다."));
+}
+
+export async function getProposalPublic(id: string): Promise<ProposalPublic> {
+  const res = await apiFetch(`${API_BASE}/api/proposals/${id}/public`);
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "제안서를 찾을 수 없습니다."));
+  return res.json();
 }
 
 /** 단가(공임·재료비·요율) 설정 — 대한인테리어필름 배너를 길게 눌러 여는 화면에서 쓴다.

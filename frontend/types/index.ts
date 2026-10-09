@@ -383,6 +383,34 @@ export interface BlogDetail {
   line_item_names: string[];
 }
 
+// ── AI 제안서(고객 발송용 상세페이지) — /blog와 분리된 비공개 공유 링크 ──
+export type ProposalStatus = "review" | "published";
+
+export interface Proposal {
+  id: string;
+  status: ProposalStatus;
+  created_at: string;
+  published_at: string | null;
+  job_id: string | null;
+  source_image_url: string;
+  wide_image_url: string;
+  detail_image_url: string;
+  headline: string;
+  body: string;
+}
+
+export type ProposalFeedbackTarget = "detail_image" | "copy";
+export type ProposalFeedbackAction = "brighter" | "darker" | "shorter" | "longer" | "custom";
+
+export interface ProposalPublic {
+  id: string;
+  created_at: string;
+  wide_image_url: string;
+  detail_image_url: string;
+  headline: string;
+  body: string;
+}
+
 /** 수동 모드에서 사용자가 직접 칠해 만든 시공 영역 한 개.
  *  캔버스에서 칠한 마스크와 그 자리에 시공할 자재가 한 세트로 묶인다. */
 export interface MappedRegion {
