@@ -58,6 +58,15 @@ export interface SashOptions {
   unitPricePerM: number;
   needsPrimer: boolean;
   frames: PanelItem[];
+  siliconeRecoat: boolean;
+}
+
+export type FireDoorSides = "single" | "double";
+
+/** 현관 방화문 — 스틸 문이라 ㎡ 계산 없이 짝당 정액(단면/양면)으로 받는다. */
+export interface FireDoorItem {
+  sides: FireDoorSides;
+  count: number;
 }
 
 /** 문짝·문틀 시공. 필름과 같은 원단·단가 체계를 쓰지만, 견적서에 문짝 금액이
@@ -68,6 +77,9 @@ export interface DoorFrameOptions {
   needsPrimer: boolean;
   doors: PanelItem[];
   doorframes: PanelItem[];
+  fireDoors: FireDoorItem[];
+  /** 기존 실리콘 제거 및 재시공 — 기본가 불포함, 선택 시에만 별도 청구. */
+  siliconeRecoat: boolean;
 }
 
 /** 미세방충망 교체. 창 크기로 원단을 잡고, 틀까지 새로 짜면 짝당 비용이 더 붙는다. */
@@ -78,6 +90,7 @@ export interface WallFilmOptions {
   unitPricePerM: number;
   needsPrimer: boolean;
   walls: PanelItem[];
+  siliconeRecoat: boolean;
 }
 
 export interface WardrobeOptions {
@@ -192,6 +205,24 @@ export interface LineItem {
   subtotal: number;
 }
 
+export interface DepositInfo {
+  rate_percent: number;
+  amount: number;
+  note: string;
+}
+
+/** 영업 리포트(ROI 비교) — sales_pitch(문장)와 같은 품목에서 뽑은 구조화된 숫자라
+ *  막대그래프·소구포인트 칩이 문장과 항상 일치한다. */
+export interface RoiComparison {
+  item_name: string;
+  replacement_cost: number;
+  film_cost: number;
+  savings_percent: number;
+  days_replacement: number;
+  days_film: number;
+  highlights: string[];
+}
+
 export interface EstimateBreakdown {
   line_items: LineItem[];
   ceiling_area_m2: number;
@@ -202,6 +233,12 @@ export interface EstimateBreakdown {
   vat: number;
   total_cost: number;
   material_orders: MaterialOrderLine[];
+  raw_supply_amount: number;
+  min_callout_applied: boolean;
+  min_callout_note: string;
+  deposit: DepositInfo | null;
+  sales_pitch: string;
+  roi_comparison: RoiComparison | null;
 }
 
 export interface Region {

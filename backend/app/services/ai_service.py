@@ -30,6 +30,7 @@ import io
 import os
 import uuid
 
+import cv2
 import httpx
 import numpy as np
 import replicate
@@ -101,6 +102,17 @@ STRUCTURE_STRENGTH = 0.18
 STRUCTURE_STRENGTH_MATTE = 0.12
 # 이 단어가 들어간 자재는 무광으로 본다.
 MATTE_KEYWORDS = ("무광", "매트", "matte")
+# [구조 보존 2단계 — Canny 윤곽 가중치]
+# STRUCTURE_STRENGTH는 마스크 전체에 균일하게 섞는 고주파 디테일이라, 손잡이·경첩
+# 처럼 가늘고 뚜렷한 윤곽은 주변 텍스처 노이즈에 묻혀 약하게 살아난다. 진짜
+# ControlNet(Canny)은 디퓨전 과정 자체를 그 윤곽선에 못박아 두지만, 이 계정의
+# 인페인팅 모델은 ControlNet 입력을 못 받는다(위 [ControlNet에 대한 실측 메모]).
+# 그래서 _reinject_structure에서 원본에 Canny를 직접 돌려 "뚜렷한 선"만 골라내고,
+# 그 자리에는 STRUCTURE_STRENGTH보다 훨씬 센 가중치를 추가로 얹는다 — 생성 과정을
+# 조건화하진 못해도, 최종 합성 단계에서 윤곽선 보존은 사실상 같은 효과를 낸다.
+EDGE_BOOST = 0.55  # 윤곽선 픽셀에 추가로 얹는 가중치(균일 강도 위에 '더하는' 값)
+EDGE_CANNY_THRESHOLDS = (30, 90)  # rendering.py의 천장 윤곽 추출과 같은 기준값
+EDGE_DILATE_PX = 2  # 윤곽선을 살짝 두껍게 — 안티앨리어싱으로 한두 픽셀만 걸리면 거의 안 보임
 
 # 물건 생성: 마스크 안을 새로 그리므로 높은 denoise + 많은 스텝
 OBJECT_PARAMS = {DENOISE_KEY: 0.95, "num_inference_steps": 45, "guidance_scale": 9.0}
@@ -628,6 +640,18 @@ def _fit_for_model(base: Image.Image, mask: Image.Image):
     return base.resize((w, h), Image.LANCZOS), mask.resize((w, h), Image.NEAREST), original_size
 
 
+def _edge_weight_map(base: Image.Image) -> np.ndarray:
+    """원본에서 Canny로 뚜렷한 윤곽선만 뽑아, 그 자리에 얹을 추가 가중치 맵(0~EDGE_BOOST)을
+    만든다. ControlNet처럼 생성 과정을 조건화하지는 못하지만, 손잡이·경첩·몰딩처럼
+    "선 하나가 사라지면 바로 티가 나는" 디테일을 최종 합성 단계에서 강제로 못박는다."""
+    gray = cv2.cvtColor(np.asarray(base), cv2.COLOR_RGB2GRAY)
+    edges = cv2.Canny(gray, *EDGE_CANNY_THRESHOLDS)
+    if EDGE_DILATE_PX > 0:
+        kernel = np.ones((EDGE_DILATE_PX, EDGE_DILATE_PX), np.uint8)
+        edges = cv2.dilate(edges, kernel)
+    return (edges.astype(np.float32) / 255.0) * EDGE_BOOST
+
+
 def _reinject_structure(
     base: Image.Image, rendered: Image.Image, mask: Image.Image, strength: float
 ) -> Image.Image:
@@ -638,7 +662,9 @@ def _reinject_structure(
     보이기 때문이다.
 
     strength는 자재에 따라 달라진다(structure_strength 참고) — 무광 자재에 높은 값을
-    쓰면 원본의 광택 얼룩까지 복원돼 무광으로 보이지 않는다."""
+    쓰면 원본의 광택 얼룩까지 복원돼 무광으로 보이지 않는다. 그 위에 _edge_weight_map의
+    Canny 가중치를 더해, 뚜렷한 윤곽선(손잡이·경첩·몰딩)만은 strength와 무관하게 거의
+    항상 복원되게 한다 — EDGE_BOOST 참고."""
     base_arr = np.asarray(base, dtype=np.float32)
     rendered_arr = np.asarray(rendered, dtype=np.float32)
 
@@ -647,8 +673,10 @@ def _reinject_structure(
     base_low = np.asarray(base.filter(ImageFilter.GaussianBlur(blur_radius)), dtype=np.float32)
     detail = base_arr - base_low
 
-    mask_arr = (np.asarray(mask, dtype=np.float32) / 255.0)[:, :, None]
-    merged = rendered_arr + detail * strength * mask_arr
+    total_strength = strength + _edge_weight_map(base)  # (H, W), 균일 강도 + 윤곽선 가중치
+    mask_arr = np.asarray(mask, dtype=np.float32) / 255.0
+    weight = (total_strength * mask_arr)[:, :, None]
+    merged = rendered_arr + detail * weight
     return Image.fromarray(np.clip(merged, 0, 255).astype(np.uint8))
 
 

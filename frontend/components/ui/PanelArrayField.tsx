@@ -1,8 +1,10 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { Camera, Plus, Trash2 } from "lucide-react";
 import type { DoorType, PanelItem } from "@/types";
 import { NumberField } from "@/components/ui/FormControls";
+import ReferenceMeasureSheet from "@/components/measure/ReferenceMeasureSheet";
 
 const DOOR_TYPE_OPTIONS: { value: DoorType; label: string; hint: string }[] = [
   { value: "flat", label: "민짜문", hint: "통판 한 장" },
@@ -33,6 +35,9 @@ export default function PanelArrayField({
   presets,
   showDoorType,
 }: Props) {
+  // 카드 대조 실측 도구 — 한 번에 항목 하나의 가로 또는 세로 한 칸만 잰다.
+  const [measuring, setMeasuring] = useState<{ idx: number; dim: "widthMm" | "heightMm" } | null>(null);
+
   function updateItem(idx: number, patch: Partial<PanelItem>) {
     onChange(items.map((item, i) => (i === idx ? { ...item, ...patch } : item)));
   }
@@ -51,18 +56,38 @@ export default function PanelArrayField({
         <div key={idx} className="space-y-2 border-b border-slate-900/[0.06] pb-3 last:border-0 last:pb-0">
           <div className="flex items-end gap-3">
             <div className="grid flex-1 grid-cols-3 gap-2.5">
-              <NumberField
-                label="가로"
-                unit="mm"
-                value={item.widthMm}
-                onChange={(widthMm) => updateItem(idx, { widthMm })}
-              />
-              <NumberField
-                label="세로"
-                unit="mm"
-                value={item.heightMm}
-                onChange={(heightMm) => updateItem(idx, { heightMm })}
-              />
+              <div className="relative">
+                <NumberField
+                  label="가로"
+                  unit="mm"
+                  value={item.widthMm}
+                  onChange={(widthMm) => updateItem(idx, { widthMm })}
+                />
+                <button
+                  type="button"
+                  onClick={() => setMeasuring({ idx, dim: "widthMm" })}
+                  aria-label="가로 카드 대조 실측"
+                  className="absolute bottom-2.5 right-0 flex h-6 w-6 items-center justify-center rounded-md bg-indigo-50 text-indigo-600"
+                >
+                  <Camera className="h-3.5 w-3.5" strokeWidth={2} />
+                </button>
+              </div>
+              <div className="relative">
+                <NumberField
+                  label="세로"
+                  unit="mm"
+                  value={item.heightMm}
+                  onChange={(heightMm) => updateItem(idx, { heightMm })}
+                />
+                <button
+                  type="button"
+                  onClick={() => setMeasuring({ idx, dim: "heightMm" })}
+                  aria-label="세로 카드 대조 실측"
+                  className="absolute bottom-2.5 right-0 flex h-6 w-6 items-center justify-center rounded-md bg-indigo-50 text-indigo-600"
+                >
+                  <Camera className="h-3.5 w-3.5" strokeWidth={2} />
+                </button>
+              </div>
               <NumberField label={countLabel} value={item.count} onChange={(count) => updateItem(idx, { count })} />
             </div>
             <button
@@ -135,6 +160,16 @@ export default function PanelArrayField({
         <Plus className="h-5 w-5" strokeWidth={2.5} />
         {addLabel}
       </button>
+
+      <ReferenceMeasureSheet
+        open={!!measuring}
+        dimensionLabel={measuring?.dim === "widthMm" ? "가로" : "세로"}
+        onConfirm={(mm) => {
+          if (measuring) updateItem(measuring.idx, { [measuring.dim]: mm });
+          setMeasuring(null);
+        }}
+        onClose={() => setMeasuring(null)}
+      />
     </div>
   );
 }

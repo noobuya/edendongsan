@@ -33,9 +33,13 @@ from app.schemas_recruiting import (
     AdminApproveIn,
     AdminUserCreate,
     AdminUserRow,
+    ApplicantRead,
     FieldJobCreate,
     FieldJobRead,
+    JobApplicationDecisionIn,
     JobApplicationRead,
+    MyApplicationRead,
+    MyBadgeRead,
     SignupIn,
     SignupOut,
     SignupStatusOut,
@@ -83,6 +87,19 @@ def require_access_code(
     if not user or not hmac.compare_digest(user.access_code.encode(), x_access_code.encode()):
         raise HTTPException(401, "접근 코드가 올바르지 않습니다.")
     return user
+
+
+def _job_to_read(job: FieldJob) -> dict:
+    return {
+        "id": job.id,
+        "expert_id": job.expert_id,
+        "location": job.location,
+        "job_date": job.job_date,
+        "required_badge_id": job.required_badge_id,
+        "required_badge_name": job.required_badge.badge_name,
+        "pay": job.pay,
+        "status": job.status,
+    }
 
 
 # ── 가입 신청 (공개) ────────────────────────────────────────────────
@@ -183,6 +200,12 @@ def admin_create_user(payload: AdminUserCreate, x_admin_token: str | None = Head
     return user
 
 
+@router.get("/admin/badges", response_model=list[SkillBadgeRead])
+def admin_list_badges(x_admin_token: str | None = Header(default=None), db: Session = Depends(get_db)):
+    _require_admin(x_admin_token)
+    return db.query(SkillBadge).all()
+
+
 @router.post("/admin/badges", response_model=SkillBadgeRead)
 def admin_create_badge(payload: SkillBadgeCreate, x_admin_token: str | None = Header(default=None), db: Session = Depends(get_db)):
     _require_admin(x_admin_token)
@@ -212,6 +235,50 @@ def admin_award_badge(user_id: int, badge_id: int, x_admin_token: str | None = H
 
 
 # ── 승인된 사용자 전용 (X-Access-Code) ─────────────────────────────
+@router.get("/me", response_model=UserRead)
+def whoami(current_user: User = Depends(require_access_code)):
+    return current_user
+
+
+@router.get("/badges", response_model=list[SkillBadgeRead])
+def list_badges(current_user: User = Depends(require_access_code), db: Session = Depends(get_db)):
+    return db.query(SkillBadge).all()
+
+
+@router.get("/me/badges", response_model=list[MyBadgeRead])
+def my_badges(current_user: User = Depends(require_access_code), db: Session = Depends(get_db)):
+    rows = db.query(UserBadge).filter(UserBadge.user_id == current_user.id).all()
+    return [
+        {
+            "badge_id": ub.badge_id,
+            "badge_name": ub.badge.badge_name,
+            "description": ub.badge.description,
+            "acquired_date": ub.acquired_date,
+        }
+        for ub in rows
+    ]
+
+
+@router.get("/me/applications", response_model=list[MyApplicationRead])
+def my_applications(current_user: User = Depends(require_access_code), db: Session = Depends(get_db)):
+    if current_user.role != UserRole.STUDENT:
+        raise HTTPException(status_code=403, detail="수강생(STUDENT)만 조회할 수 있습니다.")
+    rows = db.query(JobApplication).filter(JobApplication.student_id == current_user.id).all()
+    return [
+        {
+            "id": a.id,
+            "status": a.status,
+            "applied_at": a.applied_at,
+            "job_id": a.job_id,
+            "job_location": a.job.location,
+            "job_date": a.job.job_date,
+            "job_pay": a.job.pay,
+            "job_status": a.job.status,
+        }
+        for a in rows
+    ]
+
+
 @router.post("/field-jobs", response_model=FieldJobRead)
 def create_field_job(
     payload: FieldJobCreate,
@@ -226,12 +293,82 @@ def create_field_job(
     db.add(job)
     db.commit()
     db.refresh(job)
-    return job
+    return _job_to_read(job)
 
 
 @router.get("/field-jobs", response_model=list[FieldJobRead])
 def list_open_field_jobs(current_user: User = Depends(require_access_code), db: Session = Depends(get_db)):
-    return db.query(FieldJob).filter(FieldJob.status == JobStatus.OPEN).all()
+    jobs = db.query(FieldJob).filter(FieldJob.status == JobStatus.OPEN).all()
+    return [_job_to_read(j) for j in jobs]
+
+
+@router.get("/me/field-jobs", response_model=list[FieldJobRead])
+def my_posted_field_jobs(current_user: User = Depends(require_access_code), db: Session = Depends(get_db)):
+    if current_user.role != UserRole.EXPERT:
+        raise HTTPException(status_code=403, detail="전문가(EXPERT)만 조회할 수 있습니다.")
+    jobs = db.query(FieldJob).filter(FieldJob.expert_id == current_user.id).all()
+    return [_job_to_read(j) for j in jobs]
+
+
+@router.get("/field-jobs/{job_id}/applications", response_model=list[ApplicantRead])
+def list_applicants(job_id: int, current_user: User = Depends(require_access_code), db: Session = Depends(get_db)):
+    job = db.get(FieldJob, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="공고를 찾을 수 없습니다.")
+    if current_user.role != UserRole.EXPERT or job.expert_id != current_user.id:
+        raise HTTPException(status_code=403, detail="본인이 올린 공고만 지원자를 볼 수 있습니다.")
+    rows = db.query(JobApplication).filter(JobApplication.job_id == job_id).all()
+    return [
+        {
+            "id": a.id,
+            "status": a.status,
+            "applied_at": a.applied_at,
+            "student_id": a.student_id,
+            "student_name": a.student.name,
+            "student_phone": a.student.phone_number,
+        }
+        for a in rows
+    ]
+
+
+@router.post("/field-jobs/{job_id}/applications/{application_id}/decision", response_model=JobApplicationRead)
+def decide_application(
+    job_id: int,
+    application_id: int,
+    payload: JobApplicationDecisionIn,
+    current_user: User = Depends(require_access_code),
+    db: Session = Depends(get_db),
+):
+    """전문가가 지원자를 승인/거절한다. 승인하면 공고가 마감되고(한 자리),
+    같은 공고의 나머지 대기중인 지원은 자동으로 거절된다."""
+    job = db.get(FieldJob, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="공고를 찾을 수 없습니다.")
+    if current_user.role != UserRole.EXPERT or job.expert_id != current_user.id:
+        raise HTTPException(status_code=403, detail="본인이 올린 공고만 처리할 수 있습니다.")
+    application = db.get(JobApplication, application_id)
+    if not application or application.job_id != job_id:
+        raise HTTPException(status_code=404, detail="지원 내역을 찾을 수 없습니다.")
+    if application.status != ApplicationStatus.PENDING:
+        raise HTTPException(status_code=409, detail="이미 처리된 지원이에요.")
+
+    application.status = ApplicationStatus(payload.status)
+    if application.status == ApplicationStatus.APPROVED:
+        job.status = JobStatus.CLOSED
+        others = (
+            db.query(JobApplication)
+            .filter(
+                JobApplication.job_id == job_id,
+                JobApplication.id != application_id,
+                JobApplication.status == ApplicationStatus.PENDING,
+            )
+            .all()
+        )
+        for other in others:
+            other.status = ApplicationStatus.REJECTED
+    db.commit()
+    db.refresh(application)
+    return application
 
 
 @router.post("/field-jobs/{job_id}/apply", response_model=JobApplicationRead)

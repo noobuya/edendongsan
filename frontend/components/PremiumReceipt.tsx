@@ -1,13 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { CheckCircle2, Download, Hammer, Leaf, Lock, MessageCircle, Share2, ShieldCheck, X } from "lucide-react";
+import { AlertTriangle, CalendarClock, CheckCircle2, Download, Hammer, Leaf, Lock, MessageCircle, Share2, ShieldCheck, Sparkles, X } from "lucide-react";
 import BusinessBadge from "@/components/BusinessBanner";
 import QuoteIcon, { toneOfWorkItem } from "@/components/quote/QuoteIcon";
 import BusinessStamp from "@/components/BusinessStamp";
 import SignaturePad from "@/components/SignaturePad";
 import { BUSINESS_NAME, BUSINESS_PHONE } from "@/lib/businessInfo";
-import type { EstimateBreakdown, MaterialOrderLine, Signature, WorkItemId } from "@/types";
+import ROIBarChart from "@/components/ROIBarChart";
+import type { EstimateBreakdown, MaterialOrderLine, RoiComparison, Signature, WorkItemId } from "@/types";
+
+export interface DepositInfo {
+  rate_percent: number;
+  amount: number;
+  note: string;
+}
 
 function won(amount: number): string {
   return `${Math.round(amount).toLocaleString("ko-KR")}원`;
@@ -129,6 +136,15 @@ interface ReceiptViewProps {
   /** 품번별 자재 발주 집계(사장님 전용). 없으면(빠른 견적 등 구버전 응답) 섹션 자체를 숨긴다. */
   materialOrders?: MaterialOrderLine[];
   estimateNo: string;
+  /** 최소 출장비 방어선이 적용됐을 때만 안내 배너를 보여준다. */
+  minCalloutApplied?: boolean;
+  minCalloutNote?: string;
+  /** 스케줄 락다운용 계약금. 없으면 섹션 자체를 숨긴다. */
+  deposit?: DepositInfo | null;
+  /** 교체 비용 대비 절감률을 보여주는 클로징 멘트. 빈 문자열이면 숨긴다. */
+  salesPitch?: string;
+  /** 막대그래프 + 소구포인트 칩 버전의 영업 리포트. 있으면 salesPitch 문장 대신 이걸 그린다. */
+  roiComparison?: RoiComparison | null;
   /** 상호 뱃지를 3초 길게 눌렀을 때 — 단가 설정(개발자 모드)을 연다. */
   onSecretHold?: () => void;
   /** 이미 서명된 견적이면 이 값이 있다 — 있으면 서명판 대신 서명 이미지를 보여준다.
@@ -171,6 +187,11 @@ export default function PremiumReceipt({
       onSecretHold={onSecretHold}
       signature={signature}
       onSign={onSign}
+      minCalloutApplied={estimate.min_callout_applied}
+      minCalloutNote={estimate.min_callout_note}
+      deposit={estimate.deposit}
+      salesPitch={estimate.sales_pitch}
+      roiComparison={estimate.roi_comparison}
     />
   );
 }
@@ -187,6 +208,11 @@ export function PremiumReceiptView({
   onSecretHold,
   signature,
   onSign,
+  minCalloutApplied,
+  minCalloutNote,
+  deposit,
+  salesPitch,
+  roiComparison,
 }: ReceiptViewProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [stealthOpen, setStealthOpen] = useState(false);
@@ -368,6 +394,12 @@ export function PremiumReceiptView({
           <p className="mt-2 text-[13px] text-[#5b6573]">
             {vat !== null ? "부가세 포함 금액입니다" : "현장 실측 후 최종 확정됩니다"}
           </p>
+          {minCalloutApplied && minCalloutNote && (
+            <div className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 px-3.5 py-3 text-[12.5px] leading-relaxed text-amber-800">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={2} />
+              <span>{minCalloutNote}</span>
+            </div>
+          )}
         </div>
 
         <hr className="my-5 border-t border-dashed border-[#d1d6db]" />
@@ -415,6 +447,33 @@ export function PremiumReceiptView({
             </span>
           ))}
         </div>
+
+        {/* 영업 리포트 — 교체 vs 필름 비용 막대그래프 + 소구포인트 칩. roiComparison이
+            있으면 이걸 쓰고, 없는 옛 응답(막대그래프 숫자가 없는 경우)만 문장으로 대신한다. */}
+        {roiComparison ? (
+          <ROIBarChart roi={roiComparison} />
+        ) : (
+          salesPitch && (
+            <div className="mt-5 flex items-start gap-2.5 rounded-xl bg-indigo-50 px-4 py-3.5 text-[13px] leading-relaxed text-indigo-800">
+              <Sparkles className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={2} />
+              <span>{salesPitch}</span>
+            </div>
+          )
+        )}
+
+        {/* 스케줄 락다운용 계약금 — 단순 변심·당일 취소 방어 약관을 함께 보여준다. */}
+        {deposit && deposit.amount > 0 && (
+          <div className="mt-5 rounded-xl border border-[#eef0f2] px-4 py-3.5">
+            <div className="flex items-center justify-between gap-3">
+              <p className="flex items-center gap-1.5 text-[13px] font-semibold text-[#191f28]">
+                <CalendarClock className="h-4 w-4 text-indigo-600" strokeWidth={2} />
+                계약금 ({deposit.rate_percent}%)
+              </p>
+              <p className="text-[16px] font-bold tabular-nums text-[#191f28]">{won(deposit.amount)}</p>
+            </div>
+            <p className="mt-1.5 text-[12px] leading-relaxed text-[#8b95a1]">{deposit.note}</p>
+          </div>
+        )}
 
         <div className="mt-6 flex items-end justify-between gap-3 border-t border-[#eef0f2] pt-4 text-[12.5px] leading-[1.6] text-[#6b7684]">
           <div>

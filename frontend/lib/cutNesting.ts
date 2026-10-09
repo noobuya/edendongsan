@@ -8,8 +8,10 @@
  * 한 줄이 끝나면(그 줄에서 가장 긴 조각만큼) 롤을 더 풀어 다음 줄을 잘라내는 방식으로
  * 재단한다 — 그래서 "선반에 물건을 얹듯" 폭 방향으로 채우는 First-Fit Decreasing
  * Height(FFDH) 알고리즘이 실제 작업 방식과 그대로 들어맞고, 계산도 예측 가능하다.
- * 조각은 돌리지 않는다(회전 허용 안 함) — 필름은 결(나뭇결 방향 등)이 있어 맘대로
- * 돌리면 시공 후 무늬 방향이 어긋날 수 있기 때문이다.
+ * 결(나뭇결·무늬 방향)이 있는 조각(hasGrain=true)은 절대 돌리지 않는다 — 맘대로
+ * 돌리면 시공 후 무늬 방향이 어긋나 보이기 때문이다. 민무늬 조각(hasGrain=false)만,
+ * 원래 방향으로 기존 선반에 못 들어갈 때 한해 90도로 돌려 다시 끼워 넣어 본다(로스를
+ * 줄이는 선에서만 — 새 선반을 여는 것보다 기존 선반 빈 폭에 끼우는 게 항상 이득이다).
  */
 
 export interface NestingPiece {
@@ -23,11 +25,19 @@ export interface NestingPiece {
   groupKey: string;
   widthMm: number;
   heightMm: number;
+  /** 우드·마블 등 결(무늬)이 있는 자재면 true — true인 조각은 절대 90도로 돌려
+   *  배치하지 않는다(폭↔길이가 바뀌면 결 방향이 어긋나 보인다). false(민무늬)인
+   *  조각만 기존 선반에 더 끼워 넣을 자리가 있을 때 한해 돌려서 로스를 줄인다. */
+  hasGrain: boolean;
 }
 
 export interface PlacedPiece extends NestingPiece {
   x: number;
   y: number;
+  /** 배치 과정에서 90도 돌아갔는지(hasGrain=false인 조각만 해당). widthMm/heightMm은
+   *  이미 돌아간 뒤의 값이므로, 그리는 쪽은 이 값을 신경 쓰지 않고 그대로 써도 된다 —
+   *  재단 지시서처럼 "원래 치수"를 다시 말해야 하는 곳에서만 참고하면 된다. */
+  rotated: boolean;
 }
 
 export interface NestingShelf {
@@ -51,19 +61,36 @@ export interface NestingResult {
 export function packShelves(pieces: NestingPiece[], rollWidthMm: number): NestingResult {
   // 큰 조각부터 채워야(First-Fit Decreasing Height) 좁은 자투리가 덜 남는다 —
   // 작은 조각을 먼저 흩어 놓으면 큰 조각이 들어갈 자리가 없어 선반이 쓸데없이 늘어난다.
-  const sorted = [...pieces].sort((a, b) => b.heightMm - a.heightMm);
+  // 길이(heightMm)가 같으면 폭(widthMm)이 넓은 것부터 — 폭이 좁은 조각을 먼저 선반에
+  // 올리면 뒤에 오는 더 넓은 동일 길이 조각이 그 선반에 못 들어가 새 선반을 여는 경우가
+  // 생긴다. 넓은 것부터 꽂아야 그 뒤 좁은 조각들이 남는 자리에 더 잘 끼워진다.
+  const sorted = [...pieces].sort((a, b) => b.heightMm - a.heightMm || b.widthMm - a.widthMm);
   const shelves: NestingShelf[] = [];
 
   for (const piece of sorted) {
     if (piece.widthMm <= 0 || piece.heightMm <= 0) continue;
+
     let shelf = shelves.find((s) => s.usedWidthMm + piece.widthMm <= rollWidthMm);
+    let rotated = false;
+
+    // 원래 방향으로 기존 선반에 못 들어가면, 결이 없는 조각(hasGrain=false)만 90도
+    // 돌려서 다시 시도한다 — 새 선반을 열지는 않는다(새 선반을 열 거면 원래 방향이
+    // 길이 내림차순 정렬을 그대로 지켜야 선반 높이가 예측 가능하게 줄어든다).
+    if (!shelf && !piece.hasGrain) {
+      shelf = shelves.find((s) => s.heightMm >= piece.widthMm && s.usedWidthMm + piece.heightMm <= rollWidthMm);
+      if (shelf) rotated = true;
+    }
+
     if (!shelf) {
       const y = shelves.reduce((sum, s) => sum + s.heightMm, 0);
       shelf = { y, heightMm: piece.heightMm, usedWidthMm: 0, pieces: [] };
       shelves.push(shelf);
     }
-    shelf.pieces.push({ ...piece, x: shelf.usedWidthMm, y: shelf.y });
-    shelf.usedWidthMm += piece.widthMm;
+
+    const placedWidthMm = rotated ? piece.heightMm : piece.widthMm;
+    const placedHeightMm = rotated ? piece.widthMm : piece.heightMm;
+    shelf.pieces.push({ ...piece, x: shelf.usedWidthMm, y: shelf.y, widthMm: placedWidthMm, heightMm: placedHeightMm, rotated });
+    shelf.usedWidthMm += placedWidthMm;
   }
 
   const totalLengthMm = shelves.reduce((sum, s) => sum + s.heightMm, 0);

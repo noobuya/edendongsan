@@ -52,6 +52,18 @@ class FilmOptions(BaseModel):
     shoe_cabinets: list[PanelItem] = Field(default_factory=list)
 
 
+FireDoorSides = Literal["single", "double"]
+
+
+class FireDoorItem(BaseModel):
+    """현관 방화문 — 스틸 문이라 나뭇결/패턴 개념이 없고, 규격이 표준화돼 있어
+    ㎡ 계산 없이 짝당 정액(단면/양면)으로 받는다. estimator.py의
+    price_table.door_frame.fire_door 참고."""
+
+    sides: FireDoorSides = "single"
+    count: int = 0
+
+
 class DoorFrameOptions(BaseModel):
     """문짝·문틀 시공. 필름과 같은 원단/단가 체계를 쓰지만 별도 종목으로 뽑는다 —
     현장에서 "문만 해달라"는 의뢰가 흔한데, 인테리어 필름 안에 묻혀 있으면
@@ -62,6 +74,10 @@ class DoorFrameOptions(BaseModel):
     needs_primer: bool = False
     doors: list[PanelItem] = Field(default_factory=list)
     doorframes: list[PanelItem] = Field(default_factory=list)
+    fire_doors: list[FireDoorItem] = Field(default_factory=list)
+    # 걸레받이/샷시/문짝처럼 기존 자재를 뜯어내는 시공엔 실리콘 마감이 따라붙는데,
+    # 현장마다 필요 여부가 갈려 기본가에 묻지 않고 선택 시에만 별도 청구한다.
+    silicone_recoat: bool = False
 
 
 class WallFilmOptions(BaseModel):
@@ -72,6 +88,7 @@ class WallFilmOptions(BaseModel):
     unit_price_per_m: int = 10_000
     needs_primer: bool = True
     walls: list[PanelItem] = Field(default_factory=list)
+    silicone_recoat: bool = False  # 기존 실리콘 제거 및 재시공 — 기본가 불포함, 선택 시 별도 청구
 
 
 class WardrobeOptions(BaseModel):
@@ -111,6 +128,7 @@ class SashOptions(BaseModel):
     unit_price_per_m: int = 10_000  # 원/m — 표준 장폭 1.22m 원단 기준
     needs_primer: bool = False
     frames: list[PanelItem] = Field(default_factory=list)  # 창틀 규격(가로×세로mm)×개수
+    silicone_recoat: bool = False  # 기존 실리콘 제거 및 재시공 — 기본가 불포함, 선택 시 별도 청구
 
 
 class GlassOptions(BaseModel):
@@ -248,6 +266,29 @@ class MaterialOrderLine(BaseModel):
     item_names: list[str] = Field(default_factory=list)  # 이 색을 쓴 항목들(예: "인테리어 필름", "문짝/문틀 시공")
 
 
+class DepositInfo(BaseModel):
+    """스케줄 락다운용 계약금 — 총액의 일부를 예약금으로 분리해 보여준다.
+    비율은 pricing_store의 deposit_rate_percent(사장님 조정 가능)를 따른다."""
+
+    rate_percent: float
+    amount: int
+    note: str
+
+
+class RoiComparison(BaseModel):
+    """영업 리포트용 — 전체 교체 대비 필름 리폼의 비용/공기 비교.
+    sales_pitch(문장)와 같은 기준 품목에서 뽑아낸 숫자라 항상 서로 일치한다
+    (estimator.py의 _pick_roi_item 참고)."""
+
+    item_name: str
+    replacement_cost: int
+    film_cost: int
+    savings_percent: int
+    days_replacement: int
+    days_film: int
+    highlights: list[str]
+
+
 class EstimateBreakdown(BaseModel):
     line_items: list[LineItem]
     ceiling_area_m2: float
@@ -258,6 +299,17 @@ class EstimateBreakdown(BaseModel):
     vat: int
     total_cost: int
     material_orders: list[MaterialOrderLine] = Field(default_factory=list)
+    # ── 오야 견적 방어 로직 (estimator.py의 calculate_estimate 참고) ──
+    # 보정 전 실제 산출 공급가액. 최소 출장비가 적용되지 않았으면 supply_amount와 같다.
+    raw_supply_amount: int = 0
+    min_callout_applied: bool = False
+    min_callout_note: str = ""
+    deposit: Optional[DepositInfo] = None
+    # 문짝류(door_frame 등) 선택 시, 교체 비용과 비교하는 영업 멘트. 없으면 빈 문자열.
+    sales_pitch: str = ""
+    # 막대그래프·소구포인트 칩 등 "영업 리포트" UI가 쓰는 구조화된 숫자. sales_pitch가
+    # 비어 있으면(교체 비교가 성립하는 품목이 없으면) 이것도 None이다.
+    roi_comparison: Optional[RoiComparison] = None
 
 
 class Region(BaseModel):

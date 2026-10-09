@@ -8,6 +8,7 @@ import {
   AppWindow,
   ArrowLeft,
   BrickWall,
+  Camera,
   CheckSquare,
   DoorClosed,
   Info,
@@ -22,12 +23,18 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import CutMapView from "@/components/cutting/CutMapView";
+import ReferenceMeasureSheet from "@/components/measure/ReferenceMeasureSheet";
 import { packShelves, type NestingPiece, type NestingShelf } from "@/lib/cutNesting";
 
 // 필름 원단의 표준 장폭. app/services/estimator.py가 실제 견적을 낼 때 쓰는 값과 같다 —
 // 이 현장 도구가 계산한 길이와 나중에 뜨는 정식 견적의 원단 길이가 서로 다른 숫자로
 // 보이면 사장님이 어느 쪽을 믿어야 할지 헷갈린다.
-const ROLL_WIDTH_MM = 1220;
+const ROLL_WIDTH_MM = 1220; // 물리적 가용 폭 — 테트리스 배치(안내도)는 이 폭까지 꽉 채워 쓴다
+// 재무적 반납 폭 — 대리점에 남은 롤을 반납해 환불받을 때는 양 끝 오염 방지 여유 없이
+// 1,200mm 폭이 "온전히" 살아 있어야 인정해 준다. 배치 자체는 그대로 1,220mm를 쓰고,
+// 이 값은 남은 자재가 반납 가능한지 판정할 때만 쓴다(returnableRemnant 참고).
+const FINANCIAL_RETURN_WIDTH_MM = 1200;
+const RETURN_MIN_LENGTH_M = 1; // 반납 조건: 남은 길이가 최소 1m 이상
 const DEFAULT_LOSS_PERCENT = 15;
 // 업계 표준 여유 구매율(로스율) 범위. 범위 밖으로 입력해도 계산은 그대로 입력값을
 // 쓰되(강제로 틀어막지 않음), 범위를 벗어났다는 걸 눈에 띄게 알려준다.
@@ -242,6 +249,8 @@ interface CutItem {
   /** 이 조각이 속한 문짝의 도안(DOOR_LAYOUTS의 id). 리스트·안내도에서 왜 여러 줄로
    *  쪼개졌는지 보여줄 때 쓴다. */
   doorLayout?: string;
+  /** 시공자용 뒷면 마킹에 쓰는 방 이름(선택 입력), 예: "안방". 비워 두면 라벨에서 빠진다. */
+  roomName?: string;
 }
 
 const STORAGE_KEY = "eden_cutting_list_v1";
@@ -249,7 +258,13 @@ const EMPTY_SEQ: Record<Category, number> = { sash: 0, door: 0, cabinet: 0, deco
 
 /** localStorage에 저장해 둔 재단 리스트를 읽는다. 컴포넌트 state를 만드는 시점에
  *  (useState의 지연 초기화로) 바로 불러 써야 저장/불러오기 순서가 어긋날 일이 없다. */
-function readStoredCutting(): { items: CutItem[]; lossPercent?: string; marginOffsetMm?: string; patternRepeatMm?: string } {
+function readStoredCutting(): {
+  items: CutItem[];
+  lossPercent?: string;
+  marginOffsetMm?: string;
+  patternRepeatMm?: string;
+  filmUnitPrice?: string;
+} {
   if (typeof window === "undefined") return { items: [] };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -259,12 +274,14 @@ function readStoredCutting(): { items: CutItem[]; lossPercent?: string; marginOf
       lossPercent?: string;
       marginOffsetMm?: string;
       patternRepeatMm?: string;
+      filmUnitPrice?: string;
     };
     return {
       items: saved.items ?? [],
       lossPercent: saved.lossPercent,
       marginOffsetMm: saved.marginOffsetMm,
       patternRepeatMm: saved.patternRepeatMm,
+      filmUnitPrice: saved.filmUnitPrice,
     };
   } catch {
     return { items: [] }; // 저장된 값이 깨져 있어도 빈 리스트로 시작한다
@@ -399,6 +416,22 @@ function shortPartLabel(part: string): string {
   return idx === -1 ? part : part.slice(idx + 1);
 }
 
+/** 시공자용 뒷면 마킹 — "[1번/안방]" 형태. 같은 번호가 카테고리마다 따로 매겨지므로
+ *  (문1·샷1처럼 독립 채번) 카테고리 한 글자 표식을 번호 앞에 붙여 서로 다른 부위의
+ *  같은 번호가 섞여도 헷갈리지 않게 한다. 방 이름을 안 넣었으면 뒤 "/방이름"은 뺀다. */
+function backMarkLabel(shortLabel: string, seq: number, part: string | undefined, roomName: string | undefined): string {
+  const partSuffix = part ? `-${shortPartLabel(part)}` : "";
+  const numberPart = `${shortLabel}${seq}번${partSuffix}`;
+  return roomName ? `[${numberPart}/${roomName}]` : `[${numberPart}]`;
+}
+
+/** 치수 + 방향 화살표 — "160×2000 (↕)". 세로(결 방향, cutHMm)가 가로(cutWMm)보다
+ *  길거나 같으면 세워서 시공(↕), 더 짧으면(가로로 긴 몰딩·가로대 등) 눕혀서 시공(↔). */
+function dimWithArrow(cutWMm: number, cutHMm: number): string {
+  const arrow = cutHMm >= cutWMm ? "↕" : "↔";
+  return `${Math.round(cutWMm).toLocaleString("ko-KR")}×${Math.round(cutHMm).toLocaleString("ko-KR")} (${arrow})`;
+}
+
 // [샷시/창틀 — 절대 통판으로 계산하지 않는다]
 // 샷시는 가운데가 유리로 뚫려 있어, 전체 면적을 통판으로 잡으면 유리 자리만큼 원단을
 // 그냥 버리는 셈이다. 그래서 문짝과 달리 "민짜문" 같은 통판 옵션 자체가 없다 — 항상
@@ -477,6 +510,55 @@ function applyDoorSided(
 interface CutGuideLine {
   text: string;
   remnantNote: string;
+}
+
+/** 폭이 일정한 반복 부재(샷시 테두리·문틀 케이싱·몰딩 등)를 한데 모은 롤 재단 묶음.
+ *  낱개 안내도를 그리지 않고 "이 폭으로 총 몇 m를 기계 재단해 달라"는 발주서 한 줄로 낸다. */
+interface RollCutGroup {
+  /** 그룹을 묶는 공통 폭(기둥/가로대/몰딩 띠 폭 등 — cutWMm·cutHMm 중 더 좁은 쪽). */
+  widthMm: number;
+  totalLengthMm: number;
+  pieceLabels: string[];
+  categories: Category[];
+}
+
+/** 몰딩처럼 항상 롤 재단 대상인 부위(linear)이거나, 문틀/샷시 테두리처럼 여러 조각으로
+ *  쪼개진 "띠" 조각(part가 있음)이면 롤 재단 후보다. 단, 알판(part가 "알판"으로 시작)은
+ *  띠가 아니라 작은 판 조각이라 2D 패널 안내도에 그대로 둔다. 민짜문처럼 원래 쪼개지지
+ *  않는 통판은 양면 시공으로 "앞면"/"뒷면"만 붙어도(applyDoorSided) 여전히 큰 판이라
+ *  롤 재단이 아니라 2D 패널 안내도에 남겨야 한다 — part가 접두사 없이 "앞면"/"뒷면"
+ *  그 자체면(원래 part가 빈 문자열이었다는 뜻) 통판으로 간주한다. */
+function isRollCutCandidate(cfg: CategoryConfig, it: CutItem): boolean {
+  if (cfg.linear) return true;
+  if (!it.part || it.part.startsWith("알판")) return false;
+  if (it.part === "앞면" || it.part === "뒷면") return false;
+  return true;
+}
+
+/** 롤 재단 후보 조각들을 "공통 폭"(cutWMm·cutHMm 중 좁은 쪽) 기준으로 묶어 합산한다 —
+ *  기둥처럼 폭이 w 자리에 들어간 조각과 가로대처럼 폭이 h 자리에 들어간 조각이 섞여
+ *  있어도(결 방향 고정 때문에 둘의 축이 다르다, buildDoorFramePieces 주석 참고) 항상
+ *  "더 좁은 쪽 = 띠 폭"이라 하나의 기준으로 묶인다. */
+function buildRollCutGroups(items: CutItem[]): { groups: RollCutGroup[]; totalLengthMm: number } {
+  const byWidth = new Map<number, RollCutGroup>();
+  for (const it of items) {
+    const cfg = categoryOf(it.category);
+    const widthMm = Math.min(it.cutWMm, it.cutHMm);
+    const lengthMm = Math.max(it.cutWMm, it.cutHMm);
+    if (widthMm <= 0 || lengthMm <= 0) continue;
+    const label = backMarkLabel(cfg.shortLabel, it.seq, it.part, it.roomName);
+    let group = byWidth.get(widthMm);
+    if (!group) {
+      group = { widthMm, totalLengthMm: 0, pieceLabels: [], categories: [] };
+      byWidth.set(widthMm, group);
+    }
+    group.totalLengthMm += lengthMm;
+    group.pieceLabels.push(label);
+    if (!group.categories.includes(it.category)) group.categories.push(it.category);
+  }
+  const groups = [...byWidth.values()].sort((a, b) => b.totalLengthMm - a.totalLengthMm);
+  const totalLengthMm = groups.reduce((sum, g) => sum + g.totalLengthMm, 0);
+  return { groups, totalLengthMm };
 }
 
 /** 2D 안내도의 줄(선반) 배치를 시공자가 바로 읽고 따라 할 수 있는 문장으로 바꾼다 —
@@ -628,6 +710,9 @@ export default function CuttingCalculatorPage() {
   // 무늬(패턴) 자재의 리피트(무늬 반복) 길이 — 0이면 민무늬 자재로 간주해 기존과 똑같이
   // 계산한다. 벽면 시트지처럼 무늬가 있는 자재를 쓸 때만 채운다.
   const [patternRepeatMm, setPatternRepeatMm] = useState(() => readStoredCutting().patternRepeatMm ?? "0");
+  // 원단 단가(원/m) — 반납 가능 뱃지의 예상 환급액 계산에만 쓴다. 비워 두면(0) 금액 없이
+  // 길이·반납 가능 여부만 보여준다.
+  const [filmUnitPrice, setFilmUnitPrice] = useState(() => readStoredCutting().filmUnitPrice ?? "");
   const seqRef = useRef<Record<Category, number>>(initialSeqMap(readStoredCutting().items));
   // [하이드레이션 불일치 방지] 위 지연 초기화들은 "불러오기/저장하기 순서 race"는
   // 없애 주지만, 서버 렌더링(HTML을 처음 만드는 시점, localStorage 접근 불가 →
@@ -645,6 +730,10 @@ export default function CuttingCalculatorPage() {
   const pendingPresetRef = useRef<Preset | null>(null);
   // 같은 규격을 여러 개 한 번에 넣을 때 쓰는 수량. 치수를 새로 입력할 때마다 1로 되돌린다.
   const [qty, setQty] = useState(1);
+  // 시공자용 뒷면 마킹용 방 이름(선택). "같은 방을 연달아 잰다"가 흔해 비우지 않고 남겨 둔다.
+  const [roomName, setRoomName] = useState("");
+  // 카드 대조 실측 도구 — 지금 열려 있는 칸이 가로인지 세로인지만 기억한다.
+  const [measuring, setMeasuring] = useState<"width" | "height" | null>(null);
 
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -698,11 +787,14 @@ export default function CuttingCalculatorPage() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ items, lossPercent, marginOffsetMm, patternRepeatMm }));
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ items, lossPercent, marginOffsetMm, patternRepeatMm, filmUnitPrice })
+      );
     } catch {
       /* 저장 실패해도(용량 초과 등) 화면 동작에는 지장이 없다 */
     }
-  }, [items, lossPercent, marginOffsetMm, patternRepeatMm]);
+  }, [items, lossPercent, marginOffsetMm, patternRepeatMm, filmUnitPrice]);
 
   const offset = parseFloat(marginOffsetMm) || 0;
   const repeat = Math.max(0, parseFloat(patternRepeatMm) || 0);
@@ -766,7 +858,12 @@ export default function CuttingCalculatorPage() {
 
   /** 리스트에 한 항목을 더하는 공용 함수 — 수동 입력, 표준 규격 원터치, 음성 명령이
    *  전부 이 함수 하나로 모인다. cat이 몰딩이면 dims에서 length/strip을, 아니면 w/h를 쓴다. */
-  function addItem(cat: Category, dims: { wMm?: number; hMm?: number; lengthM?: number; stripWidthMm?: number }, dOverrideMm?: number) {
+  function addItem(
+    cat: Category,
+    dims: { wMm?: number; hMm?: number; lengthM?: number; stripWidthMm?: number },
+    dOverrideMm?: number,
+    roomNameVal?: string
+  ) {
     const cfg = categoryOf(cat);
     const d = Math.max(0, dOverrideMm ?? cfg.defaultThicknessMm);
     let computed: { marginMm: number; cutWMm: number; cutHMm: number; areaM2: number } | null = null;
@@ -793,6 +890,7 @@ export default function CuttingCalculatorPage() {
       cutHMm: computed.cutHMm,
       areaM2: computed.areaM2,
       checked: false,
+      roomName: roomNameVal?.trim() || undefined,
     };
     const item: CutItem = cfg.linear
       ? { ...base, lengthM: dims.lengthM, stripWidthMm: dims.stripWidthMm ?? cfg.defaultStripWidthMm }
@@ -821,7 +919,8 @@ export default function CuttingCalculatorPage() {
     layout: DoorLayout,
     doorPartVal: DoorPart,
     girthVal: number,
-    sidedVal: DoorSided
+    sidedVal: DoorSided,
+    roomNameVal?: string
   ) {
     const rawSpecs = getFramePieceSpecs(cat, wMmVal, hMmVal, frameWidthMmVal, layout, doorPartVal, girthVal);
     if (!rawSpecs) return false;
@@ -849,6 +948,7 @@ export default function CuttingCalculatorPage() {
         part: spec.part,
         // 샷시·문틀은 도안 개념이 없어(항상 같은 구조) 배지를 달지 않는다.
         doorLayout: cat === "door" && doorPartVal === "panel" ? layout.id : undefined,
+        roomName: roomNameVal?.trim() || undefined,
       };
     });
     setItems((prev) => [...prev, ...newItems]);
@@ -874,7 +974,7 @@ export default function CuttingCalculatorPage() {
       const frame = Math.max(0, parseFloat(frameWidthMm) || 0);
       let added = 0;
       for (let i = 0; i < qty; i++)
-        if (addFramePieceSet(category, w, h, d, frame, currentLayout, doorPart, girthMm, doorSided)) added += 1;
+        if (addFramePieceSet(category, w, h, d, frame, currentLayout, doorPart, girthMm, doorSided, roomName)) added += 1;
       if (added > 0) {
         const piecesEach = latticePreview.pieces.length;
         const label = isDoorFrame ? "문틀" : isSashCategory ? "샷시" : currentLayout.label;
@@ -886,7 +986,7 @@ export default function CuttingCalculatorPage() {
         ? { lengthM: parseFloat(lengthM) || 0, stripWidthMm: parseFloat(stripWidthMm) || 0 }
         : { wMm: parseFloat(wMm) || 0, hMm: parseFloat(hMm) || 0 };
       let added = 0;
-      for (let i = 0; i < qty; i++) if (addItem(category, dims, d)) added += 1;
+      for (let i = 0; i < qty; i++) if (addItem(category, dims, d, roomName)) added += 1;
       if (added > 1) showToast(`${config.label} ${added}개를 한 번에 추가했어요`);
     }
 
@@ -989,6 +1089,10 @@ export default function CuttingCalculatorPage() {
   // ---- 2D 재단 안내도(nesting) — 총 소요 길이도 이 배치 결과를 기준으로 낸다.
   // (예전에는 면적을 단순 합산해 1,220mm로 나눴는데, 그러면 줄마다 남는 자투리 폭이
   // 계산에서 빠져 실제보다 적게 나온다. 실제 배치를 그려야 나오는 정확한 숫자다.) ----
+  // 무늬(패턴) 자재인지 — 0(민무늬)이면 결 걱정 없이 돌려 끼워도 되므로, 기존 선반에
+  // 더 들어갈 자리가 있을 때 packShelves가 90도로 돌려 로스를 줄인다(hasGrain 참고).
+  const hasGrain = repeat > 0;
+
   const nesting = useMemo(() => {
     const pieces: NestingPiece[] = [];
     // 폭이 넓은 창문의 가로대처럼, 조각 자체가 원단 폭(1,220mm)보다 넓으면 애초에 한 번에
@@ -996,27 +1100,39 @@ export default function CuttingCalculatorPage() {
     // 그대로 남아 자투리가 음수가 되고, 그걸 0으로 가려버리면 "꽉 채웠다"고 잘못 보이게 된다.
     // 그래서 이런 조각은 배치 계산에서 아예 빼고 별도로 경고한다.
     const oversizedParts: { label: string; widthMm: number }[] = [];
+    // 샷시 테두리·문틀 케이싱·몰딩처럼 폭이 일정한 반복 부재는 낱개 안내도 대신
+    // 롤 재단 발주서로 따로 뺀다(2D 패널 안내도에는 안 그린다).
+    const rollCutItems: CutItem[] = [];
     for (const it of items) {
       const cfg = categoryOf(it.category);
+      if (isRollCutCandidate(cfg, it)) {
+        rollCutItems.push(it);
+        continue;
+      }
       // 패널은 cutWMm이 "롤 폭 방향"(가로), cutHMm이 "롤 길이 방향"(세로)이다. 몰딩은
       // 반대다 — cutWMm에 긴 길이가, cutHMm에 띠 폭이 들어 있다(computeMolding 참고).
       // 안내도에서는 폭 방향을 widthMm으로 맞춰야 롤 폭(1,220mm)과 비교가 맞는다.
       const widthMm = cfg.linear ? it.cutHMm : it.cutWMm;
       const heightMm = cfg.linear ? it.cutWMm : it.cutHMm;
-      const partSuffix = it.part ? shortPartLabel(it.part) : "";
-      const label = `${cfg.shortLabel}${it.seq}${partSuffix}`;
+      const label = backMarkLabel(cfg.shortLabel, it.seq, it.part, it.roomName);
       if (widthMm > ROLL_WIDTH_MM) {
         oversizedParts.push({ label, widthMm });
         continue;
       }
-      const dimLabel = `${Math.round(it.cutWMm).toLocaleString("ko-KR")}×${Math.round(it.cutHMm).toLocaleString("ko-KR")}`;
-      pieces.push({ id: it.id, label, dimLabel, groupKey: it.category, widthMm, heightMm });
+      const dimLabel = dimWithArrow(it.cutWMm, it.cutHMm);
+      pieces.push({ id: it.id, label, dimLabel, groupKey: it.category, widthMm, heightMm, hasGrain });
     }
-    return { ...packShelves(pieces, ROLL_WIDTH_MM), oversizedParts };
-  }, [items]);
+    const rollCut = buildRollCutGroups(rollCutItems);
+    return { ...packShelves(pieces, ROLL_WIDTH_MM), oversizedParts, rollCutGroups: rollCut.groups, rollCutTotalLengthMm: rollCut.totalLengthMm };
+  }, [items, hasGrain]);
 
   const lossRate = Math.max(0, parseFloat(lossPercent) || 0);
-  const finalLengthM = Math.ceil((nesting.totalLengthMm / 1000) * (1 + lossRate / 100) * 10) / 10;
+  const totalUsedLengthMm = nesting.totalLengthMm + nesting.rollCutTotalLengthMm;
+  const finalLengthM = Math.ceil((totalUsedLengthMm / 1000) * (1 + lossRate / 100) * 10) / 10;
+  // 반납 가능한 남은 자재 — 여유 구매율로 더 사 둔 길이(buffer) 중 실제로 안 쓴 만큼.
+  // 폭은 손 안 댄 롤 그대로라 항상 재무적 반납 폭(1,200mm)이 꽉 차 있다고 본다.
+  const returnableLengthM = Math.max(0, finalLengthM - totalUsedLengthMm / 1000);
+  const returnEligible = returnableLengthM >= RETURN_MIN_LENGTH_M;
   // 안내도와 같은 nesting 결과에서 그대로 뽑아 쓰는 재단 지시서 — 그림과 글이 어긋날 일이 없다.
   const cutGuide = useMemo(() => buildCutGuide(nesting.shelves), [nesting]);
 
@@ -1372,7 +1488,7 @@ export default function CuttingCalculatorPage() {
             </div>
           ) : (
             <div className="mt-4 grid grid-cols-3 gap-2.5">
-              <label className="block">
+              <label className="relative block">
                 <span className="text-[13px] font-semibold text-[#9aa4b2]">가로 W</span>
                 <input
                   type="number"
@@ -1384,8 +1500,16 @@ export default function CuttingCalculatorPage() {
                   placeholder="mm"
                   className="mt-1.5 h-16 w-full rounded-2xl border border-[#262b33] bg-[#1a1d23] px-2 text-center text-[22px] font-extrabold tabular-nums text-[#f2f4f6] outline-none placeholder:text-[15px] placeholder:font-normal placeholder:text-[#4b5563] focus:border-indigo-500"
                 />
+                <button
+                  type="button"
+                  onClick={() => setMeasuring("width")}
+                  aria-label="가로 카드 대조 실측"
+                  className="absolute bottom-2.5 right-2 flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600/20 text-indigo-300"
+                >
+                  <Camera className="h-4 w-4" strokeWidth={2} />
+                </button>
               </label>
-              <label className="block">
+              <label className="relative block">
                 <span className="text-[13px] font-semibold text-[#9aa4b2]">세로 H</span>
                 <input
                   type="number"
@@ -1397,6 +1521,14 @@ export default function CuttingCalculatorPage() {
                   placeholder="mm"
                   className="mt-1.5 h-16 w-full rounded-2xl border border-[#262b33] bg-[#1a1d23] px-2 text-center text-[22px] font-extrabold tabular-nums text-[#f2f4f6] outline-none placeholder:text-[15px] placeholder:font-normal placeholder:text-[#4b5563] focus:border-indigo-500"
                 />
+                <button
+                  type="button"
+                  onClick={() => setMeasuring("height")}
+                  aria-label="세로 카드 대조 실측"
+                  className="absolute bottom-2.5 right-2 flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600/20 text-indigo-300"
+                >
+                  <Camera className="h-4 w-4" strokeWidth={2} />
+                </button>
               </label>
               <label className="block">
                 <span className="text-[13px] font-semibold text-[#9aa4b2]">
@@ -1510,6 +1642,20 @@ export default function CuttingCalculatorPage() {
             </div>
           )}
 
+          {/* 방 이름(선택) — 시공자용 뒷면 마킹 라벨([1번/안방])에 쓰인다. 비워 두면
+              번호만 붙는다. 같은 방을 연달아 잴 때가 많아 추가해도 비우지 않는다. */}
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <span className="text-[13px] font-semibold text-[#9aa4b2]">방 이름(선택)</span>
+            <input
+              type="text"
+              value={roomName}
+              onChange={(e) => setRoomName(e.target.value)}
+              placeholder="예: 안방"
+              maxLength={12}
+              className="h-11 w-32 rounded-xl bg-[#1a1d23] px-3 text-right text-[14px] font-semibold text-[#f2f4f6] outline-none placeholder:font-normal placeholder:text-[#4b5563] focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+
           {/* 동일 규격을 여러 개 한 번에 넣을 때 쓰는 수량 스테퍼 */}
           <div className="mt-3 flex items-center justify-between gap-3">
             <span className="text-[13px] font-semibold text-[#9aa4b2]">수량</span>
@@ -1616,6 +1762,7 @@ export default function CuttingCalculatorPage() {
                     <div className={`min-w-0 flex-1 ${it.checked ? "opacity-40" : ""}`}>
                       <p className={`text-[14.5px] font-bold ${it.checked ? "line-through" : ""}`}>
                         {cfg.label} {it.seq}
+                        {it.roomName && <span className="text-indigo-400"> · {it.roomName}</span>}
                         {it.part && <span className="text-[#6b7480]"> · {it.part}</span>}
                         <span
                           className="ml-1.5 inline-block h-2 w-2 rounded-full align-middle"
@@ -1654,8 +1801,12 @@ export default function CuttingCalculatorPage() {
           <section className="mt-6">
             <h2 className="mb-2 px-1 text-[15px] font-bold">2D 재단 안내도</h2>
             <p className="mb-2 px-1 text-[12px] leading-relaxed text-[#6b7480]">
-              폭 {ROLL_WIDTH_MM.toLocaleString("ko-KR")}mm 원단에 조각을 줄 세워 배치한 안내도예요(돌려서 끼워 맞추지는
-              않아요 — 무늬 결이 어긋나지 않도록). 빗금 친 부분이 그 줄에서 버려지는 자투리입니다.
+              폭 {ROLL_WIDTH_MM.toLocaleString("ko-KR")}mm 원단에 조각을 줄 세워 배치한 안내도예요
+              {hasGrain
+                ? "(무늬 결이 어긋나지 않도록 돌려서 끼워 맞추지는 않아요)"
+                : "(민무늬 자재라 빈 자리가 있으면 조각을 90도 돌려 로스를 줄여요)"}
+              . 빗금 친 부분이 그 줄에서 버려지는 자투리입니다. 샷시 테두리·문틀·몰딩은 아래 "롤 재단 발주서"로
+              따로 뺐어요.
             </p>
             <CutMapView result={nesting} rollWidthMm={ROLL_WIDTH_MM} colorOf={(key) => categoryOf(key as Category).mapColor} />
             <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 px-1">
@@ -1669,6 +1820,36 @@ export default function CuttingCalculatorPage() {
           </section>
         )}
 
+        {/* 롤 재단 발주서 — 샷시 테두리·문틀 케이싱·몰딩처럼 폭이 일정한 반복 부재는
+            낱개 배치도 대신, 같은 폭끼리 묶어 "이 폭으로 총 몇 m"를 기계 재단 업체에
+            그대로 넘길 수 있는 발주서 형태로 낸다. */}
+        {nesting.rollCutGroups.length > 0 && (
+          <section className="mt-6">
+            <h2 className="mb-2 px-1 text-[15px] font-bold">롤 재단 발주서</h2>
+            <p className="mb-2 px-1 text-[12px] leading-relaxed text-[#6b7480]">
+              샷시 테두리·문틀·몰딩처럼 폭이 일정한 띠 부재는 폭별로 합산해 기계 재단(롤 재단)으로 발주하세요.
+            </p>
+            <ul className="space-y-2.5">
+              {nesting.rollCutGroups.map((g) => (
+                <li key={g.widthMm} className="rounded-2xl bg-[#16191f] px-4 py-3.5">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <p className="text-[16px] font-extrabold tabular-nums text-[#f2f4f6]">
+                      폭 {g.widthMm.toLocaleString("ko-KR")}mm
+                    </p>
+                    <p className="text-[16px] font-extrabold tabular-nums text-indigo-400">
+                      {won2(g.totalLengthMm / 1000, 2)}m
+                    </p>
+                  </div>
+                  <p className="mt-1 text-[12px] leading-relaxed text-[#6b7480]">
+                    {g.categories.map((c) => categoryOf(c).label).join(" · ")} · 조각 {g.pieceLabels.length}개
+                  </p>
+                  <p className="mt-1 text-[11.5px] leading-relaxed text-[#4b5563]">{g.pieceLabels.join(", ")}</p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         {/* 총 필요 원단 길이 — 위 안내도의 실제 배치를 기준으로 낸 숫자다(면적 어림값이 아니다). */}
         {items.length > 0 && (
           <section className="mt-6 rounded-[24px] bg-indigo-600 p-6 text-white">
@@ -1678,9 +1859,19 @@ export default function CuttingCalculatorPage() {
               <span className="ml-1 text-[22px] font-bold">M</span>
             </p>
             <p className="mt-3 border-t border-white/20 pt-3 text-[13px] leading-relaxed text-indigo-100">
-              재단 안내도 배치 기준 {won2(nesting.totalLengthMm / 1000, 2)}m · 원단 활용률 {won2(nesting.utilizationPercent, 0)}% ·
-              표준 폭 {ROLL_WIDTH_MM.toLocaleString("ko-KR")}mm
+              패널 배치 {won2(nesting.totalLengthMm / 1000, 2)}m
+              {nesting.rollCutTotalLengthMm > 0 && ` + 롤 재단 ${won2(nesting.rollCutTotalLengthMm / 1000, 2)}m`} · 원단 활용률{" "}
+              {won2(nesting.utilizationPercent, 0)}% · 표준 폭 {ROLL_WIDTH_MM.toLocaleString("ko-KR")}mm
             </p>
+            {returnEligible && (
+              <div className="mt-3 flex items-center gap-2 rounded-xl bg-emerald-500/15 px-3.5 py-3 text-[12.5px] font-semibold text-emerald-200">
+                <Archive className="h-4 w-4 shrink-0" strokeWidth={2} />
+                대리점 반납 가능 · 남는 약 {won2(returnableLengthM, 1)}m(폭 {FINANCIAL_RETURN_WIDTH_MM.toLocaleString("ko-KR")}mm
+                온전)
+                {(parseFloat(filmUnitPrice) || 0) > 0 &&
+                  ` · 예상 환급액 ${won2(returnableLengthM * parseFloat(filmUnitPrice), 0)}원`}
+              </div>
+            )}
             <label className="mt-3 flex items-center justify-between gap-3 text-[13px] text-indigo-100">
               여유 구매율(파손·재작업 대비)
               <span className="flex items-center gap-1.5">
@@ -1727,6 +1918,23 @@ export default function CuttingCalculatorPage() {
                 세로(결 방향) 재단 길이를 {repeat.toLocaleString("ko-KR")}mm 배수로 올려 무늬가 이어지도록 계산해요
               </p>
             )}
+            {/* 반납 가능 뱃지의 예상 환급액 계산용. 비워 두면 길이·반납 가능 여부만 나온다. */}
+            <label className="mt-3 flex items-center justify-between gap-3 border-t border-white/20 pt-3 text-[13px] text-indigo-100">
+              원단 단가(반납 환급액 계산용, 선택)
+              <span className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  value={filmUnitPrice}
+                  onChange={(e) => setFilmUnitPrice(e.target.value)}
+                  onFocus={(e) => e.target.select()}
+                  placeholder="0"
+                  className="h-10 w-20 rounded-lg border border-white/30 bg-white/10 text-center text-[15px] font-bold tabular-nums text-white outline-none placeholder:text-white/50 focus:border-white/70"
+                />
+                원/m
+              </span>
+            </label>
             {/* 물량 폭증 방지 안내 — 양면 시공이 반영되면 전보다 길이가 확 늘어 보일 수
                 있어, 놀라지 않게 왜 늘었는지 작게 짚어 준다. */}
             {items.some((it) => it.category === "door") && (
@@ -1773,6 +1981,17 @@ export default function CuttingCalculatorPage() {
           {toast}
         </div>
       )}
+
+      <ReferenceMeasureSheet
+        open={!!measuring}
+        dimensionLabel={measuring === "width" ? "가로" : "세로"}
+        onConfirm={(mm) => {
+          if (measuring === "width") setWMm(String(mm));
+          else if (measuring === "height") setHMm(String(mm));
+          setMeasuring(null);
+        }}
+        onClose={() => setMeasuring(null)}
+      />
 
       {/* 문짝 도안 선택 팝업 — 기공이 굴곡·조인트 개수를 직접 계산하게 두지 않고, 그림으로
           형태만 고르면 나머지(몇 조각을 어떻게 잘라야 하는지)는 전부 앱이 계산한다. */}

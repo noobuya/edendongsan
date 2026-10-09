@@ -3,15 +3,28 @@
 기존 app/schemas.py는 견적(AI 시공) 도메인 전용이라, 섞이지 않도록 이 기능은
 별도 파일로 둔다.
 """
-from datetime import datetime
-from typing import Literal
+from datetime import datetime, timezone
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
 
 from app.models import ApplicationStatus, ApprovalStatus, JobStatus, UserRole
 
 # 가입 신청에서는 ADMIN 역할을 고를 수 없다 — 관리자 계정은 신청·승인 절차 바깥에서만 만든다.
 SignupRole = Literal["EXPERT", "STUDENT"]
+
+
+def _utc_iso(dt: datetime) -> str:
+    """SQLite는 timezone 정보를 저장하지 않아(DateTime(timezone=True)를 써도) 읽어오면
+    naive datetime이 된다 — 그런데 이 앱의 모든 datetime은 항상 UTC로 써넣으므로(User._now()
+    등) 응답으로 내보낼 때 'Z'를 붙여 UTC임을 명시한다. 이게 없으면 프론트의 new Date(문자열)가
+    naive 문자열을 브라우저 로컬시간(KST)으로 잘못 해석해 9시간이 밀린다."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+UTCDateTime = Annotated[datetime, PlainSerializer(_utc_iso, return_type=str)]
 
 
 class SignupIn(BaseModel):
@@ -45,7 +58,7 @@ class AdminUserRow(BaseModel):
     phone_number: str
     daily_wage: int
     approval_status: ApprovalStatus
-    created_at: datetime
+    created_at: UTCDateTime
 
 
 class AdminApproveIn(BaseModel):
@@ -92,7 +105,7 @@ class UserBadgeRead(BaseModel):
 
     user_id: int
     badge_id: int
-    acquired_date: datetime
+    acquired_date: UTCDateTime
 
 
 class FieldJobCreate(BaseModel):
@@ -105,13 +118,12 @@ class FieldJobCreate(BaseModel):
 
 
 class FieldJobRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     expert_id: int
     location: str
-    job_date: datetime
+    job_date: UTCDateTime
     required_badge_id: int
+    required_badge_name: str
     pay: int
     status: JobStatus
 
@@ -123,4 +135,38 @@ class JobApplicationRead(BaseModel):
     job_id: int
     student_id: int
     status: ApplicationStatus
-    applied_at: datetime
+    applied_at: UTCDateTime
+
+
+class MyBadgeRead(BaseModel):
+    badge_id: int
+    badge_name: str
+    description: str
+    acquired_date: UTCDateTime
+
+
+class MyApplicationRead(BaseModel):
+    id: int
+    status: ApplicationStatus
+    applied_at: UTCDateTime
+    job_id: int
+    job_location: str
+    job_date: UTCDateTime
+    job_pay: int
+    job_status: JobStatus
+
+
+class ApplicantRead(BaseModel):
+    id: int
+    status: ApplicationStatus
+    applied_at: UTCDateTime
+    student_id: int
+    student_name: str
+    student_phone: str
+
+
+JobApplicationDecisionValue = Literal["APPROVED", "REJECTED"]
+
+
+class JobApplicationDecisionIn(BaseModel):
+    status: JobApplicationDecisionValue

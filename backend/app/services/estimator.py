@@ -150,6 +150,62 @@ def _door_types_spec_suffix(items: list[PanelItem]) -> str:
     return " · " + " + ".join(parts)
 
 
+def _door_difficulty_surcharge_amount(width_mm: int, height_mm: int) -> float:
+    """알판/무늬 문짝 한 짝의 난이도 할증 금액 — 문 크기(면적)에 비례해
+    min_amount~max_amount 사이로 보간한다. 작업 시간이 3배 이상(15분→1시간) 걸리는
+    걸 인건비 배수(_door_labor_multiplier)로 이미 반영하고 있지만, 그건 인건비 행
+    안에 숨어 있어 고객이 "왜 더 나왔는지" 금액으로 바로 못 본다 — 그래서 별도
+    할증 행을 하나 더 둔다."""
+    table = _prices()["door_difficulty_surcharge"]
+    area_m2 = (width_mm * height_mm) / 1_000_000
+    min_area, max_area = table["min_area_m2"], table["max_area_m2"]
+    min_amt, max_amt = table["min_amount"], table["max_amount"]
+    if max_area <= min_area:
+        return max_amt
+    ratio = (area_m2 - min_area) / (max_area - min_area)
+    ratio = max(0.0, min(1.0, ratio))  # 기준 범위 밖 문도 20,000~50,000원 안에 묶어 둔다
+    return min_amt + ratio * (max_amt - min_amt)
+
+
+def _door_difficulty_surcharge_total(items: list[PanelItem]) -> float:
+    """알판/무늬(lattice/glass) 문짝에만 붙는 난이도 할증 총액 — 짝마다 크기가
+    다를 수 있어 PanelItem(가로×세로×개수) 단위로 각각 계산해 합산한다."""
+    total = 0.0
+    for i in items:
+        if i.count > 0 and i.door_type in DOOR_TYPE_LABELS:
+            total += _door_difficulty_surcharge_amount(i.width_mm, i.height_mm) * i.count
+    return total
+
+
+FIRE_DOOR_LABELS = {"single": "현관 방화문(단면)", "double": "현관 방화문(양면)"}
+
+
+def _fire_door_details(items: list) -> list[dict]:
+    """현관 방화문 — 스틸 규격 문이라 ㎡ 계산 없이 짝당 정액(단면/양면)으로 받는다."""
+    table = _prices()["door_frame"]["fire_door"]
+    details = []
+    for sides in ("single", "double"):
+        count = sum(i.count for i in items if i.sides == sides and i.count > 0)
+        if count <= 0:
+            continue
+        price = table[sides]
+        details.append(
+            _detail(f"{FIRE_DOOR_LABELS[sides]} 자재비", count, "짝", price["material_cost"], "material")
+        )
+        details.append(
+            _detail(f"{FIRE_DOOR_LABELS[sides]} 시공 공임", count, "짝", price["labor_cost"], "labor")
+        )
+    return details
+
+
+def _silicone_recoat_detail(area_m2: float, silicone_recoat: bool) -> list[dict]:
+    """기존 실리콘 제거·재시공 — 기본가에 포함하지 않고 선택했을 때만 ㎡당 별도 청구."""
+    if not silicone_recoat or area_m2 <= 0:
+        return []
+    price = _prices()["silicone_recoat_per_m2"]
+    return [_detail("기존 실리콘 제거 및 재시공", area_m2, "㎡", price, "expense")]
+
+
 def _line_item(item_id: str, details: list[dict]) -> dict:
     details = [d for d in details if d["quantity"] > 0]
     return {
@@ -218,6 +274,10 @@ def _film_line_item(opts: FilmOptions) -> dict:
         labor_area = _panels_labor_area_m2(items) if coverage_key == "door_m2" else area
         labor_spec = spec + _door_types_spec_suffix(items) if coverage_key == "door_m2" else spec
         details.append(_manday_detail(f"{label} 시공 인건비", labor_area, coverage[coverage_key], labor_spec))
+        if coverage_key == "door_m2":
+            surcharge = _door_difficulty_surcharge_total(items)
+            if surcharge > 0:
+                details.append(_detail("방문 난이도 할증(사이즈 비례)", 1, "식", round(surcharge), "expense", labor_spec))
 
     if opts.molding_length_m > 0:
         details.append(
@@ -255,6 +315,7 @@ def _sash_line_item(opts: SashOptions) -> dict:
     if opts.needs_primer:
         details.append(_detail("샷시 프라이머 도포비", area_m2, "㎡", table["primer_per_m2"], "expense", spec))
     details.append(_manday_detail("샷시 시공 인건비", area_m2, table["manday_coverage"]["sash_m2"], spec))
+    details.extend(_silicone_recoat_detail(area_m2, opts.silicone_recoat))
 
     return _line_item("sash", details)
 
@@ -270,8 +331,12 @@ def _door_frame_line_item(opts: DoorFrameOptions) -> dict:
     door_area = _panels_area_m2(opts.doors) * DOOR_SIDES
     frame_area = _panels_area_m2(opts.doorframes)
     total_area = door_area + frame_area
+
+    # 방화문만 고르고 일반 문짝/문틀은 안 고른 현장도 있다 — 방화문은 ㎡ 계산과
+    # 무관한 짝당 정액이라, 원단 계산 파트와 독립적으로 먼저 처리해 둔다.
+    fire_door_details = _fire_door_details(opts.fire_doors)
     if total_area <= 0:
-        return _line_item("door_frame", [])
+        return _line_item("door_frame", fire_door_details)
 
     lossed_area_m2 = total_area * _loss_rate()
     billed_length_m = math.ceil((lossed_area_m2 / FILM_ROLL_WIDTH_M) * 10) / 10
@@ -287,6 +352,7 @@ def _door_frame_line_item(opts: DoorFrameOptions) -> dict:
             material_code=opts.pattern_id,
         )
     ]
+    details.extend(fire_door_details)
 
     door_count = sum(p.count for p in opts.doors)
     if door_count > 0:
@@ -314,12 +380,16 @@ def _door_frame_line_item(opts: DoorFrameOptions) -> dict:
                 _panels_spec_text(opts.doors) + " · 앞뒤 2면" + _door_types_spec_suffix(opts.doors),
             )
         )
+        surcharge = _door_difficulty_surcharge_total(opts.doors)
+        if surcharge > 0:
+            details.append(_detail("문짝 난이도 할증(사이즈 비례)", 1, "식", round(surcharge), "expense"))
     if frame_area > 0:
         details.append(
             _manday_detail(
                 "문틀 시공 인건비", frame_area, coverage["doorframe_m2"], _panels_spec_text(opts.doorframes)
             )
         )
+    details.extend(_silicone_recoat_detail(total_area, opts.silicone_recoat))
 
     return _line_item("door_frame", details)
 
@@ -340,6 +410,7 @@ def _wall_film_line_item(opts: WallFilmOptions) -> dict:
     if opts.needs_primer:
         details.append(_detail("벽면 면처리(프라이머)", area, "㎡", table["primer_per_m2"], "expense", spec))
     details.append(_manday_detail("벽면 시공 인건비", area, table["manday_coverage"]["wall_m2"], spec))
+    details.extend(_silicone_recoat_detail(area, opts.silicone_recoat))
     return _line_item("wall_film", details)
 
 
@@ -384,6 +455,9 @@ def _wardrobe_line_item(opts: WardrobeOptions) -> dict:
                 _panels_spec_text(opts.doors) + _door_types_spec_suffix(opts.doors),
             )
         )
+        surcharge = _door_difficulty_surcharge_total(opts.doors)
+        if surcharge > 0:
+            details.append(_detail("옷장 문짝 난이도 할증(사이즈 비례)", 1, "식", round(surcharge), "expense"))
     if body_area > 0:
         details.append(
             _manday_detail("옷장 몸통 시공 인건비", body_area, coverage["body_m2"], _panels_spec_text(opts.bodies))
@@ -574,6 +648,76 @@ def _material_orders(line_items: list[dict]) -> list[dict]:
     return orders
 
 
+def _apply_min_callout(supply_amount: int) -> tuple[int, bool]:
+    """기공 1인의 하루 일당 방어선 — 전체 공급가액이 최소 출장비 밑으로 나오면
+    강제로 끌어올린다. 아무것도 안 골랐을 때(0원)는 보정하지 않는다."""
+    floor = _pricing()["min_callout_amount"]
+    if 0 < supply_amount < floor:
+        return floor, True
+    return supply_amount, False
+
+
+def _deposit_info(total_cost: int) -> dict:
+    """스케줄 락다운용 계약금 — 비율은 사장님이 단가 설정에서 조정한다."""
+    rate = _pricing()["deposit_rate_percent"]
+    return {
+        "rate_percent": rate,
+        "amount": round(total_cost * rate / 100),
+        "note": "지정된 날짜의 스케줄 확정을 위한 계약금이며, 단순 변심 및 당일 취소 시 환불이 불가합니다.",
+    }
+
+
+def _pick_roi_item(line_items: list[dict]) -> dict | None:
+    """문짝/문틀 등 '교체 vs 리폼' 비교가 성립하는 품목 중 가장 금액이 큰 것을 고른다
+    (가장 설득력 있는 비교). 조명·설비처럼 교체 개념이 안 맞는 품목만 골랐거나,
+    리폼이 교체보다 비싸게 나왔으면(이례적인 대형 현장 등) None — sales_pitch와
+    roi_comparison이 항상 같은 기준으로 계산되도록 이 함수 하나만 쓴다."""
+    refs = _prices().get("replacement_cost_reference", {})
+    candidates = [li for li in line_items if refs.get(li["item_id"], 0) > 0 and li["subtotal"] > 0]
+    if not candidates:
+        return None
+    best = max(candidates, key=lambda li: li["subtotal"])
+    ref = refs[best["item_id"]]
+    if best["subtotal"] >= ref:
+        return None
+    return {"item_name": best["item_name"], "film_cost": best["subtotal"], "replacement_cost": ref}
+
+
+def _sales_pitch(roi_item: dict | None) -> str:
+    """교체 비교가 성립하는 품목이 있으면 절감률을 보여주는 클로징 멘트를 만든다."""
+    if roi_item is None:
+        return ""
+    savings_percent = round((1 - roi_item["film_cost"] / roi_item["replacement_cost"]) * 100)
+    return (
+        f"{roi_item['item_name']} 전체 교체 시 평균 {roi_item['replacement_cost']:,.0f}원 이상 소요되지만, "
+        f"필름 리폼은 {roi_item['film_cost']:,.0f}원으로 교체 대비 약 {savings_percent}% 저렴하며 "
+        "원하는 색상으로 일체감 있는 마감이 가능합니다."
+    )
+
+
+def _roi_comparison(roi_item: dict | None) -> dict | None:
+    """영업 리포트 막대그래프·소구포인트 칩이 쓰는 구조화된 버전 — sales_pitch와
+    같은 roi_item에서 뽑으므로 숫자가 항상 서로 일치한다."""
+    if roi_item is None:
+        return None
+    days_replacement = int(_pricing()["roi_days_replacement"])
+    days_film = int(_pricing()["roi_days_film"])
+    savings_percent = round((1 - roi_item["film_cost"] / roi_item["replacement_cost"]) * 100)
+    return {
+        "item_name": roi_item["item_name"],
+        "replacement_cost": roi_item["replacement_cost"],
+        "film_cost": roi_item["film_cost"],
+        "savings_percent": savings_percent,
+        "days_replacement": days_replacement,
+        "days_film": days_film,
+        "highlights": [
+            f"비용 {savings_percent}% 절감",
+            f"공기 단축 ({days_replacement}일 → {days_film}일)",
+            "소음·분진 없음",
+        ],
+    }
+
+
 def calculate_estimate(
     selected_items: list[str],
     options: JobOptions,
@@ -613,9 +757,18 @@ def calculate_estimate(
     labor_total = sum(d["amount"] for d in all_details if d["category"] == "labor")
     expense_total = sum(d["amount"] for d in all_details if d["category"] == "expense")
 
-    supply_amount = material_total + labor_total + expense_total
+    raw_supply_amount = material_total + labor_total + expense_total
+    supply_amount, min_callout_applied = _apply_min_callout(raw_supply_amount)
     vat = round(supply_amount * _vat_rate())
     total_cost = supply_amount + vat
+    min_callout_note = (
+        f"해당 시공은 하루 스케줄이 소요되므로, 기공 1인 최소 출장비"
+        f"({_pricing()['min_callout_amount']:,.0f}원)가 일괄 적용되었습니다."
+        if min_callout_applied
+        else ""
+    )
+
+    roi_item = _pick_roi_item(line_items)
 
     return {
         "line_items": line_items,
@@ -627,4 +780,10 @@ def calculate_estimate(
         "vat": vat,
         "total_cost": total_cost,
         "material_orders": _material_orders(line_items),
+        "raw_supply_amount": raw_supply_amount,
+        "min_callout_applied": min_callout_applied,
+        "min_callout_note": min_callout_note,
+        "deposit": _deposit_info(total_cost),
+        "sales_pitch": _sales_pitch(roi_item),
+        "roi_comparison": _roi_comparison(roi_item),
     }

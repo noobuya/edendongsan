@@ -13,9 +13,16 @@ import {
   getEstimatorItems,
   getEstimatorPricing,
   saveEstimatorPricing,
+  type DoorDesignType,
+  type DoorDetail,
   type EstimatorItem,
   type EstimatorResult,
 } from "@/lib/api";
+
+// 실리콘 제거·재시공 추가 옵션을 고를 수 있는 품목 — 기존 자재를 뜯어내는 시공만
+// 해당된다(estimator_app/app.py의 ADDON_ITEMS.SILICONE_RECOAT.applicable_to와 일치).
+const SILICONE_ADDON_CODES = new Set(["DOOR_SET", "SASH_SMALL", "SASH_LARGE", "MOLDING_FLAT", "MOLDING_CROWN"]);
+const DEFAULT_DOOR_DETAIL: DoorDetail = { design_type: "flat", width_mm: 900, height_mm: 2100 };
 
 // 평수별 전체 견적의 표준 단가(원/평). 현장 실측 후 확정되는 범위 가격이다.
 const PYEONG_BASE_MIN = 137_500;
@@ -113,6 +120,8 @@ export default function QuotePage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selections, setSelections] = useState<Record<string, number>>({});
   const [result, setResult] = useState<EstimatorResult | null>(null);
+  const [doorDetail, setDoorDetail] = useState<DoorDetail>(DEFAULT_DOOR_DETAIL);
+  const [addons, setAddons] = useState<Record<string, string[]>>({});
 
   const [pyeong, setPyeong] = useState(24);
   const [withSash, setWithSash] = useState(true);
@@ -148,7 +157,7 @@ export default function QuotePage() {
         /* 실패해도 기존 목록을 유지 — 다음 조작에서 다시 시도된다 */
       });
     if (Object.keys(selections).length > 0) {
-      calculateEstimator(selections)
+      calculateEstimator(selections, doorDetail, addons)
         .then(setResult)
         .catch(() => {
           /* 표시는 이전 계산값 유지 */
@@ -156,17 +165,18 @@ export default function QuotePage() {
     }
   }
 
-  // 선택이 바뀔 때마다 서버에서 다시 계산한다. 늦게 도착한 옛 응답이 새 응답을 덮지 않도록 순번을 둔다.
+  // 선택(품목·수량/문짝 크기·디자인/실리콘 추가옵션)이 바뀔 때마다 서버에서 다시
+  // 계산한다. 늦게 도착한 옛 응답이 새 응답을 덮지 않도록 순번을 둔다.
   useEffect(() => {
     const seq = ++calcSeq.current;
-    calculateEstimator(selections)
+    calculateEstimator(selections, doorDetail, addons)
       .then((r) => {
         if (seq === calcSeq.current) setResult(r);
       })
       .catch(() => {
         /* 표시는 이전 계산값 유지 — 일시적 실패로 화면을 비우지 않는다. */
       });
-  }, [selections]);
+  }, [selections, doorDetail, addons]);
 
   // 시트(견적서·내부 분석)가 열려 있는 동안 뒤 화면이 같이 스크롤되지 않게 한다.
   useEffect(() => {
@@ -221,6 +231,18 @@ export default function QuotePage() {
       if ((next[code] ?? 0) <= 1) delete next[code];
       else next[code] -= 1;
       return next;
+    });
+  }
+
+  function toggleSiliconeAddon(code: string) {
+    setAddons((a) => {
+      const has = (a[code] ?? []).includes("SILICONE_RECOAT");
+      if (has) {
+        const next = { ...a };
+        delete next[code];
+        return next;
+      }
+      return { ...a, [code]: ["SILICONE_RECOAT"] };
     });
   }
 
@@ -416,22 +438,94 @@ export default function QuotePage() {
                 <section key={g.name}>
                   <h2 className="mb-2 px-1 text-[15px] font-bold text-[#191f28]">{g.name}</h2>
                   <ul className="divide-y divide-[#eef0f2] rounded-[24px] bg-white px-4 shadow-[0_1px_2px_rgba(25,31,40,0.04)]">
-                    {g.entries.map(([code, item]) => (
-                      <li key={code} className="flex min-h-[80px] items-center gap-3.5 py-3">
-                        <QuoteIcon code={code} tone={toneOfGroup(item.group)} size={44} />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[15px] font-semibold leading-snug">{item.label}</p>
-                          <p className="mt-0.5 whitespace-nowrap text-[13px] tabular-nums text-[#5b6573]">{won(item.price)}</p>
-                          {item.design_type && <p className="mt-0.5 text-[12.5px] text-[#6b7684]">{item.design_type}</p>}
-                        </div>
-                        <QtyControl
-                          qty={selections[code] ?? 0}
-                          name={item.label}
-                          onAdd={() => add(code)}
-                          onSub={() => sub(code)}
-                        />
-                      </li>
-                    ))}
+                    {g.entries.map(([code, item]) => {
+                      const qty = selections[code] ?? 0;
+                      const showDoorDetail = code === "DOOR_SET" && qty > 0;
+                      const showSiliconeAddon = SILICONE_ADDON_CODES.has(code) && qty > 0;
+                      return (
+                        <li key={code} className="py-3">
+                          <div className="flex min-h-[80px] items-center gap-3.5">
+                            <QuoteIcon code={code} tone={toneOfGroup(item.group)} size={44} />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[15px] font-semibold leading-snug">{item.label}</p>
+                              <p className="mt-0.5 whitespace-nowrap text-[13px] tabular-nums text-[#5b6573]">
+                                {won(item.price)}
+                                {code === "DOOR_SET" && doorDetail.design_type === "pattern" && " + 난이도 할증"}
+                              </p>
+                              {code !== "DOOR_SET" && item.design_type && (
+                                <p className="mt-0.5 text-[12.5px] text-[#6b7684]">{item.design_type}</p>
+                              )}
+                            </div>
+                            <QtyControl qty={qty} name={item.label} onAdd={() => add(code)} onSub={() => sub(code)} />
+                          </div>
+
+                          {/* 문짝 크기·디자인 — 알판/무늬를 고르면 문 크기에 비례해 할증이 자동으로 붙는다. */}
+                          {showDoorDetail && (
+                            <div className="ml-[60px] space-y-2.5 pb-1">
+                              <div className="flex gap-2">
+                                {(
+                                  [
+                                    { id: "flat" as const, label: "민자" },
+                                    { id: "pattern" as const, label: "알판·무늬" },
+                                  ]
+                                ).map((o) => (
+                                  <button
+                                    key={o.id}
+                                    type="button"
+                                    onClick={() => setDoorDetail((d) => ({ ...d, design_type: o.id as DoorDesignType }))}
+                                    aria-pressed={doorDetail.design_type === o.id}
+                                    className={`h-9 rounded-full px-3.5 text-[13px] font-semibold transition-colors ${
+                                      doorDetail.design_type === o.id ? "bg-indigo-600 text-white" : "bg-[#f2f4f6] text-[#4e5968]"
+                                    }`}
+                                  >
+                                    {o.label}
+                                  </button>
+                                ))}
+                              </div>
+                              {doorDetail.design_type === "pattern" && (
+                                <div className="flex items-center gap-2 text-[13px] text-[#5b6573]">
+                                  <label className="flex items-center gap-1.5">
+                                    가로
+                                    <input
+                                      type="number"
+                                      inputMode="numeric"
+                                      value={doorDetail.width_mm ?? 0}
+                                      onChange={(e) => setDoorDetail((d) => ({ ...d, width_mm: Number(e.target.value) || 0 }))}
+                                      className="h-9 w-20 rounded-lg border border-[#d1d6db] bg-white px-2 text-right tabular-nums"
+                                    />
+                                    mm
+                                  </label>
+                                  <label className="flex items-center gap-1.5">
+                                    세로
+                                    <input
+                                      type="number"
+                                      inputMode="numeric"
+                                      value={doorDetail.height_mm ?? 0}
+                                      onChange={(e) => setDoorDetail((d) => ({ ...d, height_mm: Number(e.target.value) || 0 }))}
+                                      className="h-9 w-20 rounded-lg border border-[#d1d6db] bg-white px-2 text-right tabular-nums"
+                                    />
+                                    mm
+                                  </label>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* 기존 실리콘 제거·재시공 — 기본가에 포함하지 않는 별도 청구 옵션. */}
+                          {showSiliconeAddon && (
+                            <label className="ml-[60px] flex items-center gap-2 pb-1 text-[13px] text-[#5b6573]">
+                              <input
+                                type="checkbox"
+                                checked={(addons[code] ?? []).includes("SILICONE_RECOAT")}
+                                onChange={() => toggleSiliconeAddon(code)}
+                                className="h-4 w-4 accent-indigo-600"
+                              />
+                              기존 실리콘 제거 및 재시공 (별도 청구)
+                            </label>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </section>
               ))
@@ -504,6 +598,11 @@ export default function QuotePage() {
               expenseTotal={0}
               estimateNo={estimateNo}
               onSecretHold={() => setPricingOpen(true)}
+              minCalloutApplied={result?.min_callout_applied}
+              minCalloutNote={result?.min_callout_note}
+              deposit={result?.deposit}
+              salesPitch={result?.sales_pitch}
+              roiComparison={result?.roi_comparison}
             />
             <button
               type="button"

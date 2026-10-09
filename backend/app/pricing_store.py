@@ -17,6 +17,16 @@ DEFAULT_PRICING: dict = {
     "manday_rate": 250_000,  # 1품(man-day) 인건비
     "loss_rate_percent": 15.0,  # 자재 로스율
     "vat_rate_percent": 10.0,
+    # ── 오야 견적 방어 로직 ──
+    # 기공 1인의 하루 일당을 보호하는 최소 출장비. 전체 공급가액이 이 밑으로 나오면
+    # 이 금액으로 강제 보정한다(estimator.py의 calculate_estimate 참고).
+    "min_callout_amount": 300_000,
+    # 스케줄 확정용 계약금 비율(10~20% 권장). 사장님이 단가 설정에서 조정한다.
+    "deposit_rate_percent": 15.0,
+    # 영업 리포트(교체 vs 필름 비교)용 평균 공사 기간 — 품목별로 따로 잡지 않고
+    # 공통값 하나로 둔다(어차피 "철거+발주+재설치 며칠" vs "필름 하루" 구도는 공통).
+    "roi_days_replacement": 4,
+    "roi_days_film": 1,
     "price_table": {
         # 문짝 구조별 인건비 난이도 할증 배수. 알판/격자문은 세로 기둥·가로대·알판을
         # 따로 재단해 겹쳐 붙이는 덧방 시공이라 민짜문(통판 한 장)보다 2~3배 오래
@@ -24,6 +34,29 @@ DEFAULT_PRICING: dict = {
         # door_frame/film(방문)/wardrobe(옷장 문짝) 세 곳의 "문짝" 인건비 산출이
         # 공통으로 이 표를 참조한다.
         "door_difficulty_multiplier": {"lattice": 1.75, "glass": 1.5},
+        # 알판/무늬 문짝은 평당 작업 시간이 3배 이상(15분→1시간) 걸려, 위 배수로 인건비를
+        # 올리는 것과 별개로 고객이 "왜 더 나왔는지" 금액으로 바로 보는 할증 행을 하나 더
+        # 둔다. 문짝 한 짝의 실측 면적을 min~max 면적 사이에서 비례 보간해 2~5만원 사이로
+        # 매긴다(기준 면적은 표준 방문 규격 900×2100mm 안팎을 중간값으로 잡음).
+        "door_difficulty_surcharge": {
+            "min_amount": 20_000,
+            "max_amount": 50_000,
+            "min_area_m2": 1.6,  # 800×2000mm 안팎의 작은 문
+            "max_area_m2": 2.2,  # 1000×2200mm 안팎의 큰 문
+        },
+        # 기존 실리콘 제거·재시공은 기본가에 넣지 않고 선택 시에만 ㎡당 별도 청구한다
+        # (door_frame/sash/wall_film 공통 적용). silicone_recoat=true일 때만 붙는다.
+        "silicone_recoat_per_m2": 5_000,
+        # 영업 멘트 생성기 기준값 — "필름 리폼 대비 전체 교체 시 드는 비용"의 업계 평균치.
+        # 품목마다 교체 방식·단가가 달라 각각 다르게 잡는다. 이 값이 없는 품목(조명·설비 등)은
+        # 교체라는 개념 자체가 안 맞아(고장나면 바로 교체가 기본) 영업 멘트를 만들지 않는다.
+        "replacement_cost_reference": {
+            "film": 500_000,
+            "door_frame": 500_000,
+            "wardrobe": 500_000,
+            "sash": 400_000,
+            "wall_film": 300_000,
+        },
         "film": {
             "primer_per_m2": 3_000,
             # 1품당 처리 가능한 면적(㎡, 몰딩은 길이 m) — 난이도가 높을수록 작게 잡는다.
@@ -50,6 +83,11 @@ DEFAULT_PRICING: dict = {
             "primer_per_m2": 3_000,
             "hardware_per_door": 8_000,  # 손잡이/경첩 탈부착 부자재
             "manday_coverage": {"door_m2": 12.0, "doorframe_m2": 8.0},
+            # 현관 방화문 — 스틸 규격 문이라 ㎡가 아니라 짝당 정액(단면/양면)으로 받는다.
+            "fire_door": {
+                "single": {"material_cost": 30_000, "labor_cost": 120_000},  # 합계 150,000원
+                "double": {"material_cost": 50_000, "labor_cost": 200_000},  # 합계 250,000원
+            },
         },
         "glass": {
             "tint_material_per_m2": {
@@ -110,6 +148,23 @@ DEFAULT_PRICING: dict = {
 # 앱의 단가 설정 화면에 뿌릴 목록. key는 위 구조를 점(.)으로 이은 경로다.
 # 여기 없는 값은 화면에 나오지 않으므로, 현장에서 실제로 만지는 것만 골라 둔다.
 PRICING_FIELDS: list[dict] = [
+    {"key": "min_callout_amount", "label": "최소 출장비", "group": "오야 방어 로직", "unit": "원"},
+    {"key": "deposit_rate_percent", "label": "계약금 비율", "group": "오야 방어 로직", "unit": "%"},
+    {"key": "roi_days_replacement", "label": "영업 리포트 — 교체 공사 기간", "group": "오야 방어 로직", "unit": "일"},
+    {"key": "roi_days_film", "label": "영업 리포트 — 필름 시공 기간", "group": "오야 방어 로직", "unit": "일"},
+    {"key": "price_table.door_difficulty_surcharge.min_amount", "label": "문짝 난이도 할증 (최소)", "group": "오야 방어 로직", "unit": "원"},
+    {"key": "price_table.door_difficulty_surcharge.max_amount", "label": "문짝 난이도 할증 (최대)", "group": "오야 방어 로직", "unit": "원"},
+    {"key": "price_table.silicone_recoat_per_m2", "label": "실리콘 제거·재시공 (㎡당)", "group": "오야 방어 로직", "unit": "원"},
+    {"key": "price_table.door_frame.fire_door.single.material_cost", "label": "방화문 단면 — 원자재값", "group": "오야 방어 로직", "unit": "원"},
+    {"key": "price_table.door_frame.fire_door.single.labor_cost", "label": "방화문 단면 — 공임비", "group": "오야 방어 로직", "unit": "원"},
+    {"key": "price_table.door_frame.fire_door.double.material_cost", "label": "방화문 양면 — 원자재값", "group": "오야 방어 로직", "unit": "원"},
+    {"key": "price_table.door_frame.fire_door.double.labor_cost", "label": "방화문 양면 — 공임비", "group": "오야 방어 로직", "unit": "원"},
+    {"key": "price_table.replacement_cost_reference.film", "label": "교체 비용 기준 — 필름", "group": "오야 방어 로직", "unit": "원"},
+    {"key": "price_table.replacement_cost_reference.door_frame", "label": "교체 비용 기준 — 문짝/문틀", "group": "오야 방어 로직", "unit": "원"},
+    {"key": "price_table.replacement_cost_reference.wardrobe", "label": "교체 비용 기준 — 장롱/옷장", "group": "오야 방어 로직", "unit": "원"},
+    {"key": "price_table.replacement_cost_reference.sash", "label": "교체 비용 기준 — 샷시", "group": "오야 방어 로직", "unit": "원"},
+    {"key": "price_table.replacement_cost_reference.wall_film", "label": "교체 비용 기준 — 벽면", "group": "오야 방어 로직", "unit": "원"},
+
     {"key": "manday_rate", "label": "1품 인건비 (공임)", "group": "공임", "unit": "원"},
     {"key": "price_table.lighting.labor_per_unit", "label": "조명 설치비 (개당)", "group": "공임", "unit": "원"},
     {"key": "price_table.lighting.drilling_new_per_unit", "label": "신규 타공비 (개당)", "group": "공임", "unit": "원"},

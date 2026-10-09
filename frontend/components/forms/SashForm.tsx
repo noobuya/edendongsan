@@ -44,6 +44,13 @@ export default function SashForm({ value, onChange }: Props) {
         checked={value.needsPrimer}
         onChange={(needsPrimer) => onChange({ ...value, needsPrimer })}
       />
+
+      <ToggleRow
+        label="기존 실리콘 제거 및 재시공"
+        description="기본가에 포함되지 않는 별도 청구 항목입니다"
+        checked={value.siliconeRecoat}
+        onChange={(siliconeRecoat) => onChange({ ...value, siliconeRecoat })}
+      />
     </div>
   );
 }

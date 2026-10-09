@@ -10,6 +10,7 @@ import type {
   PanelItem,
   PricingField,
   QuoteSummary,
+  RoiComparison,
   SharedEstimate,
   SubstrateChecklist,
   WorkPhoto,
@@ -124,6 +125,7 @@ export async function createJob(
             unit_price_per_m: options.sash.unitPricePerM,
             needs_primer: options.sash.needsPrimer,
             frames: panelItemsPayload(options.sash.frames),
+            silicone_recoat: options.sash.siliconeRecoat,
           }
         : undefined,
       door_frame: selectedItems.includes("door_frame")
@@ -133,6 +135,8 @@ export async function createJob(
             needs_primer: options.door_frame.needsPrimer,
             doors: panelItemsPayload(options.door_frame.doors),
             doorframes: panelItemsPayload(options.door_frame.doorframes),
+            fire_doors: options.door_frame.fireDoors.map((d) => ({ sides: d.sides, count: d.count })),
+            silicone_recoat: options.door_frame.siliconeRecoat,
           }
         : undefined,
       wall_film: selectedItems.includes("wall_film")
@@ -141,6 +145,7 @@ export async function createJob(
             unit_price_per_m: options.wall_film.unitPricePerM,
             needs_primer: options.wall_film.needsPrimer,
             walls: panelItemsPayload(options.wall_film.walls),
+            silicone_recoat: options.wall_film.siliconeRecoat,
           }
         : undefined,
       wardrobe: selectedItems.includes("wardrobe")
@@ -487,6 +492,18 @@ export interface EstimatorItem {
   chip?: [string, string];
   design_type: string | null;
   film_meters: number;
+  /** 있는 품목(문짝/몰딩/샷시류)만 영업 멘트 비교 기준으로 쓰인다. */
+  replacement_cost_reference?: number;
+}
+
+export type DoorDesignType = "flat" | "pattern";
+
+/** DOOR_SET 수량 전체에 같이 적용되는 크기/디자인 — 알판·무늬를 고르면 문 크기에
+ *  비례해 할증이 자동으로 붙는다(estimator_app._door_set_surcharge 참고). */
+export interface DoorDetail {
+  design_type: DoorDesignType;
+  width_mm?: number;
+  height_mm?: number;
 }
 
 export interface EstimatorLine {
@@ -495,14 +512,30 @@ export interface EstimatorLine {
   icon: string;
   design_type: string | null;
   unit_price: number;
+  surcharge_per_unit: number;
   qty: number;
   line_total: number;
+  note: string;
+  replacement_cost_reference: number | null;
+}
+
+export interface EstimatorDeposit {
+  rate_percent: number;
+  amount: number;
   note: string;
 }
 
 export interface EstimatorResult {
   breakdown: EstimatorLine[];
   total: number;
+  /** 최소 출장비 보정 전 실제 산출 금액. 보정이 없었으면 total과 같다. */
+  raw_total: number;
+  min_callout_applied: boolean;
+  min_callout_note: string;
+  deposit: EstimatorDeposit;
+  /** 문짝/몰딩/샷시류를 골랐을 때만 채워진다. 없으면 빈 문자열. */
+  sales_pitch: string;
+  roi_comparison: RoiComparison | null;
   /** 사장님 전용 — 고객 화면에 그리지 않는다. */
   margin_analysis: {
     film_meters: number;
@@ -519,11 +552,15 @@ export async function getEstimatorItems(): Promise<Record<string, EstimatorItem>
   return res.json();
 }
 
-export async function calculateEstimator(selections: Record<string, number>): Promise<EstimatorResult> {
+export async function calculateEstimator(
+  selections: Record<string, number>,
+  doorDetail?: DoorDetail,
+  addons?: Record<string, string[]>
+): Promise<EstimatorResult> {
   const res = await apiFetch(`${API_BASE}/estimator/api/calculate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ selections }),
+    body: JSON.stringify({ selections, door_detail: doorDetail, addons }),
   });
   if (!res.ok) throw new Error("견적 계산에 실패했습니다.");
   return res.json();
@@ -835,4 +872,149 @@ export const adminDeleteJournalEntry = (token: string, id: string) =>
     headers: { "X-Admin-Token": token },
   }).then(async (res) => {
     if (!res.ok) throw new Error(await extractErrorMessage(res, "삭제에 실패했습니다."));
+  });
+
+/* ---- 현장 실습 매칭 & 스킬 뱃지 (자동화 기능과 같은 가입신청→관리자승인→코드 방식) ---- */
+export type RecruitingRole = "EXPERT" | "STUDENT";
+export type ApprovalStatus = "PENDING" | "APPROVED" | "REJECTED";
+export type JobStatusValue = "OPEN" | "CLOSED" | "COMPLETED";
+export type ApplicationStatusValue = "PENDING" | "APPROVED" | "REJECTED";
+
+export interface RecruitingUser {
+  id: number;
+  name: string;
+  role: RecruitingRole | "ADMIN";
+  phone_number: string;
+  daily_wage: number;
+  approval_status: ApprovalStatus;
+}
+export interface RecruitingSignupResult {
+  request_token: string;
+  name: string;
+  approval_status: ApprovalStatus;
+}
+export interface RecruitingSignupStatus {
+  name: string;
+  approval_status: ApprovalStatus;
+  access_code: string | null;
+}
+export interface SkillBadge {
+  id: number;
+  badge_name: string;
+  description: string;
+}
+export interface MyBadge {
+  badge_id: number;
+  badge_name: string;
+  description: string;
+  acquired_date: string;
+}
+export interface FieldJob {
+  id: number;
+  expert_id: number;
+  location: string;
+  job_date: string;
+  required_badge_id: number;
+  required_badge_name: string;
+  pay: number;
+  status: JobStatusValue;
+}
+export interface JobApplication {
+  id: number;
+  job_id: number;
+  student_id: number;
+  status: ApplicationStatusValue;
+  applied_at: string;
+}
+export interface MyApplication {
+  id: number;
+  status: ApplicationStatusValue;
+  applied_at: string;
+  job_id: number;
+  job_location: string;
+  job_date: string;
+  job_pay: number;
+  job_status: JobStatusValue;
+}
+export interface Applicant {
+  id: number;
+  status: ApplicationStatusValue;
+  applied_at: string;
+  student_id: number;
+  student_name: string;
+  student_phone: string;
+}
+
+async function recruitingFetch<T>(path: string, code: string, init: RequestInit = {}): Promise<T> {
+  const res = await apiFetch(`${API_BASE}/api/recruiting${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", "X-Access-Code": code, ...init.headers },
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "요청에 실패했습니다."));
+  return res.json();
+}
+async function recruitingPublicFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await apiFetch(`${API_BASE}/api/recruiting${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...init.headers },
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "요청에 실패했습니다."));
+  return res.json();
+}
+
+export const recruitingSignup = (payload: {
+  name: string;
+  role: RecruitingRole;
+  phone_number: string;
+  daily_wage?: number;
+}) => recruitingPublicFetch<RecruitingSignupResult>("/signup", { method: "POST", body: JSON.stringify(payload) });
+export const recruitingSignupStatus = (requestToken: string) =>
+  recruitingPublicFetch<RecruitingSignupStatus>(`/signup/${encodeURIComponent(requestToken)}`);
+
+export const recruitingMe = (code: string) => recruitingFetch<RecruitingUser>("/me", code);
+export const recruitingBadges = (code: string) => recruitingFetch<SkillBadge[]>("/badges", code);
+export const recruitingMyBadges = (code: string) => recruitingFetch<MyBadge[]>("/me/badges", code);
+export const recruitingMyApplications = (code: string) => recruitingFetch<MyApplication[]>("/me/applications", code);
+export const recruitingOpenJobs = (code: string) => recruitingFetch<FieldJob[]>("/field-jobs", code);
+export const recruitingMyJobs = (code: string) => recruitingFetch<FieldJob[]>("/me/field-jobs", code);
+export const recruitingCreateJob = (
+  code: string,
+  payload: { location: string; job_date: string; required_badge_id: number; pay: number },
+) => recruitingFetch<FieldJob>("/field-jobs", code, { method: "POST", body: JSON.stringify(payload) });
+export const recruitingApply = (code: string, jobId: number) =>
+  recruitingFetch<JobApplication>(`/field-jobs/${jobId}/apply`, code, { method: "POST" });
+export const recruitingApplicants = (code: string, jobId: number) =>
+  recruitingFetch<Applicant[]>(`/field-jobs/${jobId}/applications`, code);
+export const recruitingDecide = (code: string, jobId: number, applicationId: number, status: "APPROVED" | "REJECTED") =>
+  recruitingFetch<JobApplication>(`/field-jobs/${jobId}/applications/${applicationId}/decision`, code, {
+    method: "POST",
+    body: JSON.stringify({ status }),
+  });
+
+/* 관리자 화면 전용(/admin/recruiting): 가입 승인/거절, 뱃지·계정 직접 생성. */
+async function adminRecruitingFetch<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
+  const res = await apiFetch(`${API_BASE}/api/recruiting${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", "X-Admin-Token": token, ...init.headers },
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "요청에 실패했습니다."));
+  return res.json();
+}
+export const adminRecruitingRequests = (token: string) => adminRecruitingFetch<RecruitingUser[]>("/admin/requests", token);
+export const adminRecruitingApprove = (token: string, userId: number, accessCode: string) =>
+  adminRecruitingFetch<RecruitingUser>(`/admin/requests/${userId}/approve`, token, {
+    method: "POST",
+    body: JSON.stringify({ access_code: accessCode }),
+  });
+export const adminRecruitingReject = (token: string, userId: number) =>
+  adminRecruitingFetch<RecruitingUser>(`/admin/requests/${userId}/reject`, token, { method: "POST" });
+export const adminRecruitingBadges = (token: string) => adminRecruitingFetch<SkillBadge[]>("/admin/badges", token);
+export const adminRecruitingCreateBadge = (token: string, badge_name: string, description: string) =>
+  adminRecruitingFetch<SkillBadge>("/admin/badges", token, {
+    method: "POST",
+    body: JSON.stringify({ badge_name, description }),
+  });
+export const adminRecruitingAwardBadge = (token: string, userId: number, badgeId: number) =>
+  adminRecruitingFetch<{ user_id: number; badge_id: number }>(`/admin/users/${userId}/badges/${badgeId}`, token, {
+    method: "POST",
   });

@@ -104,13 +104,15 @@ export const DEFAULT_OPTIONS: JobOptionsState = {
     pantryCabinets: [],
     shoeCabinets: [],
   },
-  sash: { patternId: "matte-white", unitPricePerM: 10_000, needsPrimer: false, frames: [] },
+  sash: { patternId: "matte-white", unitPricePerM: 10_000, needsPrimer: false, frames: [], siliconeRecoat: false },
   door_frame: {
     patternId: "matte-white",
     unitPricePerM: 10_000,
     needsPrimer: false,
     doors: [],
     doorframes: [],
+    fireDoors: [],
+    siliconeRecoat: false,
   },
   glass: { workType: "tint", tintType: "frosted", panels: [] },
   // 개수 기본값은 0으로 둔다 — 사용자가 조명/실링팬 폼을 건드리지 않았는데도
@@ -138,6 +140,7 @@ export const DEFAULT_OPTIONS: JobOptionsState = {
     // 벽지 위에 그냥 붙이면 들뜬다 — 기본으로 켜 둔다.
     needsPrimer: true,
     walls: [],
+    siliconeRecoat: false,
   },
   mesh_screen: { meshType: "fine_20", screens: [], replaceFrame: false },
   // 개수 기본값은 0 — 건드리지도 않은 항목이 견적에 얹히면 안 된다.

@@ -67,6 +67,39 @@ export default function DoorFrameForm({ value, onChange }: Props) {
         checked={value.needsPrimer}
         onChange={(needsPrimer) => onChange({ ...value, needsPrimer })}
       />
+
+      <ToggleRow
+        label="기존 실리콘 제거 및 재시공"
+        description="기본가에 포함되지 않는 별도 청구 항목입니다"
+        checked={value.siliconeRecoat}
+        onChange={(siliconeRecoat) => onChange({ ...value, siliconeRecoat })}
+      />
+
+      <FormSection
+        title="현관 방화문"
+        description="스틸 규격 문이라 ㎡ 계산 없이 단면/양면 시공 짝수로 받습니다"
+      >
+        <div className="flex gap-4">
+          <NumberField
+            label="단면 시공"
+            unit="짝"
+            value={value.fireDoors.find((d) => d.sides === "single")?.count ?? 0}
+            onChange={(count) => {
+              const rest = value.fireDoors.filter((d) => d.sides !== "single");
+              onChange({ ...value, fireDoors: count > 0 ? [...rest, { sides: "single", count }] : rest });
+            }}
+          />
+          <NumberField
+            label="양면 시공"
+            unit="짝"
+            value={value.fireDoors.find((d) => d.sides === "double")?.count ?? 0}
+            onChange={(count) => {
+              const rest = value.fireDoors.filter((d) => d.sides !== "double");
+              onChange({ ...value, fireDoors: count > 0 ? [...rest, { sides: "double", count }] : rest });
+            }}
+          />
+        </div>
+      </FormSection>
     </div>
   );
 }

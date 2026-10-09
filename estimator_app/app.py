@@ -31,29 +31,29 @@ _PRICING_PATH = os.path.join(_STORAGE_DIR, "pricing_overrides.json")
 #      합계만 노출하고, 이 두 숫자는 단가 설정(사장님 전용)에서만 만진다.
 # ------------------------------------------------------------------
 DEFAULT_ITEMS = {
-    "DOOR_FLAT": {
+    # 민자/알판 두 SKU를 하나로 합쳤다 — "민자/알판·무늬" 토글(design_type_surcharge)과
+    # 문 크기(가로×세로)에 따라 할증이 자동으로 더해지는 동적 단가다(_door_set_pricing 참고).
+    # material_cost/labor_cost는 "민자" 기준 기본값이고, 할증은 계산 시점에 따로 더한다.
+    "DOOR_SET": {
         "group": "필름 시공",
-        "label": "민자 도어 리폼 세트", "icon": "🚪",
-        "chip": ["#60a5fa", "#3b82f6"], "design_type": "민자/평판 타입", "film_meters": 4.0,
-        "material_cost": 36000, "labor_cost": 144000,
-    },
-    "DOOR_CURVED": {
-        "group": "필름 시공",
-        "label": "굴곡 도어 리폼 세트", "icon": "🚪",
-        "chip": ["#818cf8", "#6366f1"], "design_type": "웨인스코팅/알판/굴곡 타입", "film_meters": 5.5,
-        "material_cost": 50000, "labor_cost": 200000,
+        "label": "도어 리폼 세트", "icon": "🚪",
+        "chip": ["#60a5fa", "#3b82f6"], "design_type": None, "film_meters": 4.0,
+        "material_cost": 40000, "labor_cost": 160000,
+        "replacement_cost_reference": 500000,  # 문짝 전체 교체 시 평균 비용(영업 멘트 기준값)
     },
     "SASH_SMALL": {
         "group": "필름 시공",
         "label": "방창 리폼 세트", "icon": "🪟",
         "chip": ["#34d399", "#10b981"], "design_type": None, "film_meters": 3.0,
         "material_cost": 30000, "labor_cost": 120000,
+        "replacement_cost_reference": 300000,
     },
     "SASH_LARGE": {
         "group": "필름 시공",
         "label": "거실 대창 리폼 세트", "icon": "🪟",
         "chip": ["#22d3ee", "#06b6d4"], "design_type": None, "film_meters": 5.0,
         "material_cost": 36000, "labor_cost": 144000,
+        "replacement_cost_reference": 400000,
     },
     "SINK_L": {
         "group": "필름 시공",
@@ -66,17 +66,26 @@ DEFAULT_ITEMS = {
         "label": "평몰딩 라인 세트", "icon": "📏",
         "chip": ["#a78bfa", "#8b5cf6"], "design_type": "민자/평판 타입", "film_meters": 18.0,
         "material_cost": 120000, "labor_cost": 480000,
+        "replacement_cost_reference": 400000,
     },
     "MOLDING_CROWN": {
         "group": "필름 시공",
         "label": "장식 몰딩 라인 세트", "icon": "📐",
         "chip": ["#c084fc", "#a855f7"], "design_type": "웨인스코팅/알판/굴곡 타입", "film_meters": 22.0,
         "material_cost": 180000, "labor_cost": 720000,
+        "replacement_cost_reference": 600000,
     },
-    "ENTRANCE": {
+    # 현관 방화문 — 스틸 규격 문이라 "민자/알판" 개념이 없고, 단면/양면 시공 여부로만 갈린다.
+    "FIRE_DOOR_SINGLE": {
         "group": "필름 시공",
-        "label": "현관 도어 리폼 세트", "icon": "🚪",
-        "chip": ["#2dd4bf", "#14b8a6"], "design_type": None, "film_meters": 6.0,
+        "label": "현관 방화문 리폼 (단면)", "icon": "🚪",
+        "chip": ["#2dd4bf", "#14b8a6"], "design_type": None, "film_meters": 4.0,
+        "material_cost": 30000, "labor_cost": 120000,
+    },
+    "FIRE_DOOR_DOUBLE": {
+        "group": "필름 시공",
+        "label": "현관 방화문 리폼 (양면)", "icon": "🚪",
+        "chip": ["#0d9488", "#0f766e"], "design_type": None, "film_meters": 7.0,
         "material_cost": 50000, "labor_cost": 200000,
     },
     "MIDDLE_DOOR": {
@@ -147,8 +156,39 @@ DEFAULT_ITEMS = {
     },
 }
 
-# 모든 견적 항목 하단에 고정 렌더링되는 '가치 설명' 문구
-VALUE_INCLUSION_NOTE = "기존 실리콘 제거, 친환경 프라이머 도포, 정밀 평탄화(퍼티), 먼지 제거 및 굴곡부 가열 밀착 작업 일체 포함 · 시공 후 1~2일은 시공면에 물이 닿지 않게 관리"
+# ------------------------------------------------------------------
+# 1-1. 문짝 난이도 할증 — "민자/알판·무늬" 토글 + 문 크기(가로×세로)에 비례해
+#      min_amount~max_amount 사이로 자동 할증된다. DOOR_SET에만 적용된다.
+# ------------------------------------------------------------------
+DEFAULT_SETTINGS = {
+    "MIN_CALLOUT_AMOUNT": 300000,  # 기공 1인 최소 출장비 방어선
+    "DEPOSIT_RATE_PERCENT": 15.0,  # 계약금 비율(10~20% 권장, 사장님 조정 가능)
+    "DOOR_SURCHARGE_MIN": 20000,
+    "DOOR_SURCHARGE_MAX": 50000,
+    "DOOR_SURCHARGE_MIN_AREA_M2": 1.6,  # 800×2000mm 안팎의 작은 문
+    "DOOR_SURCHARGE_MAX_AREA_M2": 2.2,  # 1000×2200mm 안팎의 큰 문
+    # 영업 리포트(교체 vs 필름 비교)용 평균 공사 기간.
+    "ROI_DAYS_REPLACEMENT": 4,
+    "ROI_DAYS_FILM": 1,
+}
+
+# ------------------------------------------------------------------
+# 1-2. 별도 청구 옵션 — 기본가에 묻지 않고 체크박스로 켰을 때만 추가되는 항목.
+#      기존 실리콘 제거·재시공이 대표적이다(쏘는 기술이 있는 시공자가 추가
+#      마진을 남기거나 별도 작업자를 부를 수 있도록 기본가와 분리).
+# ------------------------------------------------------------------
+ADDON_ITEMS = {
+    "SILICONE_RECOAT": {
+        "label": "기존 실리콘 제거 및 재시공",
+        "material_cost": 15000,
+        "labor_cost": 25000,
+        "applicable_to": ["DOOR_SET", "SASH_SMALL", "SASH_LARGE", "MOLDING_FLAT", "MOLDING_CROWN"],
+    },
+}
+
+# 모든 견적 항목 하단에 고정 렌더링되는 '가치 설명' 문구 — 실리콘은 더 이상 여기 포함하지
+# 않는다(ADDON_ITEMS로 분리, 기본가에 묻으면 체크박스와 모순된다).
+VALUE_INCLUSION_NOTE = "친환경 프라이머 도포, 정밀 평탄화(퍼티), 먼지 제거 및 굴곡부 가열 밀착 작업 일체 포함 · 시공 후 1~2일은 시공면에 물이 닿지 않게 관리"
 
 
 def _load_overrides() -> dict:
@@ -172,8 +212,25 @@ def _save_overrides(values: dict) -> None:
 
 
 def _cost_key(code: str, field: str) -> str:
-    """단가 설정 화면(및 저장 파일)이 쓰는 키. 예: 'DOOR_FLAT.material_cost'."""
+    """단가 설정 화면(및 저장 파일)이 쓰는 키. 예: 'DOOR_SET.material_cost'."""
     return f"{code}.{field}"
+
+
+def effective_settings() -> dict:
+    """DEFAULT_SETTINGS(최소 출장비·계약금 비율·할증 범위)에 저장된 조정값을 얹는다."""
+    overrides = _load_overrides()
+    return {key: overrides.get(key, value) for key, value in DEFAULT_SETTINGS.items()}
+
+
+def effective_addons() -> dict:
+    """ADDON_ITEMS(실리콘 재시공 등)에 저장된 조정값을 얹는다."""
+    overrides = _load_overrides()
+    out = {}
+    for code, addon in ADDON_ITEMS.items():
+        material_cost = overrides.get(_cost_key(code, "material_cost"), addon["material_cost"])
+        labor_cost = overrides.get(_cost_key(code, "labor_cost"), addon["labor_cost"])
+        out[code] = {**addon, "material_cost": material_cost, "labor_cost": labor_cost, "price": material_cost + labor_cost}
+    return out
 
 
 def effective_items() -> dict:
@@ -185,20 +242,71 @@ def effective_items() -> dict:
     for code, item in DEFAULT_ITEMS.items():
         material_cost = overrides.get(_cost_key(code, "material_cost"), item["material_cost"])
         labor_cost = overrides.get(_cost_key(code, "labor_cost"), item["labor_cost"])
-        items[code] = {
+        entry = {
             **item,
             "material_cost": material_cost,
             "labor_cost": labor_cost,
             "price": material_cost + labor_cost,
         }
+        if "replacement_cost_reference" in item:
+            entry["replacement_cost_reference"] = overrides.get(
+                _cost_key(code, "replacement_cost_reference"), item["replacement_cost_reference"]
+            )
+        items[code] = entry
     return items
+
+
+def _door_set_surcharge(width_mm: int, height_mm: int, design_type: str) -> int:
+    """민자(flat)는 할증 0원. 알판·무늬(pattern)는 문 크기(면적)에 비례해
+    DOOR_SURCHARGE_MIN~MAX 사이로 보간한다 — 요청하신 '난이도 연동 유닛 단가표'."""
+    if design_type != "pattern":
+        return 0
+    settings = effective_settings()
+    area_m2 = (width_mm * height_mm) / 1_000_000 if width_mm and height_mm else settings["DOOR_SURCHARGE_MIN_AREA_M2"]
+    min_area = settings["DOOR_SURCHARGE_MIN_AREA_M2"]
+    max_area = settings["DOOR_SURCHARGE_MAX_AREA_M2"]
+    min_amt = settings["DOOR_SURCHARGE_MIN"]
+    max_amt = settings["DOOR_SURCHARGE_MAX"]
+    if max_area <= min_area:
+        return round(max_amt)
+    ratio = (area_m2 - min_area) / (max_area - min_area)
+    ratio = max(0.0, min(1.0, ratio))
+    return round(min_amt + ratio * (max_amt - min_amt))
+
+
+SETTINGS_LABELS = {
+    "MIN_CALLOUT_AMOUNT": ("최소 출장비", "원"),
+    "DEPOSIT_RATE_PERCENT": ("계약금 비율", "%"),
+    "DOOR_SURCHARGE_MIN": ("문짝 난이도 할증 (최소)", "원"),
+    "DOOR_SURCHARGE_MAX": ("문짝 난이도 할증 (최대)", "원"),
+    "ROI_DAYS_REPLACEMENT": ("영업 리포트 — 교체 공사 기간", "일"),
+    "ROI_DAYS_FILM": ("영업 리포트 — 필름 시공 기간", "일"),
+}
 
 
 def pricing_fields() -> list[dict]:
     """단가 설정 화면에 뿌릴 목록. 품목 그룹(필름 시공/전기·조명/설비)별로 묶고,
-    한 품목의 원자재값·공임비를 나란히 둔다."""
+    한 품목의 원자재값·공임비를 나란히 둔다. '오야 방어 로직'(최소 출장비·계약금·
+    할증 범위·교체 비용 기준·실리콘 추가비)은 별도 그룹으로 맨 앞에 둔다."""
     overrides = _load_overrides()
     fields = []
+
+    for key, (label, unit) in SETTINGS_LABELS.items():
+        default = DEFAULT_SETTINGS[key]
+        fields.append({
+            "key": key, "label": label, "group": "오야 방어 로직", "unit": unit,
+            "value": overrides.get(key, default), "default": default,
+        })
+
+    for code, addon in ADDON_ITEMS.items():
+        for field_name, field_label, unit in (("material_cost", "원자재값", "원"), ("labor_cost", "공임비", "원")):
+            key = _cost_key(code, field_name)
+            default = addon[field_name]
+            fields.append({
+                "key": key, "label": f"{addon['label']} — {field_label}", "group": "오야 방어 로직", "unit": unit,
+                "value": overrides.get(key, default), "default": default,
+            })
+
     for code, item in DEFAULT_ITEMS.items():
         for field_name, field_label, unit in (
             ("material_cost", "원자재값", "원"),
@@ -213,6 +321,13 @@ def pricing_fields() -> list[dict]:
                 "unit": unit,
                 "value": overrides.get(key, default),
                 "default": default,
+            })
+        if "replacement_cost_reference" in item:
+            key = _cost_key(code, "replacement_cost_reference")
+            default = item["replacement_cost_reference"]
+            fields.append({
+                "key": key, "label": f"{item['label']} — 교체 비용 기준(영업 멘트)", "group": "오야 방어 로직", "unit": "원",
+                "value": overrides.get(key, default), "default": default,
             })
     return fields
 
@@ -243,9 +358,12 @@ def update_pricing():
     if not isinstance(values, dict):
         return jsonify({"detail": "values 형식이 올바르지 않습니다."}), 422
 
-    valid_keys = {
-        _cost_key(code, field) for code in DEFAULT_ITEMS for field in ("material_cost", "labor_cost")
+    valid_keys = {_cost_key(code, field) for code in DEFAULT_ITEMS for field in ("material_cost", "labor_cost")}
+    valid_keys |= {
+        _cost_key(code, "replacement_cost_reference") for code, item in DEFAULT_ITEMS.items() if "replacement_cost_reference" in item
     }
+    valid_keys |= {_cost_key(code, field) for code in ADDON_ITEMS for field in ("material_cost", "labor_cost")}
+    valid_keys |= set(DEFAULT_SETTINGS)
     cleaned = {}
     for key, value in values.items():
         if key not in valid_keys:
@@ -262,18 +380,75 @@ def update_pricing():
     return jsonify({"fields": pricing_fields()})
 
 
+def _pick_roi_breakdown_item(breakdown: list[dict]) -> dict | None:
+    """교체 비용 기준값(replacement_cost_reference)이 있는 품목 중 금액이 가장 큰 것을
+    고른다. sales_pitch(문장)와 roi_comparison(막대그래프용 숫자)이 항상 같은 기준으로
+    계산되도록 이 함수 하나만 쓴다."""
+    candidates = [b for b in breakdown if b.get("replacement_cost_reference") and b["line_total"] > 0]
+    if not candidates:
+        return None
+    best = max(candidates, key=lambda b: b["line_total"])
+    ref = best["replacement_cost_reference"]
+    if best["line_total"] >= ref:
+        return None
+    return {"item_name": best["label"], "film_cost": best["line_total"], "replacement_cost": ref}
+
+
+def _sales_pitch_from_breakdown(roi_item: dict | None) -> str:
+    if roi_item is None:
+        return ""
+    savings_percent = round((1 - roi_item["film_cost"] / roi_item["replacement_cost"]) * 100)
+    return (
+        f"{roi_item['item_name']} 전체 교체 시 평균 {roi_item['replacement_cost']:,.0f}원 이상 소요되지만, "
+        f"필름 리폼은 {roi_item['film_cost']:,.0f}원으로 교체 대비 약 {savings_percent}% 저렴하며 "
+        "원하는 색상으로 일체감 있는 마감이 가능합니다."
+    )
+
+
+def _roi_comparison_from_breakdown(roi_item: dict | None, settings: dict) -> dict | None:
+    if roi_item is None:
+        return None
+    days_replacement = int(settings["ROI_DAYS_REPLACEMENT"])
+    days_film = int(settings["ROI_DAYS_FILM"])
+    savings_percent = round((1 - roi_item["film_cost"] / roi_item["replacement_cost"]) * 100)
+    return {
+        "item_name": roi_item["item_name"],
+        "replacement_cost": roi_item["replacement_cost"],
+        "film_cost": roi_item["film_cost"],
+        "savings_percent": savings_percent,
+        "days_replacement": days_replacement,
+        "days_film": days_film,
+        "highlights": [
+            f"비용 {savings_percent}% 절감",
+            f"공기 단축 ({days_replacement}일 → {days_film}일)",
+            "소음·분진 없음",
+        ],
+    }
+
+
 @app.route("/api/calculate", methods=["POST"])
 def calculate():
     """
     선택된 품목/수량을 받아 견적을 계산한다.
-    요청 예: { "selections": { "DOOR_CURVED": 2, "SASH_LARGE": 1 } }
+    요청 예: {
+      "selections": { "DOOR_SET": 2, "SASH_LARGE": 1 },
+      "door_detail": { "design_type": "pattern", "width_mm": 900, "height_mm": 2100 },
+      "addons": { "SASH_LARGE": ["SILICONE_RECOAT"] }
+    }
+    door_detail은 DOOR_SET 수량 전체에 같은 크기/디자인을 적용한다(빠른 견적은
+    "같은 사이즈 문짝 N개"가 흔한 요청이라 세트마다 다른 크기까지는 받지 않는다 —
+    짝마다 다른 정밀 견적이 필요하면 AI 시공 사진 견적을 쓴다).
     """
     data = request.get_json(force=True, silent=True) or {}
     selections = data.get("selections", {})
+    door_detail = data.get("door_detail") or {}
+    addons_req = data.get("addons", {})
     items = effective_items()
+    addons = effective_addons()
+    settings = effective_settings()
 
     breakdown = []
-    total = 0
+    raw_total = 0
     film_meters_total = 0.0
     material_cost_total = 0
 
@@ -288,8 +463,18 @@ def calculate():
             continue
 
         item = items[code]
-        line_total = item["price"] * qty
-        total += line_total
+        surcharge_per_unit = 0
+        design_type_label = item["design_type"]
+        if code == "DOOR_SET":
+            design_type = door_detail.get("design_type") or "flat"
+            surcharge_per_unit = _door_set_surcharge(
+                door_detail.get("width_mm") or 0, door_detail.get("height_mm") or 0, design_type
+            )
+            design_type_label = "민자/평판 타입" if design_type == "flat" else "웨인스코팅/알판/무늬 타입"
+
+        unit_price = item["price"] + surcharge_per_unit
+        line_total = unit_price * qty
+        raw_total += line_total
         film_meters_total += item["film_meters"] * qty
         material_cost_total += item["material_cost"] * qty
 
@@ -297,20 +482,66 @@ def calculate():
             "code": code,
             "label": item["label"],
             "icon": item["icon"],
-            "design_type": item["design_type"],
-            "unit_price": item["price"],
+            "design_type": design_type_label,
+            "unit_price": unit_price,
+            "surcharge_per_unit": surcharge_per_unit,
             "note": item.get("note") or VALUE_INCLUSION_NOTE,
             "qty": qty,
             "line_total": line_total,
+            "replacement_cost_reference": item.get("replacement_cost_reference"),
         })
+
+        for addon_code in addons_req.get(code, []):
+            addon = addons.get(addon_code)
+            if not addon or code not in addon["applicable_to"]:
+                continue
+            addon_total = addon["price"] * qty
+            raw_total += addon_total
+            material_cost_total += addon["material_cost"] * qty
+            breakdown.append({
+                "code": f"{code}__{addon_code}",
+                "label": f"{addon['label']} ({item['label']})",
+                "icon": "🧴",
+                "design_type": None,
+                "unit_price": addon["price"],
+                "surcharge_per_unit": 0,
+                "note": "기본가에 포함되지 않는 별도 청구 항목입니다.",
+                "qty": qty,
+                "line_total": addon_total,
+                "replacement_cost_reference": None,
+            })
+
+    # ── 최소 출장비 방어선 ──
+    min_callout_amount = settings["MIN_CALLOUT_AMOUNT"]
+    min_callout_applied = 0 < raw_total < min_callout_amount
+    total = min_callout_amount if min_callout_applied else raw_total
+    min_callout_note = (
+        f"해당 시공은 하루 스케줄이 소요되므로, 기공 1인 최소 출장비({min_callout_amount:,.0f}원)가 일괄 적용되었습니다."
+        if min_callout_applied else ""
+    )
+
+    # ── 계약금(스케줄 락다운) ──
+    deposit_rate = settings["DEPOSIT_RATE_PERCENT"]
+    deposit = {
+        "rate_percent": deposit_rate,
+        "amount": round(total * deposit_rate / 100),
+        "note": "지정된 날짜의 스케줄 확정을 위한 계약금이며, 단순 변심 및 당일 취소 시 환불이 불가합니다.",
+    }
 
     labor_margin = total - material_cost_total
     # 품목 구성에 따른 실효 자재비 비율 (필름만 고르면 대략 20%대)
     eff_ratio = material_cost_total / total if total else 0.0
+    roi_item = _pick_roi_breakdown_item(breakdown)
 
     return jsonify({
         "breakdown": breakdown,
         "total": total,
+        "raw_total": raw_total,
+        "min_callout_applied": min_callout_applied,
+        "min_callout_note": min_callout_note,
+        "deposit": deposit,
+        "sales_pitch": _sales_pitch_from_breakdown(roi_item),
+        "roi_comparison": _roi_comparison_from_breakdown(roi_item, settings),
         "value_note": VALUE_INCLUSION_NOTE,
         # 사장님 전용 스텔스 원가 분석 패널 데이터 - 고객 화면에는 절대 렌더링되지 않는다.
         "margin_analysis": {
