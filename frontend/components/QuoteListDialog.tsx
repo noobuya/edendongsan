@@ -2,10 +2,24 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ExternalLink, Loader2, Search, X } from "lucide-react";
+import { AlertTriangle, ExternalLink, Loader2, Search, X } from "lucide-react";
 import AssetImage from "@/components/AssetImage";
-import { listQuotes } from "@/lib/api";
-import type { QuoteSummary } from "@/types";
+import { listQuotes, updatePaymentStatus } from "@/lib/api";
+import type { PaymentStatus, QuoteSummary } from "@/types";
+
+const PAYMENT_LABEL: Record<PaymentStatus, string> = { pending: "대기", deposit_paid: "계약금완료", balance_paid: "잔금완료" };
+const PAYMENT_TONE: Record<PaymentStatus, string> = {
+  pending: "bg-rose-50 text-rose-600",
+  deposit_paid: "bg-amber-50 text-amber-700",
+  balance_paid: "bg-emerald-50 text-emerald-700",
+};
+// 탭할 때마다 다음 단계로 — 대기 -> 계약금완료 -> 잔금완료 -> 대기(한 바퀴 돌아
+// 되돌릴 수도 있게). 사장님이 별도 메뉴 없이 태그를 톡톡 눌러 바로 바꾸는 흐름.
+const NEXT_PAYMENT_STATUS: Record<PaymentStatus, PaymentStatus> = {
+  pending: "deposit_paid",
+  deposit_paid: "balance_paid",
+  balance_paid: "pending",
+};
 
 interface Props {
   open: boolean;
@@ -54,6 +68,18 @@ export default function QuoteListDialog({ open, onClose, onSelect, ownerToken }:
     return quotes.filter((q) => q.customer_name.toLowerCase().includes(needle));
   }, [quotes, query]);
 
+  const outstandingCount = quotes?.filter((q) => q.payment_status !== "balance_paid").length ?? 0;
+
+  async function cyclePaymentStatus(q: QuoteSummary) {
+    const next = NEXT_PAYMENT_STATUS[q.payment_status];
+    try {
+      await updatePaymentStatus(q.job_id, next, ownerToken);
+      setQuotes((prev) => prev?.map((x) => (x.job_id === q.job_id ? { ...x, payment_status: next } : x)) ?? prev);
+    } catch {
+      // 조용히 무시 — 다음에 다시 눌러보면 된다. 목록 전체를 막을 정도의 실패는 아니다.
+    }
+  }
+
   if (!open) return null;
 
   return (
@@ -81,6 +107,13 @@ export default function QuoteListDialog({ open, onClose, onSelect, ownerToken }:
             <X className="h-4 w-4" />
           </button>
         </div>
+
+        {outstandingCount > 0 && (
+          <div className="mx-5 mb-3 flex items-center gap-1.5 rounded-xl bg-rose-50 px-3.5 py-2.5 text-[12.5px] font-bold text-rose-700">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            잔금 미입금 현장 {outstandingCount}건
+          </div>
+        )}
 
         {quotes !== null && quotes.length > 0 && (
           <div className="px-5 pb-3">
@@ -135,6 +168,16 @@ export default function QuoteListDialog({ open, onClose, onSelect, ownerToken }:
               </button>
               <div className="flex shrink-0 flex-col items-end gap-1">
                 <p className="text-sm font-bold tabular-nums text-blue-600">{won(q.total_cost)}</p>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void cyclePaymentStatus(q);
+                  }}
+                  className={`rounded-full px-2 py-0.5 text-[10.5px] font-bold ${PAYMENT_TONE[q.payment_status]}`}
+                >
+                  {PAYMENT_LABEL[q.payment_status]}
+                </button>
                 {q.has_blog && (
                   <Link
                     href={`/blog/post?job=${q.job_id}`}

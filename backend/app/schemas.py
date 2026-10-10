@@ -392,6 +392,11 @@ class SiteConditionsRequest(BaseModel):
     checklist: SubstrateChecklist = Field(default_factory=SubstrateChecklist)
 
 
+# 미수금 방어 트래커용 — 견적 완료 후 실제 입금이 됐는지. 견적의 status(queued/
+# processing/done/failed, 공사 진행 상태)와는 별개 축이다.
+PaymentStatus = Literal["pending", "deposit_paid", "balance_paid"]
+
+
 class JobStatusResponse(BaseModel):
     job_id: str
     status: Literal["queued", "processing", "done", "failed"]
@@ -420,6 +425,7 @@ class JobStatusResponse(BaseModel):
     blog_post: Optional[BlogPost] = None
     signature: Optional[Signature] = None
     site_conditions: Optional[SiteConditions] = None
+    payment_status: PaymentStatus = "pending"
 
 
 class InpaintRequest(BaseModel):
@@ -460,6 +466,28 @@ class QuoteSummary(BaseModel):
     total_cost: int
     thumbnail_url: Optional[str] = None
     has_blog: bool = False
+    payment_status: PaymentStatus = "pending"
+
+
+class PaymentStatusRequest(BaseModel):
+    payment_status: PaymentStatus
+
+
+# ── 자동 정산 및 수익 통계 (routers/finance.py 설계 메모 참고) ──────────
+class FinanceMonthRow(BaseModel):
+    month: str  # "2026-11"
+    revenue: int
+    net_profit: int
+
+
+class FinanceSummaryResponse(BaseModel):
+    month: str
+    revenue: int
+    material_cost: int
+    labor_cost: int
+    net_profit: int
+    outstanding_count: int
+    trend: list[FinanceMonthRow]
 
 
 class QuoteListResponse(BaseModel):

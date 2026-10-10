@@ -16,9 +16,11 @@ from app.quotes_store import (
     load_quote,
     remove_work_photo,
     set_blog_post,
+    set_payment_status,
 )
 from app.schemas import (
     BlogPost,
+    PaymentStatusRequest,
     QuoteListResponse,
     QuoteSummary,
     WorkPhoto,
@@ -53,6 +55,7 @@ async def get_quotes(q: str = ""):
             total_cost=(quote.get("estimate") or {}).get("total_cost", 0),
             thumbnail_url=quote.get("rendered_image_url"),
             has_blog=bool(quote.get("blog_post")),
+            payment_status=quote.get("payment_status") or "pending",
         )
         for quote in quotes
         if quote.get("status") == "done"
@@ -137,3 +140,19 @@ async def delete_blog_post(job_id: str):
         raise HTTPException(status_code=404, detail="견적서를 찾을 수 없습니다.")
     clear_blog_post(job_id)
     return {"ok": True}
+
+
+@router.post("/{job_id}/payment-status", response_model=QuoteSummary)
+async def update_payment_status(job_id: str, payload: PaymentStatusRequest):
+    quote = set_payment_status(job_id, payload.payment_status)
+    if quote is None:
+        raise HTTPException(status_code=404, detail="견적서를 찾을 수 없습니다.")
+    return QuoteSummary(
+        job_id=quote["job_id"],
+        customer_name=quote.get("customer_name") or "고객명 미입력",
+        created_at=quote.get("created_at") or "",
+        total_cost=(quote.get("estimate") or {}).get("total_cost", 0),
+        thumbnail_url=quote.get("rendered_image_url"),
+        has_blog=bool(quote.get("blog_post")),
+        payment_status=quote.get("payment_status") or "pending",
+    )

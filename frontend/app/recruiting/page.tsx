@@ -55,6 +55,8 @@ import {
 
 const CODE_KEY = "eden-recruiting-code";
 const REQUEST_KEY = "eden-recruiting-request";
+const GOAL_KEY = "eden-recruiting-monthly-goal";
+const DEFAULT_GOAL = 3_000_000;
 
 const INPUT =
   "h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-[15px] text-slate-900 outline-none transition focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600/20";
@@ -171,6 +173,31 @@ export default function RecruitingPage() {
   const [photosByApplication, setPhotosByApplication] = useState<Record<number, ApplicationPhoto[]>>({});
   const [openPhotosFor, setOpenPhotosFor] = useState<number | null>(null);
   const [uploadingPhotoFor, setUploadingPhotoFor] = useState<number | null>(null);
+  // 이번 달 목표 수익 — 공유 데이터가 아니라 개인 동기부여용이라 서버에 안 두고
+  // 기기별 localStorage에만 둔다(필요해지면 그때 User에 필드로 승격). 기본값으로
+  // 바로 시작해야 SSR과 클라이언트 첫 렌더가 같다 — localStorage 읽기는 마운트
+  // 이펙트에서만 한다(이번 세션에 겪은 하이드레이션 에러와 같은 함정).
+  const [monthlyGoal, setMonthlyGoal] = useState(DEFAULT_GOAL);
+  const [editingGoal, setEditingGoal] = useState(false);
+  const [goalInput, setGoalInput] = useState("");
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(GOAL_KEY);
+      if (saved) setMonthlyGoal(Number(saved) || DEFAULT_GOAL);
+    } catch {}
+  }, []);
+
+  function saveGoal() {
+    const n = Number(goalInput.replace(/\D/g, ""));
+    if (n > 0) {
+      setMonthlyGoal(n);
+      try {
+        localStorage.setItem(GOAL_KEY, String(n));
+      } catch {}
+    }
+    setEditingGoal(false);
+  }
 
   // 전문가(EXPERT) 화면 데이터
   const [badges, setBadges] = useState<SkillBadge[]>([]);
@@ -600,6 +627,63 @@ export default function RecruitingPage() {
 
             {me.role === "STUDENT" && (
               <>
+                {(() => {
+                  const now = new Date();
+                  const completed = myApplications.filter((a) => a.status === "COMPLETED");
+                  const totalEarned = completed.reduce((sum, a) => sum + a.job_pay, 0);
+                  const thisMonthEarned = completed
+                    .filter((a) => {
+                      const d = new Date(a.job_date);
+                      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+                    })
+                    .reduce((sum, a) => sum + a.job_pay, 0);
+                  const progress = Math.min(Math.round((thisMonthEarned / monthlyGoal) * 100), 100);
+                  return (
+                    <section className="relative overflow-hidden rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200/70">
+                      <p className="text-[13px] font-bold uppercase tracking-wider text-slate-500">누적 알바비</p>
+                      <p className="mt-1 text-[26px] font-extrabold tabular-nums text-slate-900">{formatPay(totalEarned)}</p>
+                      <div className="mt-4 border-t border-slate-100 pt-4">
+                        <div className="flex items-center justify-between text-[13px]">
+                          <span className="font-semibold text-slate-700">
+                            이번 달 목표 {formatPay(monthlyGoal)} 중 {progress}% 달성
+                          </span>
+                          {editingGoal ? (
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                autoFocus
+                                value={goalInput}
+                                onChange={(e) => setGoalInput(e.target.value.replace(/\D/g, ""))}
+                                onKeyDown={(e) => e.key === "Enter" && saveGoal()}
+                                className="h-7 w-24 rounded-lg border border-slate-200 px-2 text-[12px] outline-none focus:border-indigo-500"
+                              />
+                              <button onClick={saveGoal} className="text-[12px] font-semibold text-indigo-600">
+                                저장
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setGoalInput(String(monthlyGoal));
+                                setEditingGoal(true);
+                              }}
+                              className="text-[12px] font-medium text-slate-400 underline underline-offset-2"
+                            >
+                              목표 수정
+                            </button>
+                          )}
+                        </div>
+                        <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-slate-100">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-emerald-500 transition-all"
+                            style={{ width: `${progress}%` }}
+                          />
+                        </div>
+                        <p className="mt-1.5 text-[12px] text-slate-500">이번 달 {formatPay(thisMonthEarned)} 벌었어요</p>
+                      </div>
+                    </section>
+                  );
+                })()}
+
                 {myScoutRequests.filter((r) => r.status === "PENDING").length > 0 && (
                   <section className="space-y-2">
                     <h2 className="px-1 text-[13px] font-bold uppercase tracking-wider text-slate-500">받은 지명 호출</h2>

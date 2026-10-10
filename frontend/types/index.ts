@@ -355,6 +355,8 @@ export interface PatternSwatch {
   code?: string;
 }
 
+export type PaymentStatus = "pending" | "deposit_paid" | "balance_paid";
+
 export interface QuoteSummary {
   job_id: string;
   customer_name: string;
@@ -362,6 +364,7 @@ export interface QuoteSummary {
   total_cost: number;
   thumbnail_url?: string;
   has_blog: boolean;
+  payment_status: PaymentStatus;
 }
 
 export interface BlogSummary {

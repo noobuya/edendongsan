@@ -82,6 +82,18 @@ def set_site_conditions(job_id: str, conditions: dict) -> dict | None:
     return quote
 
 
+def set_payment_status(job_id: str, payment_status: str) -> dict | None:
+    """견적의 결제 진행 상태(대기/계약금완료/잔금완료)를 기록한다. 서명·현장조건과
+    달리 공사가 끝난 뒤에도(심지어 done이 아니어도) 여러 번 바뀔 수 있는 값이라
+    덮어쓰기를 막지 않는다 — 입금이 밀리거나 분할로 들어오는 경우가 흔하다."""
+    quote = load_quote(job_id)
+    if quote is None:
+        return None
+    quote["payment_status"] = payment_status
+    save_quote(job_id, quote)
+    return quote
+
+
 def set_blog_post(job_id: str, blog_post: dict) -> dict | None:
     quote = load_quote(job_id)
     if quote is None:

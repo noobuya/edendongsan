@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Award, Copy, Loader2, PlusCircle, Radar, XOctagon } from "lucide-react";
 import {
   adminRecruitingApprove,
@@ -245,17 +246,22 @@ export default function AdminRecruitingPage() {
     <main className="mx-auto max-w-xl space-y-4 px-4 py-6">
       <header className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-slate-900">현장 실습 매칭 관리</h1>
-        <button
-          onClick={() => {
-            writeToken("");
-            setAuthorized(false);
-            setToken("");
-            setUsers([]);
-          }}
-          className="text-[14px] text-slate-500 underline"
-        >
-          나가기
-        </button>
+        <div className="flex items-center gap-3">
+          <Link href="/admin/finance" className="text-[14px] text-indigo-600 underline">
+            수익 대시보드
+          </Link>
+          <button
+            onClick={() => {
+              writeToken("");
+              setAuthorized(false);
+              setToken("");
+              setUsers([]);
+            }}
+            className="text-[14px] text-slate-500 underline"
+          >
+            나가기
+          </button>
+        </div>
       </header>
 
       {error && <p className="px-1 text-[14px] font-semibold text-rose-700">{error}</p>}

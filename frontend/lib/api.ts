@@ -8,6 +8,7 @@ import type {
   LineItem,
   MappedRegion,
   PanelItem,
+  PaymentStatus,
   PortfolioEntry,
   PricingField,
   Proposal,
@@ -351,6 +352,43 @@ export async function listQuotes(ownerToken: string, query = ""): Promise<QuoteS
   if (!res.ok) throw new Error(await extractErrorMessage(res, "견적 목록 조회에 실패했습니다."));
   const data = await res.json();
   return data.quotes;
+}
+
+export async function updatePaymentStatus(
+  jobId: string,
+  paymentStatus: PaymentStatus,
+  ownerToken: string,
+): Promise<QuoteSummary> {
+  const res = await apiFetch(`${API_BASE}/api/quotes/${jobId}/payment-status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...ownerHeaders(ownerToken) },
+    body: JSON.stringify({ payment_status: paymentStatus }),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "결제 상태를 바꾸지 못했습니다."));
+  return res.json();
+}
+
+/* ---- 자동 정산 및 수익 통계(/admin/finance) ---- */
+export interface FinanceMonthRow {
+  month: string;
+  revenue: number;
+  net_profit: number;
+}
+export interface FinanceSummary {
+  month: string;
+  revenue: number;
+  material_cost: number;
+  labor_cost: number;
+  net_profit: number;
+  outstanding_count: number;
+  trend: FinanceMonthRow[];
+}
+export async function getFinanceSummary(month: string, ownerToken: string): Promise<FinanceSummary> {
+  const res = await apiFetch(`${API_BASE}/api/finance/summary?month=${encodeURIComponent(month)}`, {
+    headers: ownerHeaders(ownerToken),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "재무 요약을 불러오지 못했습니다."));
+  return res.json();
 }
 
 export async function uploadWorkPhoto(
