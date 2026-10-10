@@ -570,3 +570,16 @@ class PortfolioEntry(BaseModel):
 
 class PortfolioListResponse(BaseModel):
     entries: list[PortfolioEntry]
+
+
+# ── 디지털 보증서 (공개, 고객 공유용) ──────────────────────────────────
+# 포트폴리오 갤러리와 같은 기준(status=done & signature 있음)으로만 열린다.
+# 보증 약관·유지관리 팁은 AI가 지어내면 안 되는 값이라 고정 문구를 쓴다
+# (routers/warranty.py의 GENERIC_TIPS 참고 — PremiumReceipt.tsx의 보증 문구와 같은 톤).
+class WarrantyResponse(BaseModel):
+    job_id: str
+    item_names: list[str]
+    completed_at: str
+    warranty_expires_at: str
+    after_image_url: Optional[str] = None
+    maintenance_tips: list[str]

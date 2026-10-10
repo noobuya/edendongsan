@@ -1,14 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Award, Copy, Loader2, PlusCircle } from "lucide-react";
+import { Award, Copy, Loader2, PlusCircle, Radar, XOctagon } from "lucide-react";
 import {
   adminRecruitingApprove,
   adminRecruitingAwardBadge,
   adminRecruitingBadges,
+  adminRecruitingCancelApplication,
   adminRecruitingCreateBadge,
+  adminRecruitingOverview,
   adminRecruitingReject,
   adminRecruitingRequests,
+  type AdminFieldJobRow,
   type RecruitingUser,
   type SkillBadge,
 } from "@/lib/api";
@@ -41,8 +44,17 @@ function writeToken(value: string) {
 const input =
   "h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-[15px] text-slate-900 outline-none focus:border-indigo-500";
 
-const ROLE_LABEL: Record<string, string> = { ADMIN: "관리자", EXPERT: "전문가", STUDENT: "수강생" };
+const ROLE_LABEL: Record<string, string> = { ADMIN: "관리자", EXPERT: "전문가", STUDENT: "조공" };
 const STATUS_LABEL: Record<string, string> = { PENDING: "대기중", APPROVED: "승인됨", REJECTED: "거절됨" };
+
+const AUDIENCE_LABEL: Record<AdminFieldJobRow["audience"], string> = { STUDENT: "조공 구인", EXPERT: "동급 기공 헬프콜" };
+const APP_STATUS_LABEL: Record<string, string> = { PENDING: "대기중", APPROVED: "승인됨", COMPLETED: "현장 완료", REJECTED: "거절됨" };
+const APP_STATUS_TONE: Record<string, string> = {
+  PENDING: "bg-slate-100 text-slate-600",
+  APPROVED: "bg-emerald-50 text-emerald-700",
+  COMPLETED: "bg-indigo-50 text-indigo-700",
+  REJECTED: "bg-rose-50 text-rose-700",
+};
 
 export default function AdminRecruitingPage() {
   const [token, setToken] = useState("");
@@ -62,6 +74,8 @@ export default function AdminRecruitingPage() {
   const [newBadgeEndorsements, setNewBadgeEndorsements] = useState("0");
   // 지급할 뱃지 선택을 유저별로 기억(선택 전엔 빈 값).
   const [awardBadgeId, setAwardBadgeId] = useState<Record<number, number>>({});
+  const [overview, setOverview] = useState<AdminFieldJobRow[]>([]);
+  const [openJobId, setOpenJobId] = useState<number | null>(null);
 
   async function load(t: string) {
     setBusy(true);
@@ -69,6 +83,7 @@ export default function AdminRecruitingPage() {
     try {
       setUsers(await adminRecruitingRequests(t));
       setBadges(await adminRecruitingBadges(t));
+      setOverview((await adminRecruitingOverview(t)).jobs);
       setToken(t);
       setAuthorized(true);
       writeToken(t);
@@ -166,6 +181,20 @@ export default function AdminRecruitingPage() {
       await adminRecruitingAwardBadge(token, user.id, badgeId);
     } catch (e) {
       setError(e instanceof Error ? e.message : "뱃지를 지급하지 못했습니다.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancelApplication(applicationId: number) {
+    if (!window.confirm("이 매칭을 강제로 취소할까요? 공고는 다시 모집중 상태로 돌아갑니다.")) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await adminRecruitingCancelApplication(token, applicationId);
+      setOverview((await adminRecruitingOverview(token)).jobs);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "취소하지 못했습니다.");
     } finally {
       setBusy(false);
     }
@@ -281,6 +310,68 @@ export default function AdminRecruitingPage() {
               </span>
             ))}
           </div>
+        )}
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="flex items-center gap-2 px-1 text-[15px] font-bold text-slate-700">
+          <Radar className="h-4 w-4" /> 매칭 관제소
+        </h2>
+        {overview.length === 0 ? (
+          <p className="px-1 text-[14px] text-slate-500">아직 올라온 공고가 없어요.</p>
+        ) : (
+          overview.map((job) => (
+            <div key={job.id} className="rounded-2xl bg-white p-4 shadow-sm">
+              <button onClick={() => setOpenJobId(openJobId === job.id ? null : job.id)} className="flex w-full items-start justify-between gap-2 text-left">
+                <div className="min-w-0">
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+                    {AUDIENCE_LABEL[job.audience]}
+                  </span>
+                  <p className="mt-1 text-[14.5px] font-bold text-slate-900">{job.location}</p>
+                  <p className="mt-0.5 text-[12.5px] text-slate-500">
+                    {new Date(job.job_date).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} ·{" "}
+                    {job.pay.toLocaleString("ko-KR")}원 · {job.expert_name} 기공
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[12px] font-semibold text-slate-600">
+                  지원 {job.applications.length}
+                </span>
+              </button>
+              {openJobId === job.id && (
+                <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
+                  {job.applications.length === 0 ? (
+                    <p className="text-[13px] text-slate-500">아직 지원자가 없어요.</p>
+                  ) : (
+                    job.applications.map((a) => (
+                      <div key={a.id} className="flex items-center justify-between gap-2 rounded-xl bg-slate-50 p-2.5">
+                        <div className="min-w-0">
+                          <p className="text-[13.5px] font-semibold text-slate-900">
+                            {a.applicant_name}
+                            <span className="ml-1 text-[11px] font-normal text-slate-400">({ROLE_LABEL[a.applicant_role]})</span>
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <span className={`rounded-full px-2 py-0.5 text-[11.5px] font-semibold ${APP_STATUS_TONE[a.status]}`}>
+                            {APP_STATUS_LABEL[a.status]}
+                          </span>
+                          {(a.status === "APPROVED" || a.status === "COMPLETED") && (
+                            <button
+                              disabled={busy}
+                              onClick={() => cancelApplication(a.id)}
+                              aria-label="강제 취소"
+                              className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-50 text-rose-600 disabled:opacity-40"
+                            >
+                              <XOctagon className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          ))
         )}
       </section>
 

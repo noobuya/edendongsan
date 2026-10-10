@@ -40,7 +40,11 @@ export default function CommunityPostDetailPage() {
     return true;
   });
 
-  const [code] = useState(readCode);
+  // 빈 문자열로 시작해 서버/클라이언트 첫 렌더가 똑같게 두고, localStorage 읽기는
+  // useEffect에서만 한다 — useState 초기화 함수로 바로 읽으면 SSR(빈 값)과 클라이언트
+  // (실제 값)의 첫 렌더 결과가 달라져 하이드레이션 에러가 난다(실측으로 발견).
+  const [code, setCode] = useState("");
+  useEffect(() => setCode(readCode()), []);
   const [id, setId] = useState<string | null>(null);
   const [post, setPost] = useState<CommunityPostDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -54,11 +58,11 @@ export default function CommunityPostDetailPage() {
       setError(!code ? "먼저 /recruiting에서 입장해 주세요." : "잘못된 주소입니다.");
       return;
     }
+    setError(null);
     recruitingCommunityPostDetail(code, Number(value))
       .then(setPost)
       .catch((err) => setError(err instanceof Error ? err.message : "글을 찾을 수 없습니다."));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [code]);
 
   async function submitComment() {
     if (!comment.trim() || !id) return;

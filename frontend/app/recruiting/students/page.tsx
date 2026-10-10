@@ -45,7 +45,11 @@ export default function ScoutDirectoryPage() {
     return true;
   });
 
-  const [code] = useState(readCode);
+  // 빈 문자열로 시작해 서버/클라이언트 첫 렌더가 똑같게 두고, localStorage 읽기는
+  // useEffect에서만 한다 — useState 초기화 함수로 바로 읽으면 SSR(빈 값)과 클라이언트
+  // (실제 값)의 첫 렌더 결과가 달라져 하이드레이션 에러가 난다(실측으로 발견).
+  const [code, setCode] = useState("");
+  useEffect(() => setCode(readCode()), []);
   const [students, setStudents] = useState<StudentDirectoryRow[] | null>(null);
   const [sent, setSent] = useState<ScoutRequest[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +62,7 @@ export default function ScoutDirectoryPage() {
       setError("먼저 /recruiting에서 입장해 주세요.");
       return;
     }
+    setError(null);
     recruitingStudents(code).then(setStudents).catch((err) => setError(err instanceof Error ? err.message : "불러오지 못했습니다."));
     void recruitingMySentScoutRequests(code).then(setSent).catch(() => {});
   }, [code]);
@@ -92,7 +97,7 @@ export default function ScoutDirectoryPage() {
           <Link href="/recruiting" aria-label="뒤로" className="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-slate-200/70">
             <ArrowLeft className="h-5 w-5" />
           </Link>
-          <h1 className="text-[17px] font-bold tracking-tight">수강생 지명 호출</h1>
+          <h1 className="text-[17px] font-bold tracking-tight">조공 지명 호출</h1>
         </div>
       </header>
 
@@ -105,7 +110,7 @@ export default function ScoutDirectoryPage() {
           </div>
         )}
 
-        {students?.length === 0 && <p className="py-16 text-center text-sm text-slate-400">승인된 수강생이 없어요.</p>}
+        {students?.length === 0 && <p className="py-16 text-center text-sm text-slate-400">승인된 조공이 없어요.</p>}
 
         {students?.map((s) => {
           const pending = sentStatusFor(s.id);

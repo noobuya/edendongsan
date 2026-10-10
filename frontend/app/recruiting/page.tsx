@@ -3,23 +3,28 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
+  AlertTriangle,
   ArrowLeft,
-  Award,
   Briefcase,
+  CalendarDays,
+  Camera,
   CheckCircle2,
   Loader2,
   LogOut,
   MapPin,
   MessageSquare,
+  ShieldCheck,
   Sparkles,
   Star,
   UserSearch,
   Wallet,
   XCircle,
 } from "lucide-react";
+import AssetImage from "@/components/AssetImage";
 import LevelBadge from "@/components/recruiting/LevelBadge";
 import {
   recruitingApplicants,
+  recruitingApplicationPhotos,
   recruitingApply,
   recruitingBadges,
   recruitingCompleteApplication,
@@ -35,7 +40,9 @@ import {
   recruitingReviewApplication,
   recruitingSignup,
   recruitingSignupStatus,
+  recruitingUploadApplicationPhoto,
   type Applicant,
+  type ApplicationPhoto,
   type FieldJob,
   type JobAudience,
   type MyApplication,
@@ -105,6 +112,41 @@ function EmptyCard({ children }: { children: ReactNode }) {
   );
 }
 
+const QA_VERDICT_LABEL: Record<string, string> = { pass: "이상 없음", issues_found: "하자 의심", unknown: "AI 점검 불가" };
+const QA_VERDICT_TONE: Record<string, string> = {
+  pass: "bg-emerald-50 text-emerald-700",
+  issues_found: "bg-rose-50 text-rose-700",
+  unknown: "bg-slate-100 text-slate-500",
+};
+
+/** 수강생이 올린 마감 사진 + Gemini Vision 1차 판정 — 교육·원격 검수 참고용이지
+ *  하자 보수 책임을 가르는 공식 판정이 아니라는 걸 라벨에서부터 분명히 한다. */
+function QaPhotoCard({ photo }: { photo: ApplicationPhoto }) {
+  const verdict = photo.qa_result.verdict ?? "unknown";
+  const defects = photo.qa_result.defects ?? [];
+  return (
+    <div className="flex gap-3 rounded-xl bg-slate-50 p-2.5">
+      <AssetImage src={photo.photo_url} alt="마감 사진" className="h-20 w-20 shrink-0 rounded-lg object-cover" />
+      <div className="min-w-0 flex-1">
+        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${QA_VERDICT_TONE[verdict] ?? QA_VERDICT_TONE.unknown}`}>
+          {verdict === "issues_found" ? <AlertTriangle className="h-3 w-3" /> : <ShieldCheck className="h-3 w-3" />}
+          {QA_VERDICT_LABEL[verdict] ?? verdict}
+        </span>
+        {photo.qa_result.notes && <p className="mt-1 text-[12px] leading-relaxed text-slate-600">{photo.qa_result.notes}</p>}
+        {defects.length > 0 && (
+          <ul className="mt-1 space-y-0.5">
+            {defects.map((d, i) => (
+              <li key={i} className="text-[11.5px] text-rose-600">
+                · {d.type}: {d.description}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function RecruitingPage() {
   const [code, setCode] = useState("");
   const [me, setMe] = useState<RecruitingUser | null>(null);
@@ -124,6 +166,11 @@ export default function RecruitingPage() {
   const [openJobs, setOpenJobs] = useState<FieldJob[]>([]);
   const [myApplications, setMyApplications] = useState<MyApplication[]>([]);
   const [myScoutRequests, setMyScoutRequests] = useState<ScoutRequest[]>([]);
+  // AI 마감 검수 — 지원 건별로 올린 사진+판정 결과를 들고 있는다. 승인된 현장에서만
+  // 올릴 수 있고(백엔드가 한 번 더 막음), 지원 건 카드를 펼치면 그때 불러온다.
+  const [photosByApplication, setPhotosByApplication] = useState<Record<number, ApplicationPhoto[]>>({});
+  const [openPhotosFor, setOpenPhotosFor] = useState<number | null>(null);
+  const [uploadingPhotoFor, setUploadingPhotoFor] = useState<number | null>(null);
 
   // 전문가(EXPERT) 화면 데이터
   const [badges, setBadges] = useState<SkillBadge[]>([]);
@@ -269,6 +316,35 @@ export default function RecruitingPage() {
       setError(err instanceof Error ? err.message : "응답하지 못했습니다.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function togglePhotos(jobId: number, applicationId: number) {
+    if (openPhotosFor === applicationId) {
+      setOpenPhotosFor(null);
+      return;
+    }
+    setOpenPhotosFor(applicationId);
+    try {
+      const list = await recruitingApplicationPhotos(code, jobId, applicationId);
+      setPhotosByApplication((prev) => ({ ...prev, [applicationId]: list }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "사진을 불러오지 못했습니다.");
+    }
+  }
+
+  async function uploadPhoto(jobId: number, applicationId: number, file: File) {
+    setUploadingPhotoFor(applicationId);
+    setError(null);
+    try {
+      await recruitingUploadApplicationPhoto(code, jobId, applicationId, file);
+      const list = await recruitingApplicationPhotos(code, jobId, applicationId);
+      setPhotosByApplication((prev) => ({ ...prev, [applicationId]: list }));
+      setOpenPhotosFor(applicationId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "사진을 올리지 못했습니다.");
+    } finally {
+      setUploadingPhotoFor(null);
     }
   }
 
@@ -440,7 +516,7 @@ export default function RecruitingPage() {
                     signupRole === r ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"
                   }`}
                 >
-                  {r === "STUDENT" ? "수강생" : "전문가"}
+                  {r === "STUDENT" ? "조공" : "전문가"}
                 </button>
               ))}
             </div>
@@ -488,21 +564,29 @@ export default function RecruitingPage() {
         ) : (
           <>
             <section className="relative overflow-hidden rounded-3xl bg-indigo-600 p-6 text-white shadow-lg">
-              <p className="text-[13px] font-medium text-indigo-100">{me.role === "EXPERT" ? "전문가" : "수강생"} 작업실</p>
+              <p className="text-[13px] font-medium text-indigo-100">{me.role === "EXPERT" ? "전문가" : "조공"} 작업실</p>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 <h2 className="text-[22px] font-bold tracking-tight">{me.name}님, 안녕하세요</h2>
                 <LevelBadge level={me.level} badgeCount={me.badge_count} className="!bg-white/15 !text-white" />
               </div>
             </section>
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {me.role === "EXPERT" && (
-                <Link
-                  href="/recruiting/students"
-                  className="flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-white text-[13.5px] font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200/70"
-                >
-                  <UserSearch className="h-4 w-4" /> 수강생 지명 호출
-                </Link>
+                <>
+                  <Link
+                    href="/recruiting/students"
+                    className="flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-white text-[13.5px] font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200/70"
+                  >
+                    <UserSearch className="h-4 w-4" /> 조공 지명 호출
+                  </Link>
+                  <Link
+                    href="/recruiting/calendar"
+                    className="flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-white text-[13.5px] font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200/70"
+                  >
+                    <CalendarDays className="h-4 w-4" /> 일정 캘린더
+                  </Link>
+                </>
               )}
               <Link
                 href="/recruiting/community"
@@ -605,17 +689,65 @@ export default function RecruitingPage() {
                   {myApplications.length === 0 ? (
                     <EmptyCard>아직 지원한 현장이 없어요.</EmptyCard>
                   ) : (
-                    myApplications.map((a) => (
-                      <div key={a.id} className={`${CARD} flex items-center justify-between gap-3`}>
-                        <div>
-                          <p className="text-[14px] font-semibold text-slate-900">{a.job_location}</p>
-                          <p className="text-[13px] text-slate-500">{formatDate(a.job_date)} · {formatPay(a.job_pay)}</p>
+                    myApplications.map((a) => {
+                      const canUploadPhoto = a.status === "APPROVED" || a.status === "COMPLETED";
+                      const photos = photosByApplication[a.id] ?? [];
+                      return (
+                        <div key={a.id} className={CARD}>
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-[14px] font-semibold text-slate-900">{a.job_location}</p>
+                              <p className="text-[13px] text-slate-500">{formatDate(a.job_date)} · {formatPay(a.job_pay)}</p>
+                            </div>
+                            <span className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold ${APP_STATUS_TONE[a.status]}`}>
+                              {APP_STATUS_LABEL[a.status]}
+                            </span>
+                          </div>
+
+                          {canUploadPhoto && (
+                            <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => togglePhotos(a.job_id, a.id)}
+                                  className="text-[12.5px] font-semibold text-indigo-600"
+                                >
+                                  {openPhotosFor === a.id ? "마감 사진 접기" : `마감 사진 보기(${photos.length})`}
+                                </button>
+                                <label className="ml-auto flex h-8 cursor-pointer items-center gap-1 rounded-lg bg-slate-100 px-2.5 text-[12px] font-semibold text-slate-600">
+                                  {uploadingPhotoFor === a.id ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Camera className="h-3.5 w-3.5" />
+                                  )}
+                                  마감 사진 올리기(AI 1차 검수)
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    disabled={uploadingPhotoFor === a.id}
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      e.target.value = "";
+                                      if (file) void uploadPhoto(a.job_id, a.id, file);
+                                    }}
+                                  />
+                                </label>
+                              </div>
+                              {openPhotosFor === a.id && (
+                                <div className="space-y-2">
+                                  {photos.length === 0 ? (
+                                    <p className="text-[12.5px] text-slate-400">아직 올린 사진이 없어요.</p>
+                                  ) : (
+                                    photos.map((p) => <QaPhotoCard key={p.id} photo={p} />)
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        <span className={`rounded-full px-2.5 py-1 text-[12px] font-semibold ${APP_STATUS_TONE[a.status]}`}>
-                          {APP_STATUS_LABEL[a.status]}
-                        </span>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </section>
               </>
@@ -637,7 +769,7 @@ export default function RecruitingPage() {
                           newAudience === a ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"
                         }`}
                       >
-                        {a === "STUDENT" ? "수강생 대상 구인" : "동급 기공 헬프콜"}
+                        {a === "STUDENT" ? "조공 대상 구인" : "동급 기공 헬프콜"}
                       </button>
                     ))}
                   </div>
@@ -756,6 +888,29 @@ export default function RecruitingPage() {
                                         </span>
                                       )}
                                     </div>
+
+                                    {(a.status === "APPROVED" || a.status === "COMPLETED") && (
+                                      <div className="mt-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => togglePhotos(job.id, a.id)}
+                                          className="text-[12px] font-semibold text-indigo-600"
+                                        >
+                                          {openPhotosFor === a.id
+                                            ? "원격 검수 접기"
+                                            : `원격 검수 — 제출 사진 보기(${(photosByApplication[a.id] ?? []).length})`}
+                                        </button>
+                                        {openPhotosFor === a.id && (
+                                          <div className="mt-2 space-y-2">
+                                            {(photosByApplication[a.id] ?? []).length === 0 ? (
+                                              <p className="text-[12.5px] text-slate-400">아직 올린 사진이 없어요.</p>
+                                            ) : (
+                                              (photosByApplication[a.id] ?? []).map((p) => <QaPhotoCard key={p.id} photo={p} />)
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
 
                                     {openReviewFor === a.id && (
                                       <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">

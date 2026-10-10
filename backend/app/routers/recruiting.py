@@ -10,15 +10,22 @@
 이 기능은 /api/recruiting 아래에 둔다.
 """
 import hmac
+import io
+import json
+import os
 import re
 import secrets
+import uuid
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
+from PIL import Image, UnidentifiedImageError
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db
 from app.models import (
+    ApplicationPhoto,
     ApplicationStatus,
     ApprovalStatus,
     BadgeEndorsement,
@@ -37,16 +44,23 @@ from app.models import (
     UserRole,
 )
 from app.services.leveling import XP_PER_RATING_POINT
+from app.services.qa_scan import scan_finish_quality
 from app.schemas_recruiting import (
+    AdminApplicationRow,
     AdminApproveIn,
+    AdminFieldJobRow,
+    AdminOverviewResponse,
     AdminUserCreate,
     AdminUserRow,
     ApplicantRead,
+    ApplicationPhotoRead,
+    CalendarJobRow,
     CommunityCommentCreate,
     CommunityCommentRead,
     CommunityPostCreate,
     CommunityPostDetailRead,
     CommunityPostRead,
+    DepositConfirmIn,
     FieldJobCreate,
     FieldJobRead,
     JobApplicationDecisionIn,
@@ -119,6 +133,7 @@ def _job_to_read(job: FieldJob) -> dict:
         "pay": job.pay,
         "status": job.status,
         "audience": job.audience,
+        "deposit_confirmed": job.deposit_confirmed,
     }
 
 
@@ -282,7 +297,7 @@ def my_badges(current_user: User = Depends(require_access_code), db: Session = D
 @router.get("/me/applications", response_model=list[MyApplicationRead])
 def my_applications(current_user: User = Depends(require_access_code), db: Session = Depends(get_db)):
     if current_user.role != UserRole.STUDENT:
-        raise HTTPException(status_code=403, detail="수강생(STUDENT)만 조회할 수 있습니다.")
+        raise HTTPException(status_code=403, detail="조공(STUDENT)만 조회할 수 있습니다.")
     rows = db.query(JobApplication).filter(JobApplication.student_id == current_user.id).all()
     return [
         {
@@ -322,7 +337,7 @@ def list_open_field_jobs(current_user: User = Depends(require_access_code), db: 
     EXPERT는 audience=EXPERT(동급 기공 헬프콜) 공고를 본다. 역할 값과 JobAudience
     값을 똑같이 맞춰 둬서 한 줄로 변환된다(models.py의 JobAudience 참고)."""
     if current_user.role not in (UserRole.STUDENT, UserRole.EXPERT):
-        raise HTTPException(status_code=403, detail="수강생/전문가 계정만 조회할 수 있습니다.")
+        raise HTTPException(status_code=403, detail="조공/전문가 계정만 조회할 수 있습니다.")
     jobs = (
         db.query(FieldJob)
         .filter(FieldJob.status == JobStatus.OPEN)
@@ -419,7 +434,7 @@ def apply_to_field_job(
         raise HTTPException(status_code=400, detail="마감되었거나 종료된 공고입니다.")
 
     if current_user.role.value != job.audience.value:
-        audience_label = "수강생(STUDENT)" if job.audience == JobAudience.STUDENT else "전문가(EXPERT)"
+        audience_label = "조공(STUDENT)" if job.audience == JobAudience.STUDENT else "전문가(EXPERT)"
         raise HTTPException(status_code=403, detail=f"{audience_label}만 지원할 수 있습니다.")
 
     has_required_badge = db.get(UserBadge, (current_user.id, job.required_badge_id)) is not None
@@ -549,7 +564,7 @@ def review_application(
 @router.get("/me/reviews", response_model=list[JobReviewRead])
 def my_reviews(current_user: User = Depends(require_access_code), db: Session = Depends(get_db)):
     if current_user.role != UserRole.STUDENT:
-        raise HTTPException(status_code=403, detail="수강생(STUDENT)만 조회할 수 있습니다.")
+        raise HTTPException(status_code=403, detail="조공(STUDENT)만 조회할 수 있습니다.")
     rows = (
         db.query(JobReview)
         .join(JobApplication, JobReview.job_application_id == JobApplication.id)
@@ -593,7 +608,7 @@ def create_scout_request(
         raise HTTPException(status_code=403, detail="전문가(EXPERT)만 지명 호출을 보낼 수 있습니다.")
     target = db.get(User, payload.target_user_id)
     if not target or target.role != UserRole.STUDENT or target.approval_status != ApprovalStatus.APPROVED:
-        raise HTTPException(status_code=404, detail="대상 수강생을 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="대상 조공을 찾을 수 없습니다.")
     if payload.field_job_id is not None:
         job = db.get(FieldJob, payload.field_job_id)
         if not job or job.expert_id != current_user.id:
@@ -615,7 +630,7 @@ def create_scout_request(
 def my_scout_requests(current_user: User = Depends(require_access_code), db: Session = Depends(get_db)):
     """나(수강생)에게 들어온 지명 호출 목록."""
     if current_user.role != UserRole.STUDENT:
-        raise HTTPException(status_code=403, detail="수강생(STUDENT)만 조회할 수 있습니다.")
+        raise HTTPException(status_code=403, detail="조공(STUDENT)만 조회할 수 있습니다.")
     rows = db.query(ScoutRequest).filter(ScoutRequest.target_user_id == current_user.id).all()
     return [_scout_request_to_read(r) for r in rows]
 
@@ -732,3 +747,214 @@ def create_community_comment(
     db.commit()
     db.refresh(comment)
     return _comment_to_read(comment)
+
+
+# ── AI 마감 검수 ─────────────────────────────────────────────────────
+def _photo_to_read(photo: ApplicationPhoto) -> dict:
+    try:
+        qa_result = json.loads(photo.qa_result) if photo.qa_result else {}
+    except json.JSONDecodeError:
+        qa_result = {}
+    return {
+        "id": photo.id,
+        "job_application_id": photo.job_application_id,
+        "photo_url": photo.photo_url,
+        "qa_result": qa_result,
+        "uploaded_at": photo.uploaded_at,
+    }
+
+
+@router.post("/field-jobs/{job_id}/applications/{application_id}/photos", response_model=ApplicationPhotoRead)
+async def upload_application_photo(
+    job_id: int,
+    application_id: int,
+    photo: UploadFile = File(...),
+    current_user: User = Depends(require_access_code),
+    db: Session = Depends(get_db),
+):
+    """수강생 본인이 승인된(또는 완료된) 현장의 마감 사진을 올리면 Gemini Vision이
+    들뜸·기포 등을 1차로 스캔한다 — 교육용 참고 판정이라 기공의 원격 검수 전
+    자가 점검 느낌으로 둔다."""
+    application = db.get(JobApplication, application_id)
+    if not application or application.job_id != job_id:
+        raise HTTPException(status_code=404, detail="지원 내역을 찾을 수 없습니다.")
+    if application.student_id != current_user.id:
+        raise HTTPException(status_code=403, detail="본인 지원 건에만 사진을 올릴 수 있습니다.")
+    if application.status not in (ApplicationStatus.APPROVED, ApplicationStatus.COMPLETED):
+        raise HTTPException(status_code=409, detail="승인된 현장에만 사진을 올릴 수 있습니다.")
+
+    raw_bytes = await photo.read()
+    if not raw_bytes:
+        raise HTTPException(status_code=422, detail="사진 파일이 비어 있습니다.")
+    try:
+        with Image.open(io.BytesIO(raw_bytes)) as img:
+            normalized = img.convert("RGB")
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+        raise HTTPException(
+            status_code=422, detail="사진 파일을 읽을 수 없습니다. 파일이 손상되었거나 지원하지 않는 형식일 수 있습니다."
+        ) from exc
+
+    os.makedirs("storage/uploads", exist_ok=True)
+    storage_path = f"storage/uploads/qa_{application_id}_{uuid.uuid4().hex[:8]}.jpg"
+    normalized.save(storage_path, "JPEG", quality=90)
+
+    qa_result = scan_finish_quality(storage_path)
+
+    photo_row = ApplicationPhoto(
+        job_application_id=application_id,
+        photo_url="/" + storage_path.replace("storage/", "static/", 1),
+        qa_result=json.dumps(qa_result, ensure_ascii=False),
+    )
+    db.add(photo_row)
+    db.commit()
+    db.refresh(photo_row)
+    return _photo_to_read(photo_row)
+
+
+@router.get("/field-jobs/{job_id}/applications/{application_id}/photos", response_model=list[ApplicationPhotoRead])
+def list_application_photos(
+    job_id: int,
+    application_id: int,
+    current_user: User = Depends(require_access_code),
+    db: Session = Depends(get_db),
+):
+    """본인(수강생)이거나 그 현장을 올린 기공만 볼 수 있다 — 기공은 여기서
+    '원격 검수'를 한다."""
+    application = db.get(JobApplication, application_id)
+    if not application or application.job_id != job_id:
+        raise HTTPException(status_code=404, detail="지원 내역을 찾을 수 없습니다.")
+    job = db.get(FieldJob, job_id)
+    is_owner_expert = current_user.role == UserRole.EXPERT and job is not None and job.expert_id == current_user.id
+    is_applicant = application.student_id == current_user.id
+    if not is_owner_expert and not is_applicant:
+        raise HTTPException(status_code=403, detail="본인 지원 건이거나 본인이 올린 공고만 볼 수 있습니다.")
+    rows = (
+        db.query(ApplicationPhoto)
+        .filter(ApplicationPhoto.job_application_id == application_id)
+        .order_by(ApplicationPhoto.uploaded_at.desc())
+        .all()
+    )
+    return [_photo_to_read(p) for p in rows]
+
+
+# ── 스마트 캘린더 ────────────────────────────────────────────────────
+@router.get("/calendar", response_model=list[CalendarJobRow])
+def calendar_jobs(month: str, current_user: User = Depends(require_access_code), db: Session = Depends(get_db)):
+    """month="YYYY-MM" — 내가 올린 공고 중 그 달에 해당하는 것만, 날짜별 투입
+    현황(지원자 상태별 집계)과 함께 돌려준다."""
+    if current_user.role != UserRole.EXPERT:
+        raise HTTPException(status_code=403, detail="전문가(EXPERT)만 조회할 수 있습니다.")
+    try:
+        year_str, month_str = month.split("-")
+        year, mon = int(year_str), int(month_str)
+        if not 1 <= mon <= 12:
+            raise ValueError
+    except ValueError:
+        raise HTTPException(status_code=422, detail="month는 YYYY-MM 형식이어야 합니다.")
+
+    start = datetime(year, mon, 1, tzinfo=timezone.utc)
+    end = datetime(year + (1 if mon == 12 else 0), 1 if mon == 12 else mon + 1, 1, tzinfo=timezone.utc)
+
+    jobs = (
+        db.query(FieldJob)
+        .filter(FieldJob.expert_id == current_user.id)
+        .filter(FieldJob.job_date >= start, FieldJob.job_date < end)
+        .all()
+    )
+    rows = []
+    for job in jobs:
+        summary = {"pending": 0, "approved": 0, "completed": 0, "rejected": 0}
+        for application in job.applications:
+            key = application.status.value.lower()
+            if key in summary:
+                summary[key] += 1
+        rows.append(
+            {
+                "id": job.id,
+                "location": job.location,
+                "job_date": job.job_date,
+                "pay": job.pay,
+                "status": job.status,
+                "audience": job.audience,
+                "deposit_confirmed": job.deposit_confirmed,
+                "applicants": summary,
+            }
+        )
+    return rows
+
+
+@router.post("/field-jobs/{job_id}/deposit", response_model=FieldJobRead)
+def set_deposit_confirmed(
+    job_id: int,
+    payload: DepositConfirmIn,
+    current_user: User = Depends(require_access_code),
+    db: Session = Depends(get_db),
+):
+    job = db.get(FieldJob, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="공고를 찾을 수 없습니다.")
+    if current_user.role != UserRole.EXPERT or job.expert_id != current_user.id:
+        raise HTTPException(status_code=403, detail="본인이 올린 공고만 처리할 수 있습니다.")
+    job.deposit_confirmed = payload.confirmed
+    db.commit()
+    db.refresh(job)
+    return _job_to_read(job)
+
+
+# ── 관리자 관제(Admin Oversight) ─────────────────────────────────────
+@router.get("/admin/overview", response_model=AdminOverviewResponse)
+def admin_overview(x_admin_token: str | None = Header(default=None), db: Session = Depends(get_db)):
+    """전체 매칭 현황 — 기공이 올린 공고(구인+헬프콜) 전부와, 공고마다 지원자
+    정보·매칭 상태를 한 번에 묶어 내려준다. 한 번 조회로 끝나도록 N+1 없이
+    관계(job.expert, job.applications, application.student)를 그대로 쓴다."""
+    _require_admin(x_admin_token)
+    jobs = db.query(FieldJob).order_by(FieldJob.job_date.desc()).all()
+    rows = []
+    for job in jobs:
+        applications = [
+            {
+                "id": a.id,
+                "applicant_name": a.student.name,
+                "applicant_role": a.student.role,
+                "status": a.status,
+                "applied_at": a.applied_at,
+            }
+            for a in job.applications
+        ]
+        rows.append(
+            {
+                "id": job.id,
+                "expert_name": job.expert.name,
+                "location": job.location,
+                "job_date": job.job_date,
+                "pay": job.pay,
+                "status": job.status,
+                "audience": job.audience,
+                "deposit_confirmed": job.deposit_confirmed,
+                "applications": applications,
+            }
+        )
+    return {"jobs": rows}
+
+
+@router.post("/admin/applications/{application_id}/cancel", response_model=JobApplicationRead)
+def admin_cancel_application(
+    application_id: int,
+    x_admin_token: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    """비정상적인 매칭을 관리자가 강제로 되돌리는 비상 조치 — 상태와 무관하게
+    (승인·완료 상태여도) REJECTED로 되돌린다. 그 승인 때문에 CLOSED됐던 공고는
+    다시 OPEN으로 돌리되, 같은 공고의 다른(이미 REJECTED된) 지원 건까지 자동으로
+    되살리진 않는다 — 그건 또 다른 혼란을 만들 수 있어 범위 밖으로 둔다."""
+    _require_admin(x_admin_token)
+    application = db.get(JobApplication, application_id)
+    if not application:
+        raise HTTPException(status_code=404, detail="지원 내역을 찾을 수 없습니다.")
+    application.status = ApplicationStatus.REJECTED
+    job = db.get(FieldJob, application.job_id)
+    if job and job.status == JobStatus.CLOSED:
+        job.status = JobStatus.OPEN
+    db.commit()
+    db.refresh(application)
+    return application

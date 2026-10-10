@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { Camera, ExternalLink, ImagePlus, Loader2, Sparkles, Trash2 } from "lucide-react";
+import { Camera, ExternalLink, ImagePlus, Loader2, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
 import AssetImage from "@/components/AssetImage";
 import CameraSheet from "@/components/CameraSheet";
 import CopyToNaverButton from "@/components/blog/CopyToNaverButton";
@@ -22,9 +22,20 @@ interface Props {
   /** 사장님 기기의 관리자 토큰. 없으면(학생 기기) 사진 추가·삭제·블로그 글 작성은
    *  서버가 거절하므로, 그 버튼들을 아예 숨기고 읽기 전용으로 보여준다. */
   ownerToken: string | null;
+  /** 디지털 보증서(/warranty) 링크는 포트폴리오 갤러리와 같은 기준(완료+서명)일
+   *  때만 보여준다 — 그 전엔 백엔드가 어차피 404를 돌려주므로 미리 숨겨 둔다. */
+  isDone: boolean;
+  hasSignature: boolean;
 }
 
-export default function SitePhotoGallery({ jobId, initialPhotos, initialBlogPost, ownerToken }: Props) {
+export default function SitePhotoGallery({
+  jobId,
+  initialPhotos,
+  initialBlogPost,
+  ownerToken,
+  isDone,
+  hasSignature,
+}: Props) {
   const isOwner = !!ownerToken;
   const [photos, setPhotos] = useState<WorkPhoto[]>(initialPhotos);
   const [blogPost, setBlogPost] = useState<BlogPost | undefined>(initialBlogPost);
@@ -298,6 +309,20 @@ export default function SitePhotoGallery({ jobId, initialPhotos, initialBlogPost
           >
             <Sparkles className="h-4 w-4" />
             AI 제안서 만들기(고객 발송용)
+          </Link>
+        </div>
+      )}
+
+      {/* 시공 완료+서명된 건만 보증서가 실제로 존재한다(warranty.py와 같은 기준) —
+          그 전엔 눌러도 404라 아예 숨겨 둔다. */}
+      {isOwner && isDone && hasSignature && (
+        <div className="border-t border-slate-100 pt-3">
+          <Link
+            href={`/warranty?job=${jobId}`}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 py-2.5 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
+          >
+            <ShieldCheck className="h-4 w-4" />
+            디지털 보증서 보기(고객 공유용)
           </Link>
         </div>
       )}

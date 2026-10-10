@@ -570,3 +570,29 @@
 - 결과: `/home/ubuntu/edendongsan/app_code.zip`, 약 195MB, 1825개 파일. `.env*`/`node_modules`/`venv`/`__pycache__` 전부 제외 확인함(민감정보 안 들어감).
 - **공개 링크로는 안 줬다** — 195MB는 Artifact 도구의 바이너리 파일 업로드 한도(15MB)를 훨씬 넘고, 설령 됐어도 사업 핵심 코드(가격 로직·AI 프롬프트 등)를 제3자 서비스 공개 링크로 올리는 건 권하지 않는다고 판단함. 대신 사용자가 평소 쓰던 SSH 키로 `scp ubuntu@54.66.15.115:/home/ubuntu/edendongsan/app_code.zip .`를 직접 받는 방법을 안내했다.
 - **미결**: 다운로드 끝나면 서버에 남은 `app_code.zip`을 지울지 사용자에게 물어봤는데 아직 답을 못 받음. 이 파일은 **git 추적 대상이 아니고 `.gitignore`에도 없다** — 다음 세션에서 혹시 `git add -A`류를 쓰게 되면 195MB짜리가 실수로 커밋될 위험이 있으니, 지우거나 최소한 `.gitignore`에 추가해 둘 것.
+  (→ 후속 세션에서 확인: `app_code.zip`/`core_code_summary.txt` 둘 다 이미 사라짐 — 미결 해소됨.)
+
+## 재단 계단식 로스·AR 가드·구조보존 인페인팅 연결, 프리미엄 제안서, 네이버 1초팩, 시공 갤러리, 레벨 생태계 추가 (2026-10-10)
+
+하루 동안 큰 기능 다섯 묶음을 연달아 브리핑→승인→구현→실테스트→배포까지 끝냄. 전부 커밋·배포 완료, 미결 없음. 서버 HEAD = `2043951`.
+
+### 1. 재단/AR/인페인팅 보강 (커밋 `d91652c`의 일부)
+- `cutNesting.ts`: 마지막 선반 자투리가 폭1200mm+·길이1000mm+면 `refundableLoss`(면적+7,000원/m 환불 예상액) 자동 감지. `page.tsx`에 있던 `backMarkLabel`/`dimWithArrow`를 이쪽으로 통합(중복 제거), `NestingPiece`에 `roomName`/`grainDirection` 필드 추가.
+- `PanelItem.is_ar_measured`/`is_manually_confirmed` + `calculate_estimate()` 진입 가드 — AR 실측인데 수동 확인 안 된 값이 있으면 `ValueError`로 견적 확정을 막음(기존 `pipeline.py`의 최종 예외 경계에 자동으로 잡혀 사장님 화면에 뜸).
+- **중요 발견**: `InpaintRequest`/`ManualRegion.preserve_geometry`를 연결하다가, 기존 `_reinject_structure`(Canny 구조 재주입 — "이전 세션에 적용 완료"로 기록돼 있던 바로 그 로직)가 **surface_change 경로(`_run_edit`, 가장 흔한 AI 렌더링 경로)에서 실제로는 한 번도 실행되지 않는 죽은 코드였음**을 발견하고 고쳐서 실제로 연결함. 지금부턴 모든 표면변경 AI 렌더링에 구조 재주입이 진짜로 적용됨(기본값 True) — 결과물이 이전보다 달라질 수 있음, 실사용 몇 건 지켜볼 것.
+
+### 2. AI 제안서 풀패키지 + 네이버 1초팩 + 시공 갤러리 (커밋 `d91652c`의 일부)
+- `Proposal`에 `before_image_url`/`estimate`/`site_conditions` 스냅샷 필드 추가 — `job_id` 연결 생성이면 비포/애프터 슬라이더·ROI 그래프·정밀 견적서·바탕면 점검 리포트까지 풀로 보여줌. 독립 생성(job_id 없음)은 기존처럼 간단한 버전 유지.
+- `blog_writer.py`에 해시태그 생성 추가. `CopyToNaverButton`이 `text/html`+`text/plain` 동시 클립보드 복사 — 네이버 Open API는 OAuth 심사 등 제약이 커서 반자동(복사→직접 붙여넣기)으로 우회.
+- `/portfolio`(신규, 공개) — `status=done & signature 있음`인 건만 자동 노출. 고객명·금액 노출 없음, 사장님 액션 불필요.
+
+### 3. 레벨 기반 생태계 (커밋 `d91652c` 백엔드 + `2043951` 프론트엔드)
+수강생 현장매칭 시스템(`models.py`)을 지명호출·동료추천·커뮤니티가 있는 생태계로 확장.
+- `BadgeEndorsement`(N회 추천 누적시 자동 뱃지 발급, UNIQUE 제약으로 자기추천/중복추천 차단) · `JobReview`(현장 COMPLETED 건당 1회, 평점×10 = XP) · `ScoutRequest`(지명 호출) · `CommunityPost`/`Comment` · `FieldJob.audience`(기공↔기공 헬프콜) 신설.
+- 레벨은 컬럼 저장 안 하고 매번 계산(`services/leveling.py`) — 뱃지 tier 가중합 기준, **공식 뱃지(`is_official`) 없이는 Lv.2 상한**(어뷰징 방지 핵심).
+- **배포 중 실제로 겪은 문제**: `Base.metadata.create_all()`은 기존 테이블엔 새 컬럼을 안 넣어줘서, 테스트 중 운영 `recruiting.db`가 일시적으로 깨졌음(다행히 빈 DB라 데이터 손실 없음). `database.py`에 `migrate_recruiting_db()`(멱등성 있는 수동 ALTER TABLE)를 추가해 서버 시작 시 자동 실행되게 고쳤고, 실제 배포에서도 정상 동작 확인함.
+- 프론트: `/recruiting`(레벨 배지·지명호출 수락/거절·헬프콜 라디오·승인→완료처리→별점리뷰 흐름), `/recruiting/students`(기공 전용 수강생 디렉터리+지명호출), `/recruiting/community`+`/recruiting/community/post?id=`(노하우/자재나눔/Q&A), `/admin/recruiting`(뱃지 생성에 tier·공식인증·추천N회 입력 추가).
+
+### 작업 습관 메모
+- **테스트는 반드시 CWD를 격리할 것, `STORAGE_DIR` 환경변수만으론 부족함** — `quotes/jobs/pipeline/proposals`뿐 아니라 `recruiting.db`(SQLAlchemy)도 포함: `get_settings().storage_dir`을 쓰긴 하지만, 기본값이 "storage"(상대경로)라 프로세스의 실제 작업 디렉터리가 격리돼 있어야 진짜로 분리된다. 이번 세션 중 실수로 운영 `recruiting.db`에 스키마 불일치를 일으켰다가(위 2번) 고친 사례, 운영 `backend/storage/`에 더미 파일/레코드가 샌 사례(지워서 정리)가 여러 번 있었음 — 테스트 시작 전에 `cd /tmp/xxx && PYTHONPATH=.../backend uvicorn ...` 패턴을 먼저 쓸 것.
+- 큰 기능을 "브리핑 먼저 → 승인 → 구현 → 실브라우저테스트 → 커밋/배포" 패턴으로 하루에 5개 묶음 연달아 처리하는 흐름이 이번에도 잘 맞았음. 사용자가 두 스펙을 한 메시지에 같이 보내면(예: 레벨링+어뷰징방지) 하나로 묶어서 브리핑하는 게 효율적이었음.

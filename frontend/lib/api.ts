@@ -1008,6 +1008,7 @@ export interface FieldJob {
   pay: number;
   status: JobStatusValue;
   audience: JobAudience;
+  deposit_confirmed: boolean;
 }
 export interface JobApplication {
   id: number;
@@ -1179,6 +1180,78 @@ export const recruitingCreateCommunityComment = (code: string, postId: number, b
     body: JSON.stringify({ body }),
   });
 
+/* ---- AI 마감 검수(QA 스캔) ---- */
+export interface QaResult {
+  verdict?: string;
+  defects?: { type: string; description: string }[];
+  notes?: string;
+}
+export interface ApplicationPhoto {
+  id: number;
+  job_application_id: number;
+  photo_url: string;
+  qa_result: QaResult;
+  uploaded_at: string;
+}
+export async function recruitingUploadApplicationPhoto(
+  code: string,
+  jobId: number,
+  applicationId: number,
+  file: File,
+): Promise<ApplicationPhoto> {
+  const form = new FormData();
+  form.append("photo", file);
+  const res = await apiFetch(`${API_BASE}/api/recruiting/field-jobs/${jobId}/applications/${applicationId}/photos`, {
+    method: "POST",
+    body: form,
+    headers: { "X-Access-Code": code },
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "사진을 올리지 못했습니다."));
+  return res.json();
+}
+export const recruitingApplicationPhotos = (code: string, jobId: number, applicationId: number) =>
+  recruitingFetch<ApplicationPhoto[]>(`/field-jobs/${jobId}/applications/${applicationId}/photos`, code);
+
+/* ---- 스마트 캘린더 ---- */
+export interface CalendarApplicantSummary {
+  pending: number;
+  approved: number;
+  completed: number;
+  rejected: number;
+}
+export interface CalendarJobRow {
+  id: number;
+  location: string;
+  job_date: string;
+  pay: number;
+  status: JobStatusValue;
+  audience: JobAudience;
+  deposit_confirmed: boolean;
+  applicants: CalendarApplicantSummary;
+}
+export const recruitingCalendar = (code: string, month: string) =>
+  recruitingFetch<CalendarJobRow[]>(`/calendar?month=${encodeURIComponent(month)}`, code);
+export const recruitingSetDepositConfirmed = (code: string, jobId: number, confirmed: boolean) =>
+  recruitingFetch<FieldJob>(`/field-jobs/${jobId}/deposit`, code, {
+    method: "POST",
+    body: JSON.stringify({ confirmed }),
+  });
+
+/* ---- 디지털 보증서(공개, 고객 공유용) ---- */
+export interface Warranty {
+  job_id: string;
+  item_names: string[];
+  completed_at: string;
+  warranty_expires_at: string;
+  after_image_url: string | null;
+  maintenance_tips: string[];
+}
+export async function getWarranty(jobId: string): Promise<Warranty> {
+  const res = await apiFetch(`${API_BASE}/api/warranty/${jobId}`);
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "보증서를 찾을 수 없습니다."));
+  return res.json();
+}
+
 /* 관리자 화면 전용(/admin/recruiting): 가입 승인/거절, 뱃지·계정 직접 생성. */
 async function adminRecruitingFetch<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
   const res = await apiFetch(`${API_BASE}/api/recruiting${path}`, {
@@ -1209,3 +1282,27 @@ export const adminRecruitingAwardBadge = (token: string, userId: number, badgeId
   adminRecruitingFetch<{ user_id: number; badge_id: number }>(`/admin/users/${userId}/badges/${badgeId}`, token, {
     method: "POST",
   });
+
+/* ---- 매칭 관제소(Admin Oversight) ---- */
+export interface AdminApplicationRow {
+  id: number;
+  applicant_name: string;
+  applicant_role: RecruitingRole | "ADMIN";
+  status: ApplicationStatusValue;
+  applied_at: string;
+}
+export interface AdminFieldJobRow {
+  id: number;
+  expert_name: string;
+  location: string;
+  job_date: string;
+  pay: number;
+  status: JobStatusValue;
+  audience: JobAudience;
+  deposit_confirmed: boolean;
+  applications: AdminApplicationRow[];
+}
+export const adminRecruitingOverview = (token: string) =>
+  adminRecruitingFetch<{ jobs: AdminFieldJobRow[] }>("/admin/overview", token);
+export const adminRecruitingCancelApplication = (token: string, applicationId: number) =>
+  adminRecruitingFetch<JobApplication>(`/admin/applications/${applicationId}/cancel`, token, { method: "POST" });

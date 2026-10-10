@@ -46,6 +46,7 @@ _RECRUITING_COLUMN_MIGRATIONS: list[tuple[str, str, str]] = [
     ("skill_badges", "is_official", "INTEGER DEFAULT 0"),
     ("skill_badges", "requires_endorsements", "INTEGER DEFAULT 0"),
     ("field_jobs", "audience", "VARCHAR DEFAULT 'STUDENT'"),
+    ("field_jobs", "deposit_confirmed", "INTEGER DEFAULT 0"),
 ]
 
 

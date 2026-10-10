@@ -163,6 +163,11 @@ class FieldJob(Base):
     # 동급 기공들에게 토스하는 긴급 헬프콜 — 새 테이블을 만들지 않고 이 필드 하나로
     # 기존 공고·지원·승인 로직을 그대로 재사용한다(지원자 role 검증만 이 값 기준으로 바뀐다).
     audience: Mapped[JobAudience] = mapped_column(Enum(JobAudience), default=JobAudience.STUDENT)
+    # 캘린더 대시보드용 — 기공이 직접 체크하는 자체 플래그다. 고객 견적(quotes
+    # 시스템)의 실제 DepositInfo와는 연결돼 있지 않다(두 저장소를 잇는 건 범위 밖 —
+    # 포트폴리오 갤러리 때와 같은 결정). "이 현장 건 계약금 받았음"을 기공 스스로
+    # 표시해 두는 용도.
+    deposit_confirmed: Mapped[bool] = mapped_column(default=False)
 
     expert: Mapped["User"] = relationship(back_populates="posted_jobs", foreign_keys=[expert_id])
     required_badge: Mapped["SkillBadge"] = relationship()
@@ -183,6 +188,7 @@ class JobApplication(Base):
     job: Mapped["FieldJob"] = relationship(back_populates="applications")
     student: Mapped["User"] = relationship(back_populates="applications", foreign_keys=[student_id])
     review: Mapped["JobReview"] = relationship(back_populates="application", uselist=False, cascade="all, delete-orphan")
+    photos: Mapped[list["ApplicationPhoto"]] = relationship(back_populates="application", cascade="all, delete-orphan")
 
 
 class BadgeEndorsement(Base):
@@ -274,3 +280,22 @@ class CommunityComment(Base):
 
     post: Mapped["CommunityPost"] = relationship(back_populates="comments")
     author: Mapped["User"] = relationship()
+
+
+class ApplicationPhoto(Base):
+    """수강생이 승인된 현장에서 올리는 마감 사진 — AI 1차 스캔 결과(qa_result,
+    services/qa_scan.py)와 함께 저장해 기공이 원격으로 검수할 수 있게 한다.
+    고객에게 보여주는 보증서(quotes 시스템의 WorkPhoto)와는 별개의, 현장 교육·
+    원격 검수 전용 시스템이다."""
+
+    __tablename__ = "application_photos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_application_id: Mapped[int] = mapped_column(ForeignKey("job_applications.id"), nullable=False)
+    photo_url: Mapped[str] = mapped_column(String, nullable=False)
+    # Gemini Vision 판정 결과를 JSON 문자열 그대로 저장(qa_scan.py의 scan_finish_quality
+    # 반환값). 참고용 1차 판정이지 하자 보수 책임을 가르는 공식 판정이 아니다.
+    qa_result: Mapped[str] = mapped_column(Text, default="")
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    application: Mapped["JobApplication"] = relationship(back_populates="photos")

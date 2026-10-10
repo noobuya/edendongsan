@@ -42,7 +42,11 @@ export default function CommunityListPage() {
     return true;
   });
 
-  const [code] = useState(readCode);
+  // 빈 문자열로 시작해 서버/클라이언트 첫 렌더가 똑같게 두고, localStorage 읽기는
+  // useEffect에서만 한다 — useState 초기화 함수로 바로 읽으면 SSR(빈 값)과 클라이언트
+  // (실제 값)의 첫 렌더 결과가 달라져 하이드레이션 에러가 난다(실측으로 발견).
+  const [code, setCode] = useState("");
+  useEffect(() => setCode(readCode()), []);
   const [posts, setPosts] = useState<CommunityPost[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [writing, setWriting] = useState(false);
@@ -56,6 +60,7 @@ export default function CommunityListPage() {
       setError("먼저 /recruiting에서 입장해 주세요.");
       return;
     }
+    setError(null);
     recruitingCommunityPosts(code)
       .then(setPosts)
       .catch((err) => setError(err instanceof Error ? err.message : "불러오지 못했습니다."));

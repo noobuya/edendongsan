@@ -140,3 +140,34 @@ body {
     animation: none;
   }
 }
+
+/* react-calendar(/recruiting/calendar) 기본 스타일을 앱 디자인과 맞춘다 —
+   기본값은 테두리·폰트가 이질적이라 카드 느낌으로 덮어쓴다. */
+.eden-calendar .react-calendar {
+  width: 100%;
+  border: none;
+  font-family: inherit;
+}
+.eden-calendar .react-calendar__navigation button {
+  font-weight: 700;
+  color: #1e293b;
+}
+.eden-calendar .react-calendar__tile {
+  border-radius: 10px;
+  padding: 0.6em 0.3em;
+}
+.eden-calendar .react-calendar__tile--now {
+  background: #eef2ff;
+}
+.eden-calendar .react-calendar__tile--active {
+  background: #4f46e5 !important;
+  color: #fff;
+}
+.eden-calendar .react-calendar__tile:enabled:hover,
+.eden-calendar .react-calendar__tile:enabled:focus {
+  background: #e0e7ff;
+}
+.eden-calendar .react-calendar__tile--active:enabled:hover,
+.eden-calendar .react-calendar__tile--active:enabled:focus {
+  background: #4338ca !important;
+}

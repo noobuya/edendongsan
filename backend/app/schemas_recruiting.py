@@ -150,6 +150,7 @@ class FieldJobRead(BaseModel):
     pay: int
     status: JobStatus
     audience: JobAudience
+    deposit_confirmed: bool
 
 
 class JobApplicationRead(BaseModel):
@@ -290,3 +291,65 @@ class CommunityCommentRead(BaseModel):
 
 class CommunityPostDetailRead(CommunityPostRead):
     comments: list[CommunityCommentRead]
+
+
+# ── AI 마감 검수 ─────────────────────────────────────────────────────
+class ApplicationPhotoRead(BaseModel):
+    id: int
+    job_application_id: int
+    photo_url: str
+    # qa_scan.py가 돌려주는 {"verdict", "defects", "notes"} 구조 그대로(자유 형식 dict
+    # — Gemini 응답 JSON 모양이 모델 버전에 따라 미세하게 흔들릴 수 있어 엄격한
+    # 스키마로 묶지 않는다).
+    qa_result: dict
+    uploaded_at: UTCDateTime
+
+
+# ── 스마트 캘린더 ────────────────────────────────────────────────────
+class CalendarApplicantSummary(BaseModel):
+    pending: int = 0
+    approved: int = 0
+    completed: int = 0
+    rejected: int = 0
+
+
+class CalendarJobRow(BaseModel):
+    id: int
+    location: str
+    job_date: UTCDateTime
+    pay: int
+    status: JobStatus
+    audience: JobAudience
+    # 고객 견적의 실제 DepositInfo가 아니라, 기공이 직접 토글하는 자체 체크
+    # 플래그다(models.py의 FieldJob.deposit_confirmed 설계 메모 참고).
+    deposit_confirmed: bool
+    applicants: CalendarApplicantSummary
+
+
+class DepositConfirmIn(BaseModel):
+    confirmed: bool
+
+
+# ── 관리자 관제(Admin Oversight) ─────────────────────────────────────
+class AdminApplicationRow(BaseModel):
+    id: int
+    applicant_name: str
+    applicant_role: UserRole
+    status: ApplicationStatus
+    applied_at: UTCDateTime
+
+
+class AdminFieldJobRow(BaseModel):
+    id: int
+    expert_name: str
+    location: str
+    job_date: UTCDateTime
+    pay: int
+    status: JobStatus
+    audience: JobAudience
+    deposit_confirmed: bool
+    applications: list[AdminApplicationRow]
+
+
+class AdminOverviewResponse(BaseModel):
+    jobs: list[AdminFieldJobRow]

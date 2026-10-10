@@ -396,6 +396,8 @@ export default function SimulationPanel({
           initialPhotos={liveJob.work_photos}
           initialBlogPost={liveJob.blog_post}
           ownerToken={ownerToken}
+          isDone={liveJob.status === "done"}
+          hasSignature={!!liveJob.signature}
         />
       </div>
     </div>
