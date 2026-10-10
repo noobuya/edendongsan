@@ -57,6 +57,9 @@ export default function AdminRecruitingPage() {
   const [codeDraft, setCodeDraft] = useState("");
   const [newBadgeName, setNewBadgeName] = useState("");
   const [newBadgeDesc, setNewBadgeDesc] = useState("");
+  const [newBadgeTier, setNewBadgeTier] = useState("1");
+  const [newBadgeOfficial, setNewBadgeOfficial] = useState(false);
+  const [newBadgeEndorsements, setNewBadgeEndorsements] = useState("0");
   // 지급할 뱃지 선택을 유저별로 기억(선택 전엔 빈 값).
   const [awardBadgeId, setAwardBadgeId] = useState<Record<number, number>>({});
 
@@ -134,10 +137,19 @@ export default function AdminRecruitingPage() {
     setBusy(true);
     setError(null);
     try {
-      const badge = await adminRecruitingCreateBadge(token, name, newBadgeDesc.trim());
+      const badge = await adminRecruitingCreateBadge(token, {
+        badge_name: name,
+        description: newBadgeDesc.trim(),
+        tier: Number(newBadgeTier) || 1,
+        is_official: newBadgeOfficial,
+        requires_endorsements: Number(newBadgeEndorsements) || 0,
+      });
       setBadges((prev) => [...prev, badge]);
       setNewBadgeName("");
       setNewBadgeDesc("");
+      setNewBadgeTier("1");
+      setNewBadgeOfficial(false);
+      setNewBadgeEndorsements("0");
     } catch (e) {
       setError(e instanceof Error ? e.message : "뱃지를 만들지 못했습니다.");
     } finally {
@@ -225,6 +237,33 @@ export default function AdminRecruitingPage() {
         </h2>
         <input className={input} value={newBadgeName} onChange={(e) => setNewBadgeName(e.target.value)} placeholder="뱃지 이름 (예: 평면 마감 마스터)" />
         <input className={input} value={newBadgeDesc} onChange={(e) => setNewBadgeDesc(e.target.value)} placeholder="설명 (선택)" />
+        <div className="flex gap-2">
+          <label className="flex-1 text-[12.5px] text-slate-500">
+            난이도(tier 1~5)
+            <input
+              type="number"
+              min={1}
+              max={5}
+              className={`${input} mt-1`}
+              value={newBadgeTier}
+              onChange={(e) => setNewBadgeTier(e.target.value)}
+            />
+          </label>
+          <label className="flex-1 text-[12.5px] text-slate-500">
+            추천 N회 필요(0=관리자 전용)
+            <input
+              type="number"
+              min={0}
+              className={`${input} mt-1`}
+              value={newBadgeEndorsements}
+              onChange={(e) => setNewBadgeEndorsements(e.target.value)}
+            />
+          </label>
+        </div>
+        <label className="flex items-center gap-2 text-[13.5px] text-slate-600">
+          <input type="checkbox" checked={newBadgeOfficial} onChange={(e) => setNewBadgeOfficial(e.target.checked)} />
+          공식 인증 뱃지(Lv.3 이상 승급 상한 해제용)
+        </label>
         <button
           disabled={busy || !newBadgeName.trim()}
           onClick={createBadge}
@@ -237,6 +276,8 @@ export default function AdminRecruitingPage() {
             {badges.map((b) => (
               <span key={b.id} className="rounded-full bg-indigo-50 px-3 py-1.5 text-[13px] font-semibold text-indigo-700">
                 {b.badge_name}
+                {b.is_official && " ⭐"}
+                <span className="ml-1 text-indigo-400">T{b.tier}</span>
               </span>
             ))}
           </div>

@@ -2,26 +2,47 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowLeft, Briefcase, CheckCircle2, Loader2, LogOut, MapPin, Sparkles, Wallet, XCircle } from "lucide-react";
+import {
+  ArrowLeft,
+  Award,
+  Briefcase,
+  CheckCircle2,
+  Loader2,
+  LogOut,
+  MapPin,
+  MessageSquare,
+  Sparkles,
+  Star,
+  UserSearch,
+  Wallet,
+  XCircle,
+} from "lucide-react";
+import LevelBadge from "@/components/recruiting/LevelBadge";
 import {
   recruitingApplicants,
   recruitingApply,
   recruitingBadges,
+  recruitingCompleteApplication,
   recruitingCreateJob,
   recruitingDecide,
+  recruitingDecideScoutRequest,
   recruitingMe,
   recruitingMyApplications,
   recruitingMyBadges,
   recruitingMyJobs,
+  recruitingMyScoutRequests,
   recruitingOpenJobs,
+  recruitingReviewApplication,
   recruitingSignup,
   recruitingSignupStatus,
   type Applicant,
   type FieldJob,
+  type JobAudience,
   type MyApplication,
   type MyBadge,
   type RecruitingRole,
   type RecruitingUser,
+  type ScoutRequest,
   type SkillBadge,
 } from "@/lib/api";
 
@@ -39,8 +60,14 @@ const APP_STATUS_TONE: Record<MyApplication["status"], string> = {
   PENDING: "bg-slate-100 text-slate-600",
   APPROVED: "bg-emerald-50 text-emerald-700",
   REJECTED: "bg-rose-50 text-rose-700",
+  COMPLETED: "bg-indigo-50 text-indigo-700",
 };
-const APP_STATUS_LABEL: Record<MyApplication["status"], string> = { PENDING: "대기중", APPROVED: "승인됨", REJECTED: "거절됨" };
+const APP_STATUS_LABEL: Record<MyApplication["status"], string> = {
+  PENDING: "대기중",
+  APPROVED: "승인됨",
+  REJECTED: "거절됨",
+  COMPLETED: "현장 완료",
+};
 
 function readSaved(): string {
   try {
@@ -96,6 +123,7 @@ export default function RecruitingPage() {
   const [myBadges, setMyBadges] = useState<MyBadge[]>([]);
   const [openJobs, setOpenJobs] = useState<FieldJob[]>([]);
   const [myApplications, setMyApplications] = useState<MyApplication[]>([]);
+  const [myScoutRequests, setMyScoutRequests] = useState<ScoutRequest[]>([]);
 
   // 전문가(EXPERT) 화면 데이터
   const [badges, setBadges] = useState<SkillBadge[]>([]);
@@ -106,6 +134,14 @@ export default function RecruitingPage() {
   const [newDate, setNewDate] = useState("");
   const [newPay, setNewPay] = useState("");
   const [newBadgeId, setNewBadgeId] = useState<number | "">("");
+  const [newAudience, setNewAudience] = useState<JobAudience>("STUDENT");
+  // 리뷰 작성 폼(지원 건별) — 완료 처리된 지원에만 연다. 제출 성공(또는 "이미 리뷰함"
+  // 409)하면 reviewedApplicationIds에 넣어 폼을 닫는다.
+  const [openReviewFor, setOpenReviewFor] = useState<number | null>(null);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewBadgeId, setReviewBadgeId] = useState<number | "">("");
+  const [reviewComment, setReviewComment] = useState("");
+  const [reviewedApplicationIds, setReviewedApplicationIds] = useState<Set<number>>(new Set());
 
   const enter = useCallback(async (c: string) => {
     setBusy(true);
@@ -210,6 +246,7 @@ export default function RecruitingPage() {
       void recruitingMyBadges(code).then(setMyBadges).catch(() => {});
       void recruitingOpenJobs(code).then(setOpenJobs).catch(() => {});
       void recruitingMyApplications(code).then(setMyApplications).catch(() => {});
+      void recruitingMyScoutRequests(code).then(setMyScoutRequests).catch(() => {});
     } else if (me.role === "EXPERT") {
       void recruitingBadges(code).then(setBadges).catch(() => {});
       void recruitingMyJobs(code).then(setMyJobs).catch(() => {});
@@ -220,6 +257,19 @@ export default function RecruitingPage() {
     if (!code) return;
     setOpenJobs(await recruitingOpenJobs(code));
     setMyApplications(await recruitingMyApplications(code));
+  }
+
+  async function respondToScout(requestId: number, status: "ACCEPTED" | "DECLINED") {
+    setBusy(true);
+    setError(null);
+    try {
+      await recruitingDecideScoutRequest(code, requestId, status);
+      setMyScoutRequests(await recruitingMyScoutRequests(code));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "응답하지 못했습니다.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function apply(jobId: number) {
@@ -245,14 +295,62 @@ export default function RecruitingPage() {
         job_date: new Date(newDate).toISOString(),
         required_badge_id: Number(newBadgeId),
         pay: Number(newPay),
+        audience: newAudience,
       });
       setNewLocation("");
       setNewDate("");
       setNewPay("");
       setNewBadgeId("");
+      setNewAudience("STUDENT");
       setMyJobs(await recruitingMyJobs(code));
     } catch (err) {
       setError(err instanceof Error ? err.message : "등록하지 못했습니다.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function completeApplication(jobId: number, applicationId: number) {
+    setBusy(true);
+    setError(null);
+    try {
+      await recruitingCompleteApplication(code, jobId, applicationId);
+      const list = await recruitingApplicants(code, jobId);
+      setApplicantsByJob((prev) => ({ ...prev, [jobId]: list }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "완료 처리하지 못했습니다.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openReview(applicationId: number) {
+    setOpenReviewFor(openReviewFor === applicationId ? null : applicationId);
+    setReviewRating(5);
+    setReviewBadgeId("");
+    setReviewComment("");
+  }
+
+  async function submitReview(jobId: number, applicationId: number) {
+    setBusy(true);
+    setError(null);
+    try {
+      await recruitingReviewApplication(code, jobId, applicationId, {
+        rating: reviewRating,
+        recommended_badge_id: reviewBadgeId === "" ? null : Number(reviewBadgeId),
+        comment: reviewComment.trim(),
+      });
+      setReviewedApplicationIds((prev) => new Set(prev).add(applicationId));
+      setOpenReviewFor(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "리뷰를 남기지 못했습니다.";
+      // 이전 세션 등에서 이미 남긴 리뷰면 서버가 409로 막는다 — 폼을 다시 열어 둘
+      // 이유가 없으니 똑같이 "리뷰 완료"로 취급해 닫는다.
+      if (message.includes("이미 리뷰")) {
+        setReviewedApplicationIds((prev) => new Set(prev).add(applicationId));
+        setOpenReviewFor(null);
+      }
+      setError(message);
     } finally {
       setBusy(false);
     }
@@ -391,13 +489,63 @@ export default function RecruitingPage() {
           <>
             <section className="relative overflow-hidden rounded-3xl bg-indigo-600 p-6 text-white shadow-lg">
               <p className="text-[13px] font-medium text-indigo-100">{me.role === "EXPERT" ? "전문가" : "수강생"} 작업실</p>
-              <h2 className="mt-1 text-[22px] font-bold tracking-tight">{me.name}님, 안녕하세요</h2>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <h2 className="text-[22px] font-bold tracking-tight">{me.name}님, 안녕하세요</h2>
+                <LevelBadge level={me.level} badgeCount={me.badge_count} className="!bg-white/15 !text-white" />
+              </div>
             </section>
+
+            <div className="flex gap-2">
+              {me.role === "EXPERT" && (
+                <Link
+                  href="/recruiting/students"
+                  className="flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-white text-[13.5px] font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200/70"
+                >
+                  <UserSearch className="h-4 w-4" /> 수강생 지명 호출
+                </Link>
+              )}
+              <Link
+                href="/recruiting/community"
+                className="flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-white text-[13.5px] font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200/70"
+              >
+                <MessageSquare className="h-4 w-4" /> 커뮤니티
+              </Link>
+            </div>
 
             {error && <p className="px-1 text-[14px] font-semibold text-rose-700">{error}</p>}
 
             {me.role === "STUDENT" && (
               <>
+                {myScoutRequests.filter((r) => r.status === "PENDING").length > 0 && (
+                  <section className="space-y-2">
+                    <h2 className="px-1 text-[13px] font-bold uppercase tracking-wider text-slate-500">받은 지명 호출</h2>
+                    {myScoutRequests
+                      .filter((r) => r.status === "PENDING")
+                      .map((r) => (
+                        <div key={r.id} className={CARD}>
+                          <p className="text-[14px] font-bold text-slate-900">{r.scout_name}님이 콕 집어 요청했어요</p>
+                          {r.message && <p className="mt-1 text-[13.5px] leading-relaxed text-slate-600 break-keep">{r.message}</p>}
+                          <div className="mt-3 flex gap-2">
+                            <button
+                              disabled={busy}
+                              onClick={() => respondToScout(r.id, "ACCEPTED")}
+                              className="flex h-10 flex-1 items-center justify-center gap-1 rounded-lg bg-emerald-600 text-[13.5px] font-semibold text-white disabled:opacity-40"
+                            >
+                              <CheckCircle2 className="h-4 w-4" /> 수락
+                            </button>
+                            <button
+                              disabled={busy}
+                              onClick={() => respondToScout(r.id, "DECLINED")}
+                              className="flex h-10 flex-1 items-center justify-center gap-1 rounded-lg bg-slate-100 text-[13.5px] font-semibold text-slate-600 disabled:opacity-40"
+                            >
+                              <XCircle className="h-4 w-4" /> 거절
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                  </section>
+                )}
+
                 <section className="space-y-2">
                   <h2 className="px-1 text-[13px] font-bold uppercase tracking-wider text-slate-500">내 뱃지</h2>
                   {myBadges.length === 0 ? (
@@ -479,6 +627,20 @@ export default function RecruitingPage() {
                   <h2 className="flex items-center gap-2 text-[15px] font-bold text-slate-800">
                     <Briefcase className="h-4 w-4" /> 새 현장 공고 올리기
                   </h2>
+                  <div className="flex gap-2">
+                    {(["STUDENT", "EXPERT"] as const).map((a) => (
+                      <button
+                        key={a}
+                        type="button"
+                        onClick={() => setNewAudience(a)}
+                        className={`h-10 flex-1 rounded-xl text-[13.5px] font-semibold transition ${
+                          newAudience === a ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"
+                        }`}
+                      >
+                        {a === "STUDENT" ? "수강생 대상 구인" : "동급 기공 헬프콜"}
+                      </button>
+                    ))}
+                  </div>
                   <input className={INPUT} value={newLocation} onChange={(e) => setNewLocation(e.target.value)} placeholder="시공 현장 주소" />
                   <input type="datetime-local" className={INPUT} value={newDate} onChange={(e) => setNewDate(e.target.value)} />
                   <input
@@ -543,36 +705,101 @@ export default function RecruitingPage() {
                             {(applicantsByJob[job.id] ?? []).length === 0 ? (
                               <p className="text-[13px] text-slate-500">아직 지원자가 없어요.</p>
                             ) : (
-                              (applicantsByJob[job.id] ?? []).map((a) => (
-                                <div key={a.id} className="flex items-center justify-between gap-2 rounded-xl bg-slate-50 p-3">
-                                  <div>
-                                    <p className="text-[14px] font-semibold text-slate-900">{a.student_name}</p>
-                                    <p className="text-[12.5px] text-slate-500">{a.student_phone}</p>
-                                  </div>
-                                  {a.status === "PENDING" ? (
-                                    <div className="flex gap-1.5">
-                                      <button
-                                        disabled={busy}
-                                        onClick={() => decide(job.id, a.id, "APPROVED")}
-                                        className="flex h-9 items-center gap-1 rounded-lg bg-emerald-600 px-3 text-[13px] font-semibold text-white disabled:opacity-40"
-                                      >
-                                        <CheckCircle2 className="h-3.5 w-3.5" /> 승인
-                                      </button>
-                                      <button
-                                        disabled={busy}
-                                        onClick={() => decide(job.id, a.id, "REJECTED")}
-                                        className="flex h-9 items-center gap-1 rounded-lg bg-rose-50 px-3 text-[13px] font-semibold text-rose-700 disabled:opacity-40"
-                                      >
-                                        <XCircle className="h-3.5 w-3.5" /> 거절
-                                      </button>
+                              (applicantsByJob[job.id] ?? []).map((a) => {
+                                const reviewed = reviewedApplicationIds.has(a.id);
+                                return (
+                                  <div key={a.id} className="rounded-xl bg-slate-50 p-3">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="min-w-0">
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                          <p className="text-[14px] font-semibold text-slate-900">{a.student_name}</p>
+                                          <LevelBadge level={a.student_level} badgeCount={a.student_badge_count} />
+                                        </div>
+                                        <p className="text-[12.5px] text-slate-500">{a.student_phone}</p>
+                                      </div>
+                                      {a.status === "PENDING" ? (
+                                        <div className="flex shrink-0 gap-1.5">
+                                          <button
+                                            disabled={busy}
+                                            onClick={() => decide(job.id, a.id, "APPROVED")}
+                                            className="flex h-9 items-center gap-1 rounded-lg bg-emerald-600 px-3 text-[13px] font-semibold text-white disabled:opacity-40"
+                                          >
+                                            <CheckCircle2 className="h-3.5 w-3.5" /> 승인
+                                          </button>
+                                          <button
+                                            disabled={busy}
+                                            onClick={() => decide(job.id, a.id, "REJECTED")}
+                                            className="flex h-9 items-center gap-1 rounded-lg bg-rose-50 px-3 text-[13px] font-semibold text-rose-700 disabled:opacity-40"
+                                          >
+                                            <XCircle className="h-3.5 w-3.5" /> 거절
+                                          </button>
+                                        </div>
+                                      ) : a.status === "APPROVED" ? (
+                                        <button
+                                          disabled={busy}
+                                          onClick={() => completeApplication(job.id, a.id)}
+                                          className="flex h-9 shrink-0 items-center gap-1 rounded-lg bg-indigo-600 px-3 text-[13px] font-semibold text-white disabled:opacity-40"
+                                        >
+                                          현장 완료 처리
+                                        </button>
+                                      ) : a.status === "COMPLETED" && !reviewed ? (
+                                        <button
+                                          disabled={busy}
+                                          onClick={() => openReview(a.id)}
+                                          className="flex h-9 shrink-0 items-center gap-1 rounded-lg bg-amber-500 px-3 text-[13px] font-semibold text-white disabled:opacity-40"
+                                        >
+                                          <Star className="h-3.5 w-3.5" /> {openReviewFor === a.id ? "접기" : "리뷰 남기기"}
+                                        </button>
+                                      ) : (
+                                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold ${APP_STATUS_TONE[a.status]}`}>
+                                          {reviewed ? "리뷰 완료" : APP_STATUS_LABEL[a.status]}
+                                        </span>
+                                      )}
                                     </div>
-                                  ) : (
-                                    <span className={`rounded-full px-2.5 py-1 text-[12px] font-semibold ${APP_STATUS_TONE[a.status]}`}>
-                                      {APP_STATUS_LABEL[a.status]}
-                                    </span>
-                                  )}
-                                </div>
-                              ))
+
+                                    {openReviewFor === a.id && (
+                                      <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
+                                        <div className="flex items-center gap-1">
+                                          {[1, 2, 3, 4, 5].map((n) => (
+                                            <button key={n} type="button" onClick={() => setReviewRating(n)}>
+                                              <Star
+                                                className={`h-6 w-6 ${n <= reviewRating ? "fill-amber-400 text-amber-400" : "text-slate-300"}`}
+                                              />
+                                            </button>
+                                          ))}
+                                        </div>
+                                        <select
+                                          className={INPUT}
+                                          value={reviewBadgeId}
+                                          onChange={(e) => setReviewBadgeId(e.target.value ? Number(e.target.value) : "")}
+                                        >
+                                          <option value="">뱃지 추천 없음</option>
+                                          {badges
+                                            .filter((b) => b.requires_endorsements > 0)
+                                            .map((b) => (
+                                              <option key={b.id} value={b.id}>
+                                                {b.badge_name} (추천 {b.requires_endorsements}회 필요)
+                                              </option>
+                                            ))}
+                                        </select>
+                                        <textarea
+                                          className={`${INPUT} h-20 resize-none py-3`}
+                                          value={reviewComment}
+                                          onChange={(e) => setReviewComment(e.target.value)}
+                                          placeholder="한줄평(선택)"
+                                        />
+                                        <button
+                                          disabled={busy}
+                                          onClick={() => submitReview(job.id, a.id)}
+                                          className="h-10 w-full rounded-lg bg-amber-500 text-[13.5px] font-bold text-white disabled:opacity-40"
+                                        >
+                                          리뷰 제출
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })
                             )}
                           </div>
                         )}

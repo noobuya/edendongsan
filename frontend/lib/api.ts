@@ -958,7 +958,10 @@ export const adminDeleteJournalEntry = (token: string, id: string) =>
 export type RecruitingRole = "EXPERT" | "STUDENT";
 export type ApprovalStatus = "PENDING" | "APPROVED" | "REJECTED";
 export type JobStatusValue = "OPEN" | "CLOSED" | "COMPLETED";
-export type ApplicationStatusValue = "PENDING" | "APPROVED" | "REJECTED";
+export type ApplicationStatusValue = "PENDING" | "APPROVED" | "REJECTED" | "COMPLETED";
+export type JobAudience = "STUDENT" | "EXPERT";
+export type ScoutStatusValue = "PENDING" | "ACCEPTED" | "DECLINED";
+export type CommunityCategoryValue = "TIP" | "MATERIAL_SHARE" | "QNA";
 
 export interface RecruitingUser {
   id: number;
@@ -967,6 +970,9 @@ export interface RecruitingUser {
   phone_number: string;
   daily_wage: number;
   approval_status: ApprovalStatus;
+  xp: number;
+  level: number;
+  badge_count: number;
 }
 export interface RecruitingSignupResult {
   request_token: string;
@@ -982,6 +988,9 @@ export interface SkillBadge {
   id: number;
   badge_name: string;
   description: string;
+  tier: number;
+  is_official: boolean;
+  requires_endorsements: number;
 }
 export interface MyBadge {
   badge_id: number;
@@ -998,6 +1007,7 @@ export interface FieldJob {
   required_badge_name: string;
   pay: number;
   status: JobStatusValue;
+  audience: JobAudience;
 }
 export interface JobApplication {
   id: number;
@@ -1023,6 +1033,60 @@ export interface Applicant {
   student_id: number;
   student_name: string;
   student_phone: string;
+  student_level: number;
+  student_badge_count: number;
+}
+
+export interface JobReview {
+  id: number;
+  job_application_id: number;
+  reviewer_id: number;
+  rating: number;
+  recommended_badge_id: number | null;
+  comment: string;
+  created_at: string;
+}
+export interface StudentDirectoryRow {
+  id: number;
+  name: string;
+  level: number;
+  xp: number;
+  badge_count: number;
+  badge_names: string[];
+}
+export interface ScoutRequest {
+  id: number;
+  scout_id: number;
+  scout_name: string;
+  target_user_id: number;
+  target_name: string;
+  field_job_id: number | null;
+  message: string;
+  status: ScoutStatusValue;
+  created_at: string;
+}
+export interface CommunityPost {
+  id: number;
+  author_id: number;
+  author_name: string;
+  author_level: number;
+  category: CommunityCategoryValue;
+  title: string;
+  body: string;
+  created_at: string;
+  comment_count: number;
+}
+export interface CommunityComment {
+  id: number;
+  post_id: number;
+  author_id: number;
+  author_name: string;
+  author_level: number;
+  body: string;
+  created_at: string;
+}
+export interface CommunityPostDetail extends CommunityPost {
+  comments: CommunityComment[];
 }
 
 async function recruitingFetch<T>(path: string, code: string, init: RequestInit = {}): Promise<T> {
@@ -1059,7 +1123,7 @@ export const recruitingOpenJobs = (code: string) => recruitingFetch<FieldJob[]>(
 export const recruitingMyJobs = (code: string) => recruitingFetch<FieldJob[]>("/me/field-jobs", code);
 export const recruitingCreateJob = (
   code: string,
-  payload: { location: string; job_date: string; required_badge_id: number; pay: number },
+  payload: { location: string; job_date: string; required_badge_id: number; pay: number; audience?: JobAudience },
 ) => recruitingFetch<FieldJob>("/field-jobs", code, { method: "POST", body: JSON.stringify(payload) });
 export const recruitingApply = (code: string, jobId: number) =>
   recruitingFetch<JobApplication>(`/field-jobs/${jobId}/apply`, code, { method: "POST" });
@@ -1069,6 +1133,50 @@ export const recruitingDecide = (code: string, jobId: number, applicationId: num
   recruitingFetch<JobApplication>(`/field-jobs/${jobId}/applications/${applicationId}/decision`, code, {
     method: "POST",
     body: JSON.stringify({ status }),
+  });
+
+/* ---- 레벨 기반 생태계 — 현장 완료/리뷰, 지명 호출, 커뮤니티 ---- */
+export const recruitingCompleteApplication = (code: string, jobId: number, applicationId: number) =>
+  recruitingFetch<JobApplication>(`/field-jobs/${jobId}/applications/${applicationId}/complete`, code, {
+    method: "POST",
+  });
+export const recruitingReviewApplication = (
+  code: string,
+  jobId: number,
+  applicationId: number,
+  payload: { rating: number; recommended_badge_id?: number | null; comment?: string },
+) =>
+  recruitingFetch<JobReview>(`/field-jobs/${jobId}/applications/${applicationId}/review`, code, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+export const recruitingMyReviews = (code: string) => recruitingFetch<JobReview[]>("/me/reviews", code);
+
+export const recruitingStudents = (code: string) => recruitingFetch<StudentDirectoryRow[]>("/students", code);
+export const recruitingCreateScoutRequest = (
+  code: string,
+  payload: { target_user_id: number; field_job_id?: number | null; message?: string },
+) => recruitingFetch<ScoutRequest>("/scout-requests", code, { method: "POST", body: JSON.stringify(payload) });
+export const recruitingMyScoutRequests = (code: string) => recruitingFetch<ScoutRequest[]>("/me/scout-requests", code);
+export const recruitingMySentScoutRequests = (code: string) =>
+  recruitingFetch<ScoutRequest[]>("/me/scout-requests/sent", code);
+export const recruitingDecideScoutRequest = (code: string, requestId: number, status: "ACCEPTED" | "DECLINED") =>
+  recruitingFetch<ScoutRequest>(`/scout-requests/${requestId}/decision`, code, {
+    method: "POST",
+    body: JSON.stringify({ status }),
+  });
+
+export const recruitingCommunityPosts = (code: string) => recruitingFetch<CommunityPost[]>("/community/posts", code);
+export const recruitingCreateCommunityPost = (
+  code: string,
+  payload: { category: CommunityCategoryValue; title: string; body: string },
+) => recruitingFetch<CommunityPost>("/community/posts", code, { method: "POST", body: JSON.stringify(payload) });
+export const recruitingCommunityPostDetail = (code: string, postId: number) =>
+  recruitingFetch<CommunityPostDetail>(`/community/posts/${postId}`, code);
+export const recruitingCreateCommunityComment = (code: string, postId: number, body: string) =>
+  recruitingFetch<CommunityComment>(`/community/posts/${postId}/comments`, code, {
+    method: "POST",
+    body: JSON.stringify({ body }),
   });
 
 /* 관리자 화면 전용(/admin/recruiting): 가입 승인/거절, 뱃지·계정 직접 생성. */
@@ -1089,10 +1197,13 @@ export const adminRecruitingApprove = (token: string, userId: number, accessCode
 export const adminRecruitingReject = (token: string, userId: number) =>
   adminRecruitingFetch<RecruitingUser>(`/admin/requests/${userId}/reject`, token, { method: "POST" });
 export const adminRecruitingBadges = (token: string) => adminRecruitingFetch<SkillBadge[]>("/admin/badges", token);
-export const adminRecruitingCreateBadge = (token: string, badge_name: string, description: string) =>
+export const adminRecruitingCreateBadge = (
+  token: string,
+  payload: { badge_name: string; description: string; tier?: number; is_official?: boolean; requires_endorsements?: number },
+) =>
   adminRecruitingFetch<SkillBadge>("/admin/badges", token, {
     method: "POST",
-    body: JSON.stringify({ badge_name, description }),
+    body: JSON.stringify(payload),
   });
 export const adminRecruitingAwardBadge = (token: string, userId: number, badgeId: number) =>
   adminRecruitingFetch<{ user_id: number; badge_id: number }>(`/admin/users/${userId}/badges/${badgeId}`, token, {
