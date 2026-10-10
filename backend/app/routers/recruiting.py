@@ -21,30 +21,49 @@ from app.database import get_db
 from app.models import (
     ApplicationStatus,
     ApprovalStatus,
+    BadgeEndorsement,
+    CommunityComment,
+    CommunityPost,
     FieldJob,
     JobApplication,
+    JobAudience,
+    JobReview,
     JobStatus,
+    ScoutRequest,
+    ScoutStatus,
     SkillBadge,
     User,
     UserBadge,
     UserRole,
 )
+from app.services.leveling import XP_PER_RATING_POINT
 from app.schemas_recruiting import (
     AdminApproveIn,
     AdminUserCreate,
     AdminUserRow,
     ApplicantRead,
+    CommunityCommentCreate,
+    CommunityCommentRead,
+    CommunityPostCreate,
+    CommunityPostDetailRead,
+    CommunityPostRead,
     FieldJobCreate,
     FieldJobRead,
     JobApplicationDecisionIn,
     JobApplicationRead,
+    JobReviewCreate,
+    JobReviewRead,
     MyApplicationRead,
     MyBadgeRead,
+    ScoutRequestCreate,
+    ScoutRequestDecisionIn,
+    ScoutRequestRead,
     SignupIn,
     SignupOut,
     SignupStatusOut,
     SkillBadgeCreate,
     SkillBadgeRead,
+    StudentDirectoryRow,
     UserBadgeRead,
     UserRead,
 )
@@ -99,6 +118,7 @@ def _job_to_read(job: FieldJob) -> dict:
         "required_badge_name": job.required_badge.badge_name,
         "pay": job.pay,
         "status": job.status,
+        "audience": job.audience,
     }
 
 
@@ -298,7 +318,17 @@ def create_field_job(
 
 @router.get("/field-jobs", response_model=list[FieldJobRead])
 def list_open_field_jobs(current_user: User = Depends(require_access_code), db: Session = Depends(get_db)):
-    jobs = db.query(FieldJob).filter(FieldJob.status == JobStatus.OPEN).all()
+    """내가 지원 대상인 공고만 본다 — STUDENT는 audience=STUDENT(기존 구인) 공고를,
+    EXPERT는 audience=EXPERT(동급 기공 헬프콜) 공고를 본다. 역할 값과 JobAudience
+    값을 똑같이 맞춰 둬서 한 줄로 변환된다(models.py의 JobAudience 참고)."""
+    if current_user.role not in (UserRole.STUDENT, UserRole.EXPERT):
+        raise HTTPException(status_code=403, detail="수강생/전문가 계정만 조회할 수 있습니다.")
+    jobs = (
+        db.query(FieldJob)
+        .filter(FieldJob.status == JobStatus.OPEN)
+        .filter(FieldJob.audience == JobAudience(current_user.role.value))
+        .all()
+    )
     return [_job_to_read(j) for j in jobs]
 
 
@@ -326,6 +356,8 @@ def list_applicants(job_id: int, current_user: User = Depends(require_access_cod
             "student_id": a.student_id,
             "student_name": a.student.name,
             "student_phone": a.student.phone_number,
+            "student_level": a.student.level,
+            "student_badge_count": a.student.badge_count,
         }
         for a in rows
     ]
@@ -377,16 +409,18 @@ def apply_to_field_job(
     current_user: User = Depends(require_access_code),
     db: Session = Depends(get_db),
 ):
-    """수강생이 공고에 지원한다. 지원자는 접근 코드로 확인된 본인이고,
-    공고가 요구하는 뱃지를 갖고 있는지부터 검증한다."""
+    """공고에 지원한다. 지원자는 접근 코드로 확인된 본인이고, 공고의 audience와
+    역할이 맞는지(STUDENT 구인엔 STUDENT만, EXPERT 헬프콜엔 EXPERT만), 공고가
+    요구하는 뱃지를 갖고 있는지부터 검증한다."""
     job = db.get(FieldJob, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="공고를 찾을 수 없습니다.")
     if job.status != JobStatus.OPEN:
         raise HTTPException(status_code=400, detail="마감되었거나 종료된 공고입니다.")
 
-    if current_user.role != UserRole.STUDENT:
-        raise HTTPException(status_code=403, detail="수강생(STUDENT)만 지원할 수 있습니다.")
+    if current_user.role.value != job.audience.value:
+        audience_label = "수강생(STUDENT)" if job.audience == JobAudience.STUDENT else "전문가(EXPERT)"
+        raise HTTPException(status_code=403, detail=f"{audience_label}만 지원할 수 있습니다.")
 
     has_required_badge = db.get(UserBadge, (current_user.id, job.required_badge_id)) is not None
     if not has_required_badge:
@@ -410,3 +444,291 @@ def apply_to_field_job(
     db.commit()
     db.refresh(application)
     return application
+
+
+@router.post("/field-jobs/{job_id}/applications/{application_id}/complete", response_model=JobApplicationRead)
+def complete_application(
+    job_id: int,
+    application_id: int,
+    current_user: User = Depends(require_access_code),
+    db: Session = Depends(get_db),
+):
+    """현장이 실제로 끝났음을 공고 주최자(기공)가 확인한다. APPROVED에서만 전이되고,
+    이 상태가 돼야만 아래 /review를 쓸 수 있다 — '승인됐다'와 '실제로 나가서
+    끝냈다'를 구분해야 서명 없는 견적처럼 가짜로 경험치를 쌓는 걸 막을 수 있다."""
+    job = db.get(FieldJob, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="공고를 찾을 수 없습니다.")
+    if current_user.role != UserRole.EXPERT or job.expert_id != current_user.id:
+        raise HTTPException(status_code=403, detail="본인이 올린 공고만 처리할 수 있습니다.")
+    application = db.get(JobApplication, application_id)
+    if not application or application.job_id != job_id:
+        raise HTTPException(status_code=404, detail="지원 내역을 찾을 수 없습니다.")
+    if application.status != ApplicationStatus.APPROVED:
+        raise HTTPException(status_code=409, detail="승인된 지원만 완료 처리할 수 있습니다.")
+    application.status = ApplicationStatus.COMPLETED
+    db.commit()
+    db.refresh(application)
+    return application
+
+
+@router.post("/field-jobs/{job_id}/applications/{application_id}/review", response_model=JobReviewRead)
+def review_application(
+    job_id: int,
+    application_id: int,
+    payload: JobReviewCreate,
+    current_user: User = Depends(require_access_code),
+    db: Session = Depends(get_db),
+):
+    """현장을 주최한 기공이 평점·뱃지 추천·코멘트를 남긴다. COMPLETED 상태에만,
+    건당 한 번만(job_application_id UNIQUE) 쓸 수 있다. 여기서만 수강생 xp가
+    오른다(services/leveling.py — 범위 결정 (A), 견적/블로그 이벤트는 안 건드림)."""
+    job = db.get(FieldJob, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="공고를 찾을 수 없습니다.")
+    if current_user.role != UserRole.EXPERT or job.expert_id != current_user.id:
+        raise HTTPException(status_code=403, detail="본인이 올린 공고만 리뷰할 수 있습니다.")
+    application = db.get(JobApplication, application_id)
+    if not application or application.job_id != job_id:
+        raise HTTPException(status_code=404, detail="지원 내역을 찾을 수 없습니다.")
+    if application.status != ApplicationStatus.COMPLETED:
+        raise HTTPException(status_code=409, detail="현장이 완료 처리된 지원만 리뷰할 수 있습니다.")
+    if application.review is not None:
+        raise HTTPException(status_code=409, detail="이미 리뷰를 남긴 지원입니다.")
+
+    badge = None
+    if payload.recommended_badge_id is not None:
+        badge = db.get(SkillBadge, payload.recommended_badge_id)
+        if not badge:
+            raise HTTPException(status_code=404, detail="추천할 뱃지를 찾을 수 없습니다.")
+        if badge.requires_endorsements <= 0:
+            raise HTTPException(
+                status_code=422,
+                detail="이 뱃지는 추천으로 발급되지 않습니다(관리자 전용 뱃지).",
+            )
+
+    review = JobReview(
+        job_application_id=application_id,
+        reviewer_id=current_user.id,
+        rating=payload.rating,
+        recommended_badge_id=payload.recommended_badge_id,
+        comment=payload.comment,
+    )
+    db.add(review)
+
+    student = application.student
+    student.xp += payload.rating * XP_PER_RATING_POINT
+
+    if badge is not None:
+        already_holds = db.get(UserBadge, (student.id, badge.id)) is not None
+        duplicate_endorsement = (
+            db.query(BadgeEndorsement)
+            .filter(
+                BadgeEndorsement.endorser_id == current_user.id,
+                BadgeEndorsement.target_user_id == student.id,
+                BadgeEndorsement.badge_id == badge.id,
+            )
+            .first()
+        )
+        if not already_holds and not duplicate_endorsement:
+            db.add(BadgeEndorsement(endorser_id=current_user.id, target_user_id=student.id, badge_id=badge.id))
+            db.flush()
+            endorsement_count = (
+                db.query(BadgeEndorsement)
+                .filter(BadgeEndorsement.target_user_id == student.id, BadgeEndorsement.badge_id == badge.id)
+                .count()
+            )
+            if endorsement_count >= badge.requires_endorsements and not already_holds:
+                db.add(UserBadge(user_id=student.id, badge_id=badge.id))
+
+    db.commit()
+    db.refresh(review)
+    return review
+
+
+@router.get("/me/reviews", response_model=list[JobReviewRead])
+def my_reviews(current_user: User = Depends(require_access_code), db: Session = Depends(get_db)):
+    if current_user.role != UserRole.STUDENT:
+        raise HTTPException(status_code=403, detail="수강생(STUDENT)만 조회할 수 있습니다.")
+    rows = (
+        db.query(JobReview)
+        .join(JobApplication, JobReview.job_application_id == JobApplication.id)
+        .filter(JobApplication.student_id == current_user.id)
+        .all()
+    )
+    return rows
+
+
+# ── 지명 호출(Scout) ────────────────────────────────────────────────
+@router.get("/students", response_model=list[StudentDirectoryRow])
+def list_students(current_user: User = Depends(require_access_code), db: Session = Depends(get_db)):
+    """기공이 지명 호출 대상을 고르는 수강생 디렉터리 — 레벨/뱃지로 신뢰도를 보고 고른다."""
+    if current_user.role != UserRole.EXPERT:
+        raise HTTPException(status_code=403, detail="전문가(EXPERT)만 조회할 수 있습니다.")
+    students = (
+        db.query(User)
+        .filter(User.role == UserRole.STUDENT, User.approval_status == ApprovalStatus.APPROVED)
+        .all()
+    )
+    return [
+        {
+            "id": s.id,
+            "name": s.name,
+            "level": s.level,
+            "xp": s.xp,
+            "badge_count": s.badge_count,
+            "badge_names": [ub.badge.badge_name for ub in s.badges],
+        }
+        for s in students
+    ]
+
+
+@router.post("/scout-requests", response_model=ScoutRequestRead)
+def create_scout_request(
+    payload: ScoutRequestCreate,
+    current_user: User = Depends(require_access_code),
+    db: Session = Depends(get_db),
+):
+    if current_user.role != UserRole.EXPERT:
+        raise HTTPException(status_code=403, detail="전문가(EXPERT)만 지명 호출을 보낼 수 있습니다.")
+    target = db.get(User, payload.target_user_id)
+    if not target or target.role != UserRole.STUDENT or target.approval_status != ApprovalStatus.APPROVED:
+        raise HTTPException(status_code=404, detail="대상 수강생을 찾을 수 없습니다.")
+    if payload.field_job_id is not None:
+        job = db.get(FieldJob, payload.field_job_id)
+        if not job or job.expert_id != current_user.id:
+            raise HTTPException(status_code=404, detail="본인이 올린 공고만 연결할 수 있습니다.")
+
+    scout_request = ScoutRequest(
+        scout_id=current_user.id,
+        target_user_id=payload.target_user_id,
+        field_job_id=payload.field_job_id,
+        message=payload.message,
+    )
+    db.add(scout_request)
+    db.commit()
+    db.refresh(scout_request)
+    return _scout_request_to_read(scout_request)
+
+
+@router.get("/me/scout-requests", response_model=list[ScoutRequestRead])
+def my_scout_requests(current_user: User = Depends(require_access_code), db: Session = Depends(get_db)):
+    """나(수강생)에게 들어온 지명 호출 목록."""
+    if current_user.role != UserRole.STUDENT:
+        raise HTTPException(status_code=403, detail="수강생(STUDENT)만 조회할 수 있습니다.")
+    rows = db.query(ScoutRequest).filter(ScoutRequest.target_user_id == current_user.id).all()
+    return [_scout_request_to_read(r) for r in rows]
+
+
+@router.get("/me/scout-requests/sent", response_model=list[ScoutRequestRead])
+def my_sent_scout_requests(current_user: User = Depends(require_access_code), db: Session = Depends(get_db)):
+    """내(기공)가 보낸 지명 호출 목록."""
+    if current_user.role != UserRole.EXPERT:
+        raise HTTPException(status_code=403, detail="전문가(EXPERT)만 조회할 수 있습니다.")
+    rows = db.query(ScoutRequest).filter(ScoutRequest.scout_id == current_user.id).all()
+    return [_scout_request_to_read(r) for r in rows]
+
+
+@router.post("/scout-requests/{request_id}/decision", response_model=ScoutRequestRead)
+def decide_scout_request(
+    request_id: int,
+    payload: ScoutRequestDecisionIn,
+    current_user: User = Depends(require_access_code),
+    db: Session = Depends(get_db),
+):
+    scout_request = db.get(ScoutRequest, request_id)
+    if not scout_request:
+        raise HTTPException(status_code=404, detail="지명 호출을 찾을 수 없습니다.")
+    if scout_request.target_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="본인에게 온 지명 호출만 응답할 수 있습니다.")
+    if scout_request.status != ScoutStatus.PENDING:
+        raise HTTPException(status_code=409, detail="이미 응답한 호출입니다.")
+    scout_request.status = ScoutStatus(payload.status)
+    db.commit()
+    db.refresh(scout_request)
+    return _scout_request_to_read(scout_request)
+
+
+def _scout_request_to_read(r: ScoutRequest) -> dict:
+    return {
+        "id": r.id,
+        "scout_id": r.scout_id,
+        "scout_name": r.scout.name,
+        "target_user_id": r.target_user_id,
+        "target_name": r.target_user.name,
+        "field_job_id": r.field_job_id,
+        "message": r.message,
+        "status": r.status,
+        "created_at": r.created_at,
+    }
+
+
+# ── 실무 정보 공유 커뮤니티 ──────────────────────────────────────────
+def _post_to_read(post: CommunityPost) -> dict:
+    return {
+        "id": post.id,
+        "author_id": post.author_id,
+        "author_name": post.author.name,
+        "author_level": post.author.level,
+        "category": post.category,
+        "title": post.title,
+        "body": post.body,
+        "created_at": post.created_at,
+        "comment_count": len(post.comments),
+    }
+
+
+def _comment_to_read(comment: CommunityComment) -> dict:
+    return {
+        "id": comment.id,
+        "post_id": comment.post_id,
+        "author_id": comment.author_id,
+        "author_name": comment.author.name,
+        "author_level": comment.author.level,
+        "body": comment.body,
+        "created_at": comment.created_at,
+    }
+
+
+@router.get("/community/posts", response_model=list[CommunityPostRead])
+def list_community_posts(current_user: User = Depends(require_access_code), db: Session = Depends(get_db)):
+    posts = db.query(CommunityPost).order_by(CommunityPost.created_at.desc()).all()
+    return [_post_to_read(p) for p in posts]
+
+
+@router.post("/community/posts", response_model=CommunityPostRead)
+def create_community_post(
+    payload: CommunityPostCreate,
+    current_user: User = Depends(require_access_code),
+    db: Session = Depends(get_db),
+):
+    post = CommunityPost(author_id=current_user.id, **payload.model_dump())
+    db.add(post)
+    db.commit()
+    db.refresh(post)
+    return _post_to_read(post)
+
+
+@router.get("/community/posts/{post_id}", response_model=CommunityPostDetailRead)
+def get_community_post(post_id: int, current_user: User = Depends(require_access_code), db: Session = Depends(get_db)):
+    post = db.get(CommunityPost, post_id)
+    if not post:
+        raise HTTPException(status_code=404, detail="게시글을 찾을 수 없습니다.")
+    return {**_post_to_read(post), "comments": [_comment_to_read(c) for c in post.comments]}
+
+
+@router.post("/community/posts/{post_id}/comments", response_model=CommunityCommentRead)
+def create_community_comment(
+    post_id: int,
+    payload: CommunityCommentCreate,
+    current_user: User = Depends(require_access_code),
+    db: Session = Depends(get_db),
+):
+    post = db.get(CommunityPost, post_id)
+    if not post:
+        raise HTTPException(status_code=404, detail="게시글을 찾을 수 없습니다.")
+    comment = CommunityComment(post_id=post_id, author_id=current_user.id, body=payload.body)
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+    return _comment_to_read(comment)

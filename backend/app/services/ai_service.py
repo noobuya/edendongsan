@@ -231,6 +231,7 @@ def render_region(
     option_id: str = "",
     category: str = "",
     door_material: str = "wood",
+    preserve_geometry: bool = True,
 ) -> Image.Image:
     """영역 하나를 렌더링해 "마스크 밖은 원본 그대로"인 이미지를 돌려준다.
 
@@ -239,7 +240,10 @@ def render_region(
 
     door_material(door_frame 시공에서만 의미 있음)은 원래 문이 나무 문("wood")인지
     현관문·방화문처럼 페인트칠한 스틸 문("steel")인지 — build_instruction()이 이 값에
-    따라 "나뭇결을 없애라"는 문구를 넣을지 말지를 정확히 가른다."""
+    따라 "나뭇결을 없애라"는 문구를 넣을지 말지를 정확히 가른다.
+
+    preserve_geometry가 False면 표면 변경이어도 구조 재주입(_reinject_structure)을
+    건너뛴다 — object_creation은 지킬 원본 구조가 없으므로 이 값과 무관하게 항상 꺼진다."""
     base = Image.open(image_path).convert("RGB")
     mask = _hard_mask(Image.open(mask_path).convert("L"), base.size)
     design = (custom_design or "").strip()
@@ -248,9 +252,9 @@ def render_region(
         params, suffix, keep_structure = OBJECT_PARAMS, OBJECT_SUFFIX, False
     elif design:
         # 글씨·로고를 실제로 그려 넣어야 하므로 표면 변경보다 과감하게 다시 그린다.
-        params, suffix, keep_structure = CUSTOM_DESIGN_PARAMS, SURFACE_SUFFIX, True
+        params, suffix, keep_structure = CUSTOM_DESIGN_PARAMS, SURFACE_SUFFIX, preserve_geometry
     else:
-        params, suffix, keep_structure = SURFACE_PARAMS, SURFACE_SUFFIX, True
+        params, suffix, keep_structure = SURFACE_PARAMS, SURFACE_SUFFIX, preserve_geometry
 
     if task_type != "object_creation":
         # [핵심 — "문짝이 사라지고 싱크대장이 나타나는" 등 엉뚱한 결과의 원인]
@@ -295,6 +299,13 @@ def render_region(
             rendered.paste(edited, (crop_box[0], crop_box[1]))
         else:
             rendered = edited
+        if keep_structure:
+            # [중요] 이 surface_change 경로(_run_edit, OpenAI 경유 편집)가 실제 표면
+            # 변경의 기본 경로다 — 아래 _run_inpaint+keep_structure 블록(object_creation
+            # 전용)은 여기 도달하기 전에 항상 return하므로 그쪽에서는 절대 실행되지
+            # 않는다. ControlNet 대신 원본의 명암 구조를 결과 위에 다시 얹어
+            # 손잡이·프레임처럼 얇은 디테일이 뭉개지는 것을 막는다.
+            rendered = _reinject_structure(base, rendered, mask, structure_strength(prompt, design))
         return _paste_back(base, rendered, mask)
 
     if task_type == "object_creation":

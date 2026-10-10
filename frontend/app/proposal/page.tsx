@@ -5,8 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertCircle, ArrowLeft, Loader2 } from "lucide-react";
 import AssetImage from "@/components/AssetImage";
+import BeforeAfterSlider from "@/components/BeforeAfterSlider";
 import BusinessBanner from "@/components/BusinessBanner";
 import CallBanner from "@/components/CallBanner";
+import ROIBarChart from "@/components/ROIBarChart";
+import ProposalEstimateSummary from "@/components/proposal/ProposalEstimateSummary";
+import ProposalSiteConditionsSummary from "@/components/proposal/ProposalSiteConditionsSummary";
 import ShareLinkButton from "@/components/ShareLinkButton";
 import { getProposalPublic } from "@/lib/api";
 import type { ProposalPublic } from "@/types";
@@ -83,16 +87,28 @@ export default function ProposalPublicPage() {
       </div>
 
       <article>
-        <AssetImage
-          src={proposal.wide_image_url}
-          alt={proposal.headline}
-          className="mb-5 aspect-[4/3] w-full rounded-xl object-cover shadow-sm"
-        />
+        {proposal.before_image_url ? (
+          <BeforeAfterSlider
+            beforeSrc={proposal.before_image_url}
+            afterSrc={proposal.wide_image_url}
+            className="mb-5 aspect-[4/3] w-full overflow-hidden rounded-xl shadow-sm"
+          />
+        ) : (
+          <AssetImage
+            src={proposal.wide_image_url}
+            alt={proposal.headline}
+            className="mb-5 aspect-[4/3] w-full rounded-xl object-cover shadow-sm"
+          />
+        )}
 
         <header className="mb-5">
           <h1 className="text-2xl font-bold leading-snug text-slate-900">{proposal.headline}</h1>
           <p className="mt-2 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{proposal.body}</p>
         </header>
+
+        {proposal.estimate?.roi_comparison && <ROIBarChart roi={proposal.estimate.roi_comparison} />}
+        {proposal.estimate && <ProposalEstimateSummary estimate={proposal.estimate} />}
+        {proposal.site_conditions && <ProposalSiteConditionsSummary conditions={proposal.site_conditions} />}
 
         <AssetImage
           src={proposal.detail_image_url}

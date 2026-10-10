@@ -17,6 +17,7 @@ import {
   Minus,
   Plus,
   Ruler,
+  Scissors,
   Square,
   Trash2,
   Zap,
@@ -24,7 +25,7 @@ import {
 } from "lucide-react";
 import CutMapView from "@/components/cutting/CutMapView";
 import ReferenceMeasureSheet from "@/components/measure/ReferenceMeasureSheet";
-import { packShelves, type NestingPiece, type NestingShelf } from "@/lib/cutNesting";
+import { backMarkLabel, dimWithArrow, grainDirectionOf, packShelves, type NestingPiece, type NestingShelf } from "@/lib/cutNesting";
 
 // 필름 원단의 표준 장폭. app/services/estimator.py가 실제 견적을 낼 때 쓰는 값과 같다 —
 // 이 현장 도구가 계산한 길이와 나중에 뜨는 정식 견적의 원단 길이가 서로 다른 숫자로
@@ -408,28 +409,6 @@ function panelPartLabel(r: number, c: number, rows: number, cols: number): strin
   const rowLabel = rows === 1 ? "" : rows === 2 ? (r === 0 ? "상" : "하") : `${r + 1}행`;
   const colLabel = cols === 1 ? "" : cols === 2 ? (c === 0 ? "좌" : "우") : `${c + 1}열`;
   return `알판-${colLabel}${rowLabel}`;
-}
-
-/** 재단 리스트·2D 안내도에서 짧게 붙일 조각 표식 — "기둥-좌"→"좌", "알판-좌상"→"좌상". */
-function shortPartLabel(part: string): string {
-  const idx = part.indexOf("-");
-  return idx === -1 ? part : part.slice(idx + 1);
-}
-
-/** 시공자용 뒷면 마킹 — "[1번/안방]" 형태. 같은 번호가 카테고리마다 따로 매겨지므로
- *  (문1·샷1처럼 독립 채번) 카테고리 한 글자 표식을 번호 앞에 붙여 서로 다른 부위의
- *  같은 번호가 섞여도 헷갈리지 않게 한다. 방 이름을 안 넣었으면 뒤 "/방이름"은 뺀다. */
-function backMarkLabel(shortLabel: string, seq: number, part: string | undefined, roomName: string | undefined): string {
-  const partSuffix = part ? `-${shortPartLabel(part)}` : "";
-  const numberPart = `${shortLabel}${seq}번${partSuffix}`;
-  return roomName ? `[${numberPart}/${roomName}]` : `[${numberPart}]`;
-}
-
-/** 치수 + 방향 화살표 — "160×2000 (↕)". 세로(결 방향, cutHMm)가 가로(cutWMm)보다
- *  길거나 같으면 세워서 시공(↕), 더 짧으면(가로로 긴 몰딩·가로대 등) 눕혀서 시공(↔). */
-function dimWithArrow(cutWMm: number, cutHMm: number): string {
-  const arrow = cutHMm >= cutWMm ? "↕" : "↔";
-  return `${Math.round(cutWMm).toLocaleString("ko-KR")}×${Math.round(cutHMm).toLocaleString("ko-KR")} (${arrow})`;
 }
 
 // [샷시/창틀 — 절대 통판으로 계산하지 않는다]
@@ -1120,7 +1099,8 @@ export default function CuttingCalculatorPage() {
         continue;
       }
       const dimLabel = dimWithArrow(it.cutWMm, it.cutHMm);
-      pieces.push({ id: it.id, label, dimLabel, groupKey: it.category, widthMm, heightMm, hasGrain });
+      const grainDirection = grainDirectionOf(it.cutWMm, it.cutHMm);
+      pieces.push({ id: it.id, label, dimLabel, groupKey: it.category, widthMm, heightMm, hasGrain, roomName: it.roomName, grainDirection });
     }
     const rollCut = buildRollCutGroups(rollCutItems);
     return { ...packShelves(pieces, ROLL_WIDTH_MM), oversizedParts, rollCutGroups: rollCut.groups, rollCutTotalLengthMm: rollCut.totalLengthMm };
@@ -1870,6 +1850,13 @@ export default function CuttingCalculatorPage() {
                 온전)
                 {(parseFloat(filmUnitPrice) || 0) > 0 &&
                   ` · 예상 환급액 ${won2(returnableLengthM * parseFloat(filmUnitPrice), 0)}원`}
+              </div>
+            )}
+            {nesting.refundableLoss && (
+              <div className="mt-3 flex items-center gap-2 rounded-xl bg-sky-500/15 px-3.5 py-3 text-[12.5px] font-semibold text-sky-200">
+                <Scissors className="h-4 w-4 shrink-0" strokeWidth={2} />
+                안내도 마지막 조각에 자투리 약 {won2(nesting.refundableLoss.areaM2, 2)}㎡ 남음 · 반납 시 약{" "}
+                {won2(nesting.refundableLoss.estimatedRefund, 0)}원 예상(7,000원/m 기준)
               </div>
             )}
             <label className="mt-3 flex items-center justify-between gap-3 text-[13px] text-indigo-100">

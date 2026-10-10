@@ -34,7 +34,9 @@ CONTENT_MARKER = "본문:"
 PROMISE_MARKER = "약속:"
 CLOSING_MARKER = "마무리:"
 TIPS_MARKER = "팁:"
-SECTION_MARKERS = [TITLE_MARKER, CONTENT_MARKER, PROMISE_MARKER, CLOSING_MARKER, TIPS_MARKER]
+HASHTAG_MARKER = "해시태그:"
+SECTION_MARKERS = [TITLE_MARKER, CONTENT_MARKER, PROMISE_MARKER, CLOSING_MARKER, TIPS_MARKER, HASHTAG_MARKER]
+MAX_HASHTAGS = 10
 
 # response_mime_type="application/json"(구조화 출력)은 쓰지 않는다 — 실측 결과
 # 이 계정/시점에서 "이미지 첨부 + JSON 모드"를 함께 쓸 때 503(UNAVAILABLE, 과부하)
@@ -75,12 +77,17 @@ PROMPT_TEMPLATE = (
     "- 어떤 항목에도 전화번호나 출장 가능 지역 문구를 그대로 적지 마라 — 그 정보는 글 앞뒤에 "
     "고정된 배너/문구로 자동으로 붙으므로, 잘못된 번호를 지어낼 위험이 있다. (업체명은 인사말에서만 "
     "한 번 언급한다.)\n"
-    "- 다른 설명 없이 정확히 이 형식으로만 답하라(아래 다섯 줄의 마커를 그대로, 이 순서대로 포함할 것):\n"
+    "- '해시태그' 항목은 네이버 블로그 검색 노출에 쓸 해시태그를 5~8개, 지역명·시공 "
+    "항목·'인테리어필름'처럼 실제로 검색될 법한 단어 위주로 적는다. 각 태그는 '#'로 "
+    "시작하고 띄어쓰기 없이 한 줄에 공백으로 나열한다(예: '#대구인테리어필름 #주방필름시공 "
+    "#셀프인테리어말고전문가').\n"
+    "- 다른 설명 없이 정확히 이 형식으로만 답하라(아래 여섯 줄의 마커를 그대로, 이 순서대로 포함할 것):\n"
     f"{TITLE_MARKER} (블로그 제목 한 줄)\n"
     f"{CONTENT_MARKER}\n(인사말+전문가 필요성+시공 전 상태+작업 과정)\n"
     f"{PROMISE_MARKER}\n(약속 2~3줄)\n"
     f"{CLOSING_MARKER}\n(마무리 소감 1~2문단)\n"
-    f"{TIPS_MARKER}\n(전문업체 체크포인트 3줄)"
+    f"{TIPS_MARKER}\n(전문업체 체크포인트 3줄)\n"
+    f"{HASHTAG_MARKER} (해시태그 5~8개, 한 줄)"
 )
 
 
@@ -126,7 +133,13 @@ def generate_blog_post(quote: dict) -> dict:
     sections = _parse_sections(response.text)
     title = sections[TITLE_MARKER] or "시공 후기"
     content = _assemble_content(sections)
-    return {"title": title, "content": content, "created_at": datetime.now(timezone.utc).isoformat()}
+    hashtags = _parse_hashtags(sections[HASHTAG_MARKER])
+    return {
+        "title": title,
+        "content": content,
+        "hashtags": hashtags,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 def _signature_block() -> str:
@@ -185,6 +198,24 @@ def _parse_sections(text: str) -> dict[str, str]:
         # 본문이 비면 글이 사실상 빈 페이지가 되므로, 다른 섹션이라도 끌어와 채운다.
         sections[CONTENT_MARKER] = sections[CLOSING_MARKER] or sections[PROMISE_MARKER] or "방문해주셔서 감사합니다."
     return sections
+
+
+def _parse_hashtags(raw: str) -> list[str]:
+    """'#대구인테리어필름 #주방필름시공' 같은 한 줄을 리스트로 쪼갠다. 모델이 줄바꿈이나
+    쉼표로 구분해도(완벽히 지시를 안 지킬 때가 있다) 공백·줄바꿈·쉼표 전부 구분자로
+    받아들이고, '#'이 없는 토큰에는 붙여준다 — 빈 결과는 그냥 빈 리스트로 둔다
+    (네이버 복사 포맷에서 해시태그 줄 자체를 생략하면 그만이라 에러로 취급 안 함)."""
+    tokens = raw.replace(",", " ").replace("\n", " ").split()
+    tags = []
+    for token in tokens:
+        tag = token.strip()
+        if not tag:
+            continue
+        if not tag.startswith("#"):
+            tag = f"#{tag}"
+        if tag not in tags:
+            tags.append(tag)
+    return tags[:MAX_HASHTAGS]
 
 
 def _collect_reference_images(quote: dict) -> list[Image.Image]:

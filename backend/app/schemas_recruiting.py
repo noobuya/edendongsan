@@ -8,7 +8,15 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
 
-from app.models import ApplicationStatus, ApprovalStatus, JobStatus, UserRole
+from app.models import (
+    ApplicationStatus,
+    ApprovalStatus,
+    CommunityCategory,
+    JobAudience,
+    JobStatus,
+    ScoutStatus,
+    UserRole,
+)
 
 # 가입 신청에서는 ADMIN 역할을 고를 수 없다 — 관리자 계정은 신청·승인 절차 바깥에서만 만든다.
 SignupRole = Literal["EXPERT", "STUDENT"]
@@ -85,11 +93,20 @@ class UserRead(BaseModel):
     phone_number: str
     daily_wage: int
     approval_status: ApprovalStatus
+    # 레벨 기반 생태계 — level/badge_count는 User.level/User.badge_count 프로퍼티에서
+    # (from_attributes로) 그대로 읽어온다. 프론트는 이 값을 그대로 보여주기만 하면
+    # 된다 — 클라이언트가 직접 계산하게 하면 위변조 여지가 생긴다.
+    xp: int
+    level: int
+    badge_count: int
 
 
 class SkillBadgeCreate(BaseModel):
     badge_name: str
     description: str = ""
+    tier: int = Field(default=1, ge=1, le=5)
+    is_official: bool = False
+    requires_endorsements: int = Field(default=0, ge=0)
 
 
 class SkillBadgeRead(BaseModel):
@@ -98,6 +115,9 @@ class SkillBadgeRead(BaseModel):
     id: int
     badge_name: str
     description: str
+    tier: int
+    is_official: bool
+    requires_endorsements: int
 
 
 class UserBadgeRead(BaseModel):
@@ -115,6 +135,9 @@ class FieldJobCreate(BaseModel):
     job_date: datetime
     required_badge_id: int
     pay: int
+    # STUDENT(기본) = 기존처럼 수강생 대상 구인. EXPERT = 일이 넘치는 기공이 동급
+    # 기공들에게 토스하는 긴급 헬프콜.
+    audience: JobAudience = JobAudience.STUDENT
 
 
 class FieldJobRead(BaseModel):
@@ -126,6 +149,7 @@ class FieldJobRead(BaseModel):
     required_badge_name: str
     pay: int
     status: JobStatus
+    audience: JobAudience
 
 
 class JobApplicationRead(BaseModel):
@@ -163,6 +187,8 @@ class ApplicantRead(BaseModel):
     student_id: int
     student_name: str
     student_phone: str
+    student_level: int
+    student_badge_count: int
 
 
 JobApplicationDecisionValue = Literal["APPROVED", "REJECTED"]
@@ -170,3 +196,97 @@ JobApplicationDecisionValue = Literal["APPROVED", "REJECTED"]
 
 class JobApplicationDecisionIn(BaseModel):
     status: JobApplicationDecisionValue
+
+
+# ── 레벨 기반 생태계 확장 ────────────────────────────────────────────
+
+class StudentDirectoryRow(BaseModel):
+    """기공이 지명 호출(ScoutRequest) 대상을 고를 때 보는 수강생 목록 한 줄."""
+
+    id: int
+    name: str
+    level: int
+    xp: int
+    badge_count: int
+    badge_names: list[str]
+
+
+class JobReviewCreate(BaseModel):
+    rating: int = Field(ge=1, le=5)
+    # SkillBadge.requires_endorsements > 0인 뱃지만 추천할 수 있다 — 0(관리자 전용)인
+    # 뱃지를 여기서 추천하면 422로 막는다(routers/recruiting.py 참고).
+    recommended_badge_id: int | None = None
+    comment: str = ""
+
+
+class JobReviewRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    job_application_id: int
+    reviewer_id: int
+    rating: int
+    recommended_badge_id: int | None
+    comment: str
+    created_at: UTCDateTime
+
+
+class ScoutRequestCreate(BaseModel):
+    target_user_id: int
+    field_job_id: int | None = None
+    message: str = Field(default="", max_length=500)
+
+
+class ScoutRequestRead(BaseModel):
+    id: int
+    scout_id: int
+    scout_name: str
+    target_user_id: int
+    target_name: str
+    field_job_id: int | None
+    message: str
+    status: ScoutStatus
+    created_at: UTCDateTime
+
+
+ScoutRequestDecisionLiteral = Literal["ACCEPTED", "DECLINED"]
+
+
+class ScoutRequestDecisionIn(BaseModel):
+    status: ScoutRequestDecisionLiteral
+
+
+class CommunityPostCreate(BaseModel):
+    category: CommunityCategory = CommunityCategory.QNA
+    title: str = Field(min_length=1, max_length=120)
+    body: str = Field(min_length=1, max_length=5000)
+
+
+class CommunityPostRead(BaseModel):
+    id: int
+    author_id: int
+    author_name: str
+    author_level: int
+    category: CommunityCategory
+    title: str
+    body: str
+    created_at: UTCDateTime
+    comment_count: int
+
+
+class CommunityCommentCreate(BaseModel):
+    body: str = Field(min_length=1, max_length=2000)
+
+
+class CommunityCommentRead(BaseModel):
+    id: int
+    post_id: int
+    author_id: int
+    author_name: str
+    author_level: int
+    body: str
+    created_at: UTCDateTime
+
+
+class CommunityPostDetailRead(CommunityPostRead):
+    comments: list[CommunityCommentRead]

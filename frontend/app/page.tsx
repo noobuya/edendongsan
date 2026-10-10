@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowLeft, ArrowRight, Bot, Briefcase, Calculator, FolderOpen, Loader2, Newspaper, Ruler, Sparkles, Users } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, Bot, Briefcase, Calculator, FolderOpen, Images, Loader2, Newspaper, Ruler, Sparkles, Users } from "lucide-react";
 import BusinessBadge from "@/components/BusinessBanner";
 import CanvasStage from "@/components/CanvasStage";
 import FeatureIntroDialog from "@/components/FeatureIntroDialog";
@@ -484,6 +484,13 @@ export default function HomePage() {
             className="glass-pill flex h-11 w-11 items-center justify-center text-slate-700 transition-transform active:scale-90"
           >
             <Newspaper className="h-5 w-5" />
+          </Link>
+          <Link
+            href="/portfolio"
+            aria-label="시공 갤러리"
+            className="glass-pill flex h-11 w-11 items-center justify-center text-slate-700 transition-transform active:scale-90"
+          >
+            <Images className="h-5 w-5" />
           </Link>
           <Link
             href="/community"

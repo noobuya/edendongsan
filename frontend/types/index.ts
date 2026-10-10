@@ -263,6 +263,8 @@ export interface BlogPost {
   title: string;
   content: string;
   created_at: string;
+  /** 네이버 블로그 "1초 팩" 복사 버튼이 본문 끝에 붙이는 태그 목록. */
+  hashtags: string[];
 }
 
 /** 견적 공유 커뮤니티 — 고객 이름·사진 없이 품목·단가·총액만 올라간다. */
@@ -397,6 +399,12 @@ export interface Proposal {
   detail_image_url: string;
   headline: string;
   body: string;
+  // ── job_id가 있을 때만 생성 시점에 스냅샷으로 채워지는 "풀패키지" 자료 ──
+  // 독립 생성(job_id 없음)이면 전부 null — 공유 페이지는 이 값들이 있을 때만
+  // 비포/애프터 슬라이더·ROI 그래프·정밀 견적서·바탕면 점검 리포트를 보여준다.
+  before_image_url: string | null;
+  estimate: EstimateBreakdown | null;
+  site_conditions: SiteConditions | null;
 }
 
 export type ProposalFeedbackTarget = "detail_image" | "copy";
@@ -409,6 +417,19 @@ export interface ProposalPublic {
   detail_image_url: string;
   headline: string;
   body: string;
+  before_image_url: string | null;
+  estimate: EstimateBreakdown | null;
+  site_conditions: SiteConditions | null;
+}
+
+/** 서명 완료된 시공 건을 모아 보여주는 공개 쇼케이스 갤러리 한 칸.
+ *  고객 이름·연락처·금액은 들어있지 않다(portfolio.py 참고). */
+export interface PortfolioEntry {
+  job_id: string;
+  before_image_url: string | null;
+  after_image_url: string | null;
+  item_tags: string[];
+  completed_at: string;
 }
 
 /** 수동 모드에서 사용자가 직접 칠해 만든 시공 영역 한 개.

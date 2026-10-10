@@ -66,10 +66,18 @@ async def create_proposal(
 
     job_id_clean = job_id.strip() or None
     sales_pitch = ""
+    before_image_url = None
+    estimate_snapshot = None
+    site_conditions_snapshot = None
     if job_id_clean:
         quote = load_quote(job_id_clean)
         if quote:
             sales_pitch = (quote.get("estimate") or {}).get("sales_pitch", "") or ""
+            # 풀패키지 자료는 지금 이 시점 값을 그대로 복사해 둔다(참조 아님) — 나중에
+            # 견적을 고쳐도 이미 만든 제안서·발행된 공유 링크는 바뀌지 않아야 한다.
+            before_image_url = quote.get("original_image_url")
+            estimate_snapshot = quote.get("estimate")
+            site_conditions_snapshot = quote.get("site_conditions")
 
     try:
         copy = generate_copy(source_path, sales_pitch)
@@ -87,6 +95,9 @@ async def create_proposal(
         "detail_image_url": crops["detail_image_url"],
         "headline": copy["headline"],
         "body": copy["body"],
+        "before_image_url": before_image_url,
+        "estimate": estimate_snapshot,
+        "site_conditions": site_conditions_snapshot,
     }
     save_proposal(proposal_id, data)
     return Proposal(**data)

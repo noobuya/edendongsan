@@ -8,6 +8,7 @@ import type {
   LineItem,
   MappedRegion,
   PanelItem,
+  PortfolioEntry,
   PricingField,
   Proposal,
   ProposalFeedbackAction,
@@ -477,6 +478,14 @@ export async function getProposalPublic(id: string): Promise<ProposalPublic> {
   const res = await apiFetch(`${API_BASE}/api/proposals/${id}/public`);
   if (!res.ok) throw new Error(await extractErrorMessage(res, "제안서를 찾을 수 없습니다."));
   return res.json();
+}
+
+/** 서명 완료된 시공 건 쇼케이스 — 인증 없이 누구나 볼 수 있는 공개 목록. */
+export async function listPortfolio(): Promise<PortfolioEntry[]> {
+  const res = await apiFetch(`${API_BASE}/api/portfolio`);
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "포트폴리오를 불러오지 못했습니다."));
+  const data = await res.json();
+  return data.entries;
 }
 
 /** 단가(공임·재료비·요율) 설정 — 대한인테리어필름 배너를 길게 눌러 여는 화면에서 쓴다.

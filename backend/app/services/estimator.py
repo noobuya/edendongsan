@@ -718,11 +718,37 @@ def _roi_comparison(roi_item: dict | None) -> dict | None:
     }
 
 
+def _count_unconfirmed_ar_panels(node: object) -> int:
+    """options 트리 전체를 돌면서 is_ar_measured=True인데 is_manually_confirmed=False인
+    PanelItem 개수를 센다. 필드 이름을 일일이 나열하지 않고 구조만 보고 찾아서,
+    나중에 다른 Options 클래스에 PanelItem 목록이 새로 추가돼도 그대로 걸린다."""
+    if isinstance(node, dict):
+        if "is_ar_measured" in node and "is_manually_confirmed" in node:
+            return 1 if node["is_ar_measured"] and not node["is_manually_confirmed"] else 0
+        return sum(_count_unconfirmed_ar_panels(v) for v in node.values())
+    if isinstance(node, list):
+        return sum(_count_unconfirmed_ar_panels(v) for v in node)
+    return 0
+
+
+def _validate_ar_measurements(options: JobOptions) -> None:
+    """AR 참고점 실측(ReferenceMeasureSheet)으로 받은 치수는 화면에서 사람이 직접
+    확인(수동 컨펌)해야만 견적에 반영한다 — 확인을 건너뛴 값이 그대로 금액에
+    반영되면 기공도 모르는 채 잘못된 견적이 나갈 수 있어, 여기서 막는다."""
+    unconfirmed = _count_unconfirmed_ar_panels(options.model_dump())
+    if unconfirmed:
+        raise ValueError(
+            f"AR로 실측한 치수 {unconfirmed}건이 아직 확인되지 않았습니다. "
+            "실측 화면에서 치수를 확인한 뒤 다시 시도해 주세요."
+        )
+
+
 def calculate_estimate(
     selected_items: list[str],
     options: JobOptions,
     ceiling_area_m2: float,
 ) -> dict:
+    _validate_ar_measurements(options)
     line_items = []
 
     if "film" in selected_items and options.film:

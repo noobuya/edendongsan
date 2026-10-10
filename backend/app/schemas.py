@@ -33,6 +33,14 @@ class PanelItem(BaseModel):
     # 문짝이 아닌 항목(문틀·상하부장·벽 등)에는 의미가 없어 기본값 "flat"으로 두면
     # 조용히 무시된다(할증 배수 1.0). 문짝류 입력에서만 화면에 선택지를 보여준다.
     door_type: DoorType = "flat"
+    # AR 참고점 실측(components/measure/ReferenceMeasureSheet.tsx)으로 받은 치수인지.
+    # false(기본값)면 사람이 직접 입력한 값이라 아래 is_manually_confirmed는 의미가 없다.
+    is_ar_measured: bool = False
+    # is_ar_measured=True인데 이 값이 False면 calculate_estimate가 견적 확정을 막는다
+    # (_validate_ar_measurements 참고) — 참고점 간격·각도가 어긋나 실측이 크게 틀어질
+    # 수 있는데, 사람이 화면에서 눈으로 보고 확인하는 단계를 건너뛴 값이 그대로 금액에
+    # 반영되면 기공도 모르는 채 잘못된 견적이 나갈 수 있기 때문이다.
+    is_manually_confirmed: bool = False
 
 
 class FilmOptions(BaseModel):
@@ -207,6 +215,12 @@ class ManualRegion(BaseModel):
     # 없애라"고 말하면(스틸 문에는 애초에 나뭇결이 없다) 방화문 사진에서 AI가 헷갈려
     # 결과가 안 나오거나 이상하게 나오는 원인이 됐다 — 문 재질을 정확히 알려줘 바로잡는다.
     door_material: Literal["wood", "steel"] = "wood"
+    # True(기본값)면 render_region이 _reinject_structure 후처리로 원본의 윤곽·명암을
+    # 결과 위에 다시 얹어 손잡이·프레임 디테일을 지킨다(object_creation은 지킬 원본
+    # 구조가 없으므로 이 값과 무관하게 항상 꺼진다). False로 두면 AI가 구조에 얽매이지
+    # 않고 더 자유롭게 다시 그리게 둔다 — 원본 라인이 지저분하거나, 형태 자체를
+    # 과감히 바꾸고 싶을 때 쓴다.
+    preserve_geometry: bool = True
 
 
 class CreateJobRequest(BaseModel):
@@ -339,6 +353,10 @@ class BlogPost(BaseModel):
     title: str
     content: str
     created_at: str
+    # 네이버 블로그 "1초 팩" 복사 버튼이 본문 끝에 붙여서 쓴다(blog_writer.py 참고).
+    # 네이버 API 자체 포스팅은 OAuth 심사 등 제약이 커서, 서식 갖춘 텍스트를
+    # 클립보드로 복사해 사장님이 직접 붙여넣는 반자동 방식으로 대신한다.
+    hashtags: list[str] = Field(default_factory=list)
 
 
 class Signature(BaseModel):
@@ -411,6 +429,16 @@ class InpaintRequest(BaseModel):
     # 흐르는지 세로로 흐르는지. 문짝처럼 세로로 긴 면은 세로 결이 실제 시공과 더
     # 비슷하게 보이는 경우가 많아 사용자가 고를 수 있게 뒀다.
     grain_horizontal: bool = True
+    # [중요] 이 엔드포인트(/jobs/{id}/inpaint)는 AI 인페인팅을 호출하지 않는다 —
+    # run_inpaint_edit가 쓰는 recolor_surface()는 LAB 색공간에서 명암(L 채널)은
+    # 그대로 두고 색(a/b 채널)만 바꾸는 결정적 연산이라, 구조가 항상 100% 보존된다
+    # (그래서 이 필드는 현재 이 경로에서는 효과가 없다 — 스키마 레벨 예약 필드).
+    # 실제로 구조 보존 강도를 켜고 끌 수 있는 자리는 진짜 AI 인페인팅(render_region)을
+    # 타는 ManualRegion.preserve_geometry 쪽이다. 그리고 이 계정의 Replicate 인페인팅
+    # 모델은 전부 ControlNet(Canny/Depth) 입력을 못 받으므로(모델 스키마 직접 조회로
+    # 확인됨 — ai_service.py 상단 메모 참고) True여도 Multi-ControlNet을 타지는 않고,
+    # 기존 _reinject_structure() 후처리(keep_structure)를 켜고 끄는 식으로 동작한다.
+    preserve_geometry: bool = True
 
 
 class IllustrationRequest(BaseModel):
@@ -483,6 +511,15 @@ class Proposal(BaseModel):
     detail_image_url: str
     headline: str
     body: str
+    # ── job_id가 있을 때만 생성 시점에 한 번 스냅샷으로 채워지는 "풀패키지" 자료 ──
+    # 나중에 견적을 고쳐도 이미 만든 제안서는 안 바뀌도록, 참조가 아니라 복사해서
+    # 저장한다(job_id의 sales_pitch를 카피에 반영하는 것과 같은 원칙). 사진 한 장만의
+    # 독립 생성 경로에는 애초에 이 데이터가 없으므로 전부 None으로 남고, 공유 페이지는
+    # 이 네 값이 있을 때만 비포/애프터 슬라이더·ROI 그래프·정밀 견적서·바탕면 점검
+    # 리포트를 보여준다.
+    before_image_url: Optional[str] = None
+    estimate: Optional[EstimateBreakdown] = None
+    site_conditions: Optional[SiteConditions] = None
 
 
 class ProposalListResponse(BaseModel):
@@ -501,7 +538,11 @@ class ProposalFeedbackRequest(BaseModel):
 
 
 class ProposalPublicResponse(BaseModel):
-    """공개 공유 링크(/proposal?id=...)가 쓰는 뷰 — 내부 상태(status/job_id)는 뺀다."""
+    """공개 공유 링크(/proposal?id=...)가 쓰는 뷰 — 내부 상태(status/job_id)는 뺀다.
+
+    blog.py의 공개 응답과 달리 estimate(정밀 견적서)를 그대로 내보낸다 — 블로그는
+    불특정 다수가 보는 SEO 글이라 가격을 숨기지만, 제안서는 고객 한 명에게 직접
+    보내는 견적 공유 링크라 가격을 보여주는 게 기능의 목적 그 자체다."""
 
     id: str
     created_at: str
@@ -509,3 +550,23 @@ class ProposalPublicResponse(BaseModel):
     detail_image_url: str
     headline: str
     body: str
+    before_image_url: Optional[str] = None
+    estimate: Optional[EstimateBreakdown] = None
+    site_conditions: Optional[SiteConditions] = None
+
+
+# ── 포트폴리오 쇼케이스 (공개 갤러리) ──────────────────────────────────
+# 서명 완료(status="done" & signature 있음)된 시공 건을 사장님이 따로 "발행" 버튼을
+# 누르지 않아도 자동으로 모아 보여준다. blog.py는 사장님이 AI 글을 검수·발행하는
+# 단계가 있지만 이쪽은 그 단계가 없어 노출 범위를 의도적으로 좁게 잡는다 — 고객
+# 이름·연락처·금액은 절대 내보내지 않고 사진과 시공 항목 태그만 보여준다.
+class PortfolioEntry(BaseModel):
+    job_id: str
+    before_image_url: Optional[str] = None
+    after_image_url: Optional[str] = None
+    item_tags: list[str] = Field(default_factory=list)
+    completed_at: str
+
+
+class PortfolioListResponse(BaseModel):
+    entries: list[PortfolioEntry]

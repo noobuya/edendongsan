@@ -14,6 +14,9 @@
  * 줄이는 선에서만 — 새 선반을 여는 것보다 기존 선반 빈 폭에 끼우는 게 항상 이득이다).
  */
 
+/** 결(무늬) 시공 방향 화살표 — ↕(세워서 시공)·↔(눕혀서 시공). */
+export type GrainDirection = "↕" | "↔";
+
 export interface NestingPiece {
   id: string;
   /** 화면에 보여줄 짧은 라벨, 예: "문1". */
@@ -29,6 +32,10 @@ export interface NestingPiece {
    *  배치하지 않는다(폭↔길이가 바뀌면 결 방향이 어긋나 보인다). false(민무늬)인
    *  조각만 기존 선반에 더 끼워 넣을 자리가 있을 때 한해 돌려서 로스를 줄인다. */
   hasGrain: boolean;
+  /** 시공자용 뒷면 마킹에 쓰는 방 이름(선택 입력), 예: "안방". 비어 있으면 라벨에서 빠진다. */
+  roomName?: string;
+  /** 결(무늬) 시공 방향 — dimWithArrow/grainDirectionOf로 함께 계산해 넘기면 된다. */
+  grainDirection?: GrainDirection;
 }
 
 export interface PlacedPiece extends NestingPiece {
@@ -56,7 +63,18 @@ export interface NestingResult {
   consumedAreaM2: number;
   /** 원단 활용률(%) = 조각 면적 / 소비 면적. 나머지는 선반마다 남는 자투리 폭이다. */
   utilizationPercent: number;
+  /** 마지막 선반(계단식 재단의 맨 끝 "계단")에 남은 자투리가 대리점에 반납할 만큼
+   *  크면(남은 폭 1,200mm 이상 & 그 선반 길이 1,000mm 이상) 채워진다. 전체 구매 길이
+   *  기준 반납 가능 여부(RETURN_MIN_LENGTH_M, 호출하는 쪽 책임)와는 별개의, "안내도에
+   *  실제로 보이는 사각형 자투리" 단위 감지다 — 두 개념을 섞지 않는다. */
+  refundableLoss?: { areaM2: number; estimatedRefund: number };
 }
+
+const REFUNDABLE_MIN_WIDTH_MM = 1200;
+const REFUNDABLE_MIN_LENGTH_MM = 1000;
+/** 원/m — 표준 1.22m 장폭 기준 임시 환불 단가. 실제 거래 단가로 나중에 바꿔 끼울 수 있게
+ *  이 상수 하나만 고치면 된다. */
+const REFUND_RATE_PER_M = 7000;
 
 export function packShelves(pieces: NestingPiece[], rollWidthMm: number): NestingResult {
   // 큰 조각부터 채워야(First-Fit Decreasing Height) 좁은 자투리가 덜 남는다 —
@@ -98,5 +116,45 @@ export function packShelves(pieces: NestingPiece[], rollWidthMm: number): Nestin
   const consumedAreaM2 = (rollWidthMm / 1000) * (totalLengthMm / 1000);
   const utilizationPercent = consumedAreaM2 > 0 ? (usedAreaM2 / consumedAreaM2) * 100 : 0;
 
-  return { shelves, totalLengthMm, usedAreaM2, consumedAreaM2, utilizationPercent };
+  // 계단식 절단 자투리 감지 — 맨 마지막에 연 선반만 본다. 그 앞 선반들은 FFDH가 거의 꽉
+  // 채우고 넘어간 것들이라 남는 폭이 작지만, 마지막 선반은 더 채울 조각이 없어 열어둔
+  // 채로 끝나는 경우가 많아 실제로 반납 가치가 있는 자투리가 나오는 지점이다.
+  const lastShelf = shelves[shelves.length - 1];
+  let refundableLoss: NestingResult["refundableLoss"];
+  if (lastShelf) {
+    const remainingWidthMm = rollWidthMm - lastShelf.usedWidthMm;
+    if (remainingWidthMm >= REFUNDABLE_MIN_WIDTH_MM && lastShelf.heightMm >= REFUNDABLE_MIN_LENGTH_MM) {
+      const areaM2 = (remainingWidthMm / 1000) * (lastShelf.heightMm / 1000);
+      const estimatedRefund = Math.round((lastShelf.heightMm / 1000) * REFUND_RATE_PER_M);
+      refundableLoss = { areaM2, estimatedRefund };
+    }
+  }
+
+  return { shelves, totalLengthMm, usedAreaM2, consumedAreaM2, utilizationPercent, refundableLoss };
+}
+
+/** 치수 + 결 방향 화살표 문자열 — "160×2000 (↕)". 세로(결 방향, cutHMm)가 가로(cutWMm)보다
+ *  길거나 같으면 세워서 시공(↕), 더 짧으면(가로로 긴 몰딩·가로대 등) 눕혀서 시공(↔). */
+export function dimWithArrow(cutWMm: number, cutHMm: number): string {
+  const arrow = grainDirectionOf(cutWMm, cutHMm);
+  return `${Math.round(cutWMm).toLocaleString("ko-KR")}×${Math.round(cutHMm).toLocaleString("ko-KR")} (${arrow})`;
+}
+
+export function grainDirectionOf(cutWMm: number, cutHMm: number): GrainDirection {
+  return cutHMm >= cutWMm ? "↕" : "↔";
+}
+
+/** 재단 리스트·2D 안내도에서 짧게 붙일 조각 표식 — "기둥-좌"→"좌", "알판-좌상"→"좌상". */
+function shortPartLabel(part: string): string {
+  const idx = part.indexOf("-");
+  return idx === -1 ? part : part.slice(idx + 1);
+}
+
+/** 시공자용 뒷면 마킹 — "[1번/안방]" 형태. 같은 번호가 카테고리마다 따로 매겨지므로
+ *  (문1·샷1처럼 독립 채번) 카테고리 한 글자 표식을 번호 앞에 붙여 서로 다른 부위의
+ *  같은 번호가 섞여도 헷갈리지 않게 한다. 방 이름을 안 넣었으면 뒤 "/방이름"은 뺀다. */
+export function backMarkLabel(shortLabel: string, seq: number, part: string | undefined, roomName: string | undefined): string {
+  const partSuffix = part ? `-${shortPartLabel(part)}` : "";
+  const numberPart = `${shortLabel}${seq}번${partSuffix}`;
+  return roomName ? `[${numberPart}/${roomName}]` : `[${numberPart}]`;
 }

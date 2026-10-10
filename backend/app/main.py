@@ -5,14 +5,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
-from app.database import Base, engine
-from app.routers import admin, admin_automation, automation, blog, community, jobs, journal, pricing, proposals, quotes, recruiting, upload
+from app.database import Base, engine, migrate_recruiting_db
+from app.routers import admin, admin_automation, automation, blog, community, jobs, journal, pricing, portfolio, proposals, quotes, recruiting, upload
 
 settings = get_settings()
 app = FastAPI(title="AI 시공 견적/렌더링 API")
 
 # 현장 실습 매칭·스킬 뱃지 기능의 테이블(storage/recruiting.db)을 없으면 만든다.
 Base.metadata.create_all(bind=engine)
+# 레벨링 생태계 확장으로 기존 테이블에 추가된 컬럼은 create_all이 못 채워주므로
+# 별도로 채운다(database.py의 migrate_recruiting_db 설계 메모 참고).
+migrate_recruiting_db()
 
 app.add_middleware(
     CORSMiddleware,
@@ -46,6 +49,7 @@ app.include_router(journal.router)
 app.include_router(recruiting.router)
 app.include_router(proposals.router)
 app.include_router(proposals.public_router)
+app.include_router(portfolio.router)
 
 
 # 프론트가 켜질 때마다 "서버에 닿는지"만 확인하는 공개 핑. 인증이나 고객 데이터가

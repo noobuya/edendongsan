@@ -560,5 +560,13 @@
 1. **밝기 조정 시 URL이 안 바뀌는 문제**: `adjust_brightness`가 원본 크롭과 같은 파일명(`{proposal_id}_{target}.jpg`)에 덮어써서, 파일 내용은 바뀌어도 프론트가 같은 src를 들고 있으면 브라우저 캐시로 옛 이미지를 계속 보여줄 수 있었음 → 조정마다 짧은 uuid를 붙여 매번 새 파일명을 쓰도록 수정.
 2. **격리 테스트 중 발견한 더 큰 구조적 함정(버그는 아니지만 기록)**: `proposal_store.py`/`proposal_writer.py`/`routers/proposals.py`는 `quotes_store.py`·`pipeline.py`와 같은 기존 관례를 따라 `"storage/..."`를 **하드코딩된 상대경로**로 쓴다(`get_settings().storage_dir`을 안 씀). 평소엔 기본값이 둘 다 `"storage"`라 문제가 안 되지만, `STORAGE_DIR` 환경변수만 바꿔 격리 테스트를 하면(이번 세션 다른 기능들 테스트할 때처럼) 파일은 실제 운영 `backend/storage/`에 써지고 정적 서빙은 격리된 경로를 보게 돼 "이미지를 불러오지 못했습니다"가 뜬다. **앞으로 이 계열(quotes/jobs/pipeline/proposals) 코드를 격리 테스트할 땐 `STORAGE_DIR` 환경변수가 아니라 프로세스의 작업 디렉터리(cwd) 자체를 격리된 폴더로 두고 `PYTHONPATH`로 `app` 패키지를 가리켜야 한다.** (이번에 테스트 중 생성된 더미 파일이 실제 `backend/storage/`에 네 번 남았던 것을 전부 지웠음 — 고객 데이터 아님, 안전.)
 
-### 다음 세션에서 바로 할 일
-- 아직 **커밋 안 됨**. `backend/app/{proposal_store.py, routers/proposals.py, services/proposal_writer.py}`(신규), `backend/app/{main.py, schemas.py}`(수정), `frontend/app/proposal/`(신규), `frontend/components/proposal/`(신규), `frontend/{app/page.tsx, components/SitePhotoGallery.tsx, lib/api.ts, types/index.ts}`(수정) — 커밋·푸시·배포 확인부터 할 것.
+### 커밋·배포 완료
+- `538d2e9`로 커밋·푸시·배포 끝남. 서비스 4개 active, `/`·`/api/health`·`/proposal/new` 200, `/api/proposals` 무인증 401(의도대로) 확인함.
+
+## 전체 소스코드 압축(app_code.zip) 생성 — 다운로드 전달용 (2026-10-10)
+
+- 사용자가 백엔드+프론트 전체 소스를 로컬 PC로 받고 싶어해 `zip -r app_code.zip backend frontend -x "*/node_modules/*" "*/.next/*" "*/venv/*" "*/__pycache__/*" "*.env*"`로 만듦.
+- 이 서버에 `zip`이 원래 안 깔려 있어 `sudo apt-get install -y zip`(비대화식, 승인됨)으로 설치 후 진행했다 — `unzip`도 같이 깔렸다.
+- 결과: `/home/ubuntu/edendongsan/app_code.zip`, 약 195MB, 1825개 파일. `.env*`/`node_modules`/`venv`/`__pycache__` 전부 제외 확인함(민감정보 안 들어감).
+- **공개 링크로는 안 줬다** — 195MB는 Artifact 도구의 바이너리 파일 업로드 한도(15MB)를 훨씬 넘고, 설령 됐어도 사업 핵심 코드(가격 로직·AI 프롬프트 등)를 제3자 서비스 공개 링크로 올리는 건 권하지 않는다고 판단함. 대신 사용자가 평소 쓰던 SSH 키로 `scp ubuntu@54.66.15.115:/home/ubuntu/edendongsan/app_code.zip .`를 직접 받는 방법을 안내했다.
+- **미결**: 다운로드 끝나면 서버에 남은 `app_code.zip`을 지울지 사용자에게 물어봤는데 아직 답을 못 받음. 이 파일은 **git 추적 대상이 아니고 `.gitignore`에도 없다** — 다음 세션에서 혹시 `git add -A`류를 쓰게 되면 195MB짜리가 실수로 커밋될 위험이 있으니, 지우거나 최소한 `.gitignore`에 추가해 둘 것.

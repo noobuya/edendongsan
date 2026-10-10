@@ -257,6 +257,7 @@ async def remask(
                 "task_type": region.get("task_type", "surface_change"),
                 "custom_design": region.get("custom_design", ""),
                 "door_material": region.get("door_material", "wood"),
+                "preserve_geometry": region.get("preserve_geometry", True),
             }
         )
 

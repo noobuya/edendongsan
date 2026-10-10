@@ -107,6 +107,7 @@ async def create_job(
                 ),
                 "custom_design": region.custom_design,
                 "door_material": region.door_material,
+                "preserve_geometry": region.preserve_geometry,
             }
         )
 

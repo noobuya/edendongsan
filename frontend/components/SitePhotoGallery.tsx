@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Camera, ExternalLink, ImagePlus, Loader2, Sparkles, Trash2 } from "lucide-react";
 import AssetImage from "@/components/AssetImage";
 import CameraSheet from "@/components/CameraSheet";
+import CopyToNaverButton from "@/components/blog/CopyToNaverButton";
 import { deleteBlogPost, deleteWorkPhoto, generateBlogPost, uploadWorkPhoto } from "@/lib/api";
 import type { BlogPost, WorkPhoto, WorkPhotoStage } from "@/types";
 
@@ -250,6 +251,8 @@ export default function SitePhotoGallery({ jobId, initialPhotos, initialBlogPost
               </div>
             </div>
             <p className="line-clamp-3 whitespace-pre-line text-xs text-slate-500">{blogPost.content}</p>
+
+            {isOwner && <CopyToNaverButton post={blogPost} />}
 
             {isOwner && (
               <button
