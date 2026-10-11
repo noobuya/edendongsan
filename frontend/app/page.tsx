@@ -435,7 +435,7 @@ export default function HomePage() {
 
       {/* 떠 있는 앱 바 */}
       <header className="absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-3 p-4">
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           {step > 1 ? (
             <button
               type="button"
@@ -463,39 +463,41 @@ export default function HomePage() {
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* 아이콘이 많아지면(사장님 기기는 최대 7개) 일반폭 폰에서 뒤쪽 아이콘이
+            화면 밖으로 밀려 안 보이던 문제가 있었다 — 가로 스크롤로 전부 닿게 한다. */}
+        <div className="no-scrollbar flex min-w-0 items-center gap-2 overflow-x-auto">
           <Link
             href="/quote"
             aria-label="빠른 견적 (평수별·품목별)"
-            className="glass-pill flex h-11 w-11 items-center justify-center text-slate-700 transition-transform active:scale-90"
+            className="glass-pill flex h-11 w-11 shrink-0 items-center justify-center text-slate-700 transition-transform active:scale-90"
           >
             <Calculator className="h-5 w-5" />
           </Link>
           <Link
             href="/cutting"
             aria-label="스마트 재단 계산기"
-            className="glass-pill flex h-11 w-11 items-center justify-center text-slate-700 transition-transform active:scale-90"
+            className="glass-pill flex h-11 w-11 shrink-0 items-center justify-center text-slate-700 transition-transform active:scale-90"
           >
             <Ruler className="h-5 w-5" />
           </Link>
           <Link
             href="/blog"
             aria-label="시공 후기 블로그"
-            className="glass-pill flex h-11 w-11 items-center justify-center text-slate-700 transition-transform active:scale-90"
+            className="glass-pill flex h-11 w-11 shrink-0 items-center justify-center text-slate-700 transition-transform active:scale-90"
           >
             <Newspaper className="h-5 w-5" />
           </Link>
           <Link
             href="/portfolio"
             aria-label="시공 갤러리"
-            className="glass-pill flex h-11 w-11 items-center justify-center text-slate-700 transition-transform active:scale-90"
+            className="glass-pill flex h-11 w-11 shrink-0 items-center justify-center text-slate-700 transition-transform active:scale-90"
           >
             <Images className="h-5 w-5" />
           </Link>
           <Link
             href="/community"
             aria-label="견적 공유"
-            className="glass-pill flex h-11 w-11 items-center justify-center text-slate-700 transition-transform active:scale-90"
+            className="glass-pill flex h-11 w-11 shrink-0 items-center justify-center text-slate-700 transition-transform active:scale-90"
           >
             <Users className="h-5 w-5" />
           </Link>
@@ -506,7 +508,7 @@ export default function HomePage() {
               type="button"
               onClick={() => setQuoteDialogOpen(true)}
               aria-label="견적서 불러오기"
-              className="glass-pill flex h-11 w-11 items-center justify-center text-slate-700 transition-transform active:scale-90"
+              className="glass-pill flex h-11 w-11 shrink-0 items-center justify-center text-slate-700 transition-transform active:scale-90"
             >
               <FolderOpen className="h-5 w-5" />
             </button>
@@ -517,7 +519,7 @@ export default function HomePage() {
             <Link
               href="/proposal/new"
               aria-label="AI 제안서 만들기"
-              className="glass-pill flex h-11 w-11 items-center justify-center text-slate-700 transition-transform active:scale-90"
+              className="glass-pill flex h-11 w-11 shrink-0 items-center justify-center text-slate-700 transition-transform active:scale-90"
             >
               <Sparkles className="h-5 w-5" />
             </Link>
