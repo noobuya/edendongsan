@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import CutMapView from "@/components/cutting/CutMapView";
 import ReferenceMeasureSheet from "@/components/measure/ReferenceMeasureSheet";
+import WeatherAdvisoryBanner from "@/components/WeatherAdvisoryBanner";
 import { backMarkLabel, dimWithArrow, grainDirectionOf, packShelves, type NestingPiece, type NestingShelf } from "@/lib/cutNesting";
 
 // 필름 원단의 표준 장폭. app/services/estimator.py가 실제 견적을 낼 때 쓰는 값과 같다 —
@@ -723,16 +724,51 @@ export default function CuttingCalculatorPage() {
   }
 
   // ---- 음성 인식 상태 ----
+  // [APK에서 음성 명령이 "실행이 안 된다"던 문제의 진짜 원인] Capacitor 안드로이드
+  // 앱은 webview 안에서 돌아가는데, webview는 브라우저(Chrome 앱)와 달리 Web Speech
+  // API(webkitSpeechRecognition)를 아예 구현하지 않는다 — 그래서 start()는 호출돼도
+  // 구글 서버 응답이 절대 안 와서 마이크가 영원히 빨갛게 멈췄다(실측으로 재현 확인).
+  // 안드로이드 네이티브 음성인식을 쓰려면 브라우저 API가 아니라 OS 자체 SpeechRecognizer를
+  // 쓰는 네이티브 플러그인이 필요해서 @capacitor-community/speech-recognition을 붙였다.
+  // 네이티브 앱(Capacitor.isNativePlatform())에서는 이 플러그인을, 일반 웹 브라우저
+  // (PC 개발 중 확인, 삼성 인터넷 등)에서는 기존 Web Speech API 경로를 그대로 쓴다.
   const [listening, setListening] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(true);
   const [lastHeard, setLastHeard] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const isNativeRef = useRef(false);
 
   useEffect(() => {
-    const SR =
-      (window as unknown as { SpeechRecognition?: SpeechRecognitionCtor }).SpeechRecognition ??
-      (window as unknown as { webkitSpeechRecognition?: SpeechRecognitionCtor }).webkitSpeechRecognition;
-    setVoiceSupported(!!SR);
+    let active = true;
+    (async () => {
+      const { Capacitor } = await import("@capacitor/core");
+      if (Capacitor.isNativePlatform()) {
+        isNativeRef.current = true;
+        try {
+          const { SpeechRecognition } = await import("@capacitor-community/speech-recognition");
+          const { available } = await SpeechRecognition.available();
+          if (active) setVoiceSupported(available);
+        } catch {
+          if (active) setVoiceSupported(false);
+        }
+        return;
+      }
+      const SR =
+        (window as unknown as { SpeechRecognition?: SpeechRecognitionCtor }).SpeechRecognition ??
+        (window as unknown as { webkitSpeechRecognition?: SpeechRecognitionCtor }).webkitSpeechRecognition;
+      if (active) setVoiceSupported(!!SR);
+    })();
+    // 화면을 떠날 때 혹시 듣고 있던 중이면 정리한다 — 안 하면 떠난 뒤에도 타임아웃이
+    // 울려 이미 사라진 화면에 setState를 시도하게 된다.
+    return () => {
+      active = false;
+      recognitionRef.current?.stop();
+      if (isNativeRef.current) {
+        void import("@capacitor-community/speech-recognition").then(({ SpeechRecognition }) =>
+          SpeechRecognition.stop().catch(() => {}),
+        );
+      }
+    };
   }, []);
 
   // 카테고리를 바꾸면 그 부위의 기본 두께·몰딩 폭으로 다시 채운다. 치수(가로/세로/길이)는
@@ -1017,7 +1053,79 @@ export default function CuttingCalculatorPage() {
     showToast(`"${text}" → ${cfg.label} ${preset.label} ${added}개 추가했어요`);
   }
 
-  function startVoice() {
+  // [실측으로 발견한 버그] 앱 webview(Capacitor APK)나 일부 브라우저에서는 start()가
+  // 호출돼도 onresult/onerror/onend 중 아무것도 영원히 안 올 때가 있다(Web Speech API가
+  // 내부적으로 구글 서버에 음성을 보내 처리하는 방식이라, 그 요청이 막히거나 webview가
+  // 애초에 이 기능을 못 쓰면 "시작은 됐는데 끝나지도 실패하지도 않는" 상태로 영원히
+  // 멈춘다 — 마이크가 빨갛게 계속 깜빡이기만 하고 아무 반응이 없어 "실행이 안 된다"로
+  // 보인다). 그래서 일정 시간 안에 아무 이벤트도 안 오면 직접 타임아웃을 걸어 끊는다.
+  const VOICE_TIMEOUT_MS = 8000;
+  const voiceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function clearVoiceTimeout() {
+    if (voiceTimeoutRef.current) {
+      clearTimeout(voiceTimeoutRef.current);
+      voiceTimeoutRef.current = null;
+    }
+  }
+
+  /** 네이티브 앱(APK)에서 쓰는 경로 — OS 자체 SpeechRecognizer를 쓰는 플러그인이라
+   *  webview의 Web Speech API 미구현 문제를 완전히 피해 간다. start()가 결과를 바로
+   *  Promise로 돌려주는 구조라 이벤트 콜백이 필요 없지만, 네이티브 쪽도 응답이 안
+   *  돌아올 가능성에 대비해 웹 경로와 똑같이 타임아웃으로 한 번 더 감싼다.
+   *  (요청하신 대로: 이 경로는 네이티브 플러그인 코드가 새로 들어간 것이라, APK를
+   *  다시 빌드해서 새로 설치해야만 실제로 작동한다 — 서버 코드만 바뀌는 다른 기능과
+   *  달리 기존 설치본에는 이 플러그인이 안 들어 있다.) */
+  async function startVoiceNative() {
+    const { SpeechRecognition } = await import("@capacitor-community/speech-recognition");
+    try {
+      const perm = await SpeechRecognition.checkPermissions();
+      if (perm.speechRecognition !== "granted") {
+        const requested = await SpeechRecognition.requestPermissions();
+        if (requested.speechRecognition !== "granted") {
+          showToast("마이크 권한이 꺼져 있어요. 기기 설정 > 앱 권한에서 마이크를 켜주세요");
+          return;
+        }
+      }
+    } catch {
+      showToast("마이크 권한을 확인하지 못했어요");
+      return;
+    }
+
+    setListening(true);
+    clearVoiceTimeout();
+    const timeoutPromise = new Promise<null>((resolve) => {
+      voiceTimeoutRef.current = setTimeout(() => resolve(null), VOICE_TIMEOUT_MS);
+    });
+    try {
+      const result = await Promise.race([
+        SpeechRecognition.start({ language: "ko-KR", popup: false, partialResults: false }),
+        timeoutPromise,
+      ]);
+      clearVoiceTimeout();
+      setListening(false);
+      if (result === null) {
+        await SpeechRecognition.stop().catch(() => {});
+        showToast("음성 인식이 응답하지 않아요. 치수를 직접 입력해 주세요");
+        return;
+      }
+      const text = result.matches?.[0]?.trim();
+      if (text) handleVoiceCommand(text);
+      else showToast("아무 말도 못 들었어요. 다시 눌러서 말씀해 주세요");
+    } catch {
+      clearVoiceTimeout();
+      setListening(false);
+      showToast("음성을 인식하지 못했어요. 다시 시도해주세요");
+    }
+  }
+  async function stopVoiceNative() {
+    clearVoiceTimeout();
+    const { SpeechRecognition } = await import("@capacitor-community/speech-recognition");
+    await SpeechRecognition.stop().catch(() => {});
+    setListening(false);
+  }
+
+  function startVoiceWeb() {
     const SR =
       (window as unknown as { SpeechRecognition?: SpeechRecognitionCtor }).SpeechRecognition ??
       (window as unknown as { webkitSpeechRecognition?: SpeechRecognitionCtor }).webkitSpeechRecognition;
@@ -1031,25 +1139,59 @@ export default function CuttingCalculatorPage() {
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
     recognition.onresult = (event) => {
+      clearVoiceTimeout();
       const text = event.results[0]?.[0]?.transcript?.trim();
       if (text) handleVoiceCommand(text);
     };
-    recognition.onerror = () => {
+    recognition.onerror = (event) => {
+      clearVoiceTimeout();
       setListening(false);
-      showToast("음성을 인식하지 못했어요. 다시 시도해주세요");
+      const code = (event as { error?: string } | undefined)?.error;
+      if (code === "not-allowed" || code === "service-not-allowed") {
+        showToast("마이크 권한이 꺼져 있어요. 브라우저/앱 설정에서 마이크 권한을 켜주세요");
+      } else if (code === "no-speech") {
+        showToast("아무 말도 못 들었어요. 다시 눌러서 말씀해 주세요");
+      } else if (code === "audio-capture") {
+        showToast("마이크를 찾을 수 없어요. 기기 마이크를 확인해 주세요");
+      } else if (code === "network") {
+        showToast("음성 인식은 인터넷 연결이 필요해요. 연결 상태를 확인해 주세요");
+      } else {
+        showToast("음성을 인식하지 못했어요. 다시 시도해주세요");
+      }
     };
-    recognition.onend = () => setListening(false);
+    recognition.onend = () => {
+      clearVoiceTimeout();
+      setListening(false);
+    };
     recognitionRef.current = recognition;
     setListening(true);
+    clearVoiceTimeout();
+    voiceTimeoutRef.current = setTimeout(() => {
+      recognitionRef.current?.stop();
+      setListening(false);
+      showToast("음성 인식이 응답하지 않아요 — 이 기기/앱에서는 음성 명령이 안 될 수 있어요. 치수를 직접 입력해 주세요");
+    }, VOICE_TIMEOUT_MS);
     try {
       recognition.start();
     } catch {
+      clearVoiceTimeout();
       setListening(false);
+      showToast("음성 인식을 시작하지 못했어요. 치수를 직접 입력해 주세요");
     }
   }
-  function stopVoice() {
+  function stopVoiceWeb() {
+    clearVoiceTimeout();
     recognitionRef.current?.stop();
     setListening(false);
+  }
+
+  function startVoice() {
+    if (isNativeRef.current) void startVoiceNative();
+    else startVoiceWeb();
+  }
+  function stopVoice() {
+    if (isNativeRef.current) void stopVoiceNative();
+    else stopVoiceWeb();
   }
 
   function toggleChecked(id: string) {
@@ -1153,6 +1295,7 @@ export default function CuttingCalculatorPage() {
           <p className="mt-1.5 text-[15px] text-[#9aa4b2]">
             표준 규격은 원터치로, 특수 치수는 줄자로 재서 입력하면 재단 도면까지 자동으로 나와요
           </p>
+          <WeatherAdvisoryBanner dark className="mt-3" />
         </header>
 
         {/* 부위 선택 */}

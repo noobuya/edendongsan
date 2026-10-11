@@ -21,6 +21,7 @@ import {
   XCircle,
 } from "lucide-react";
 import AssetImage from "@/components/AssetImage";
+import WeatherAdvisoryBanner from "@/components/WeatherAdvisoryBanner";
 import LevelBadge from "@/components/recruiting/LevelBadge";
 import {
   recruitingApplicants,
@@ -590,6 +591,8 @@ export default function RecruitingPage() {
           </section>
         ) : (
           <>
+            <WeatherAdvisoryBanner />
+
             <section className="relative overflow-hidden rounded-3xl bg-indigo-600 p-6 text-white shadow-lg">
               <p className="text-[13px] font-medium text-indigo-100">{me.role === "EXPERT" ? "전문가" : "조공"} 작업실</p>
               <div className="mt-1 flex flex-wrap items-center gap-2">

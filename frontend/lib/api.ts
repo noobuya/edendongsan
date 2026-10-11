@@ -1290,6 +1290,25 @@ export async function getWarranty(jobId: string): Promise<Warranty> {
   return res.json();
 }
 
+/* ---- 날씨 연동 들뜸·기포 하자 방지 주의보 ---- */
+export type WeatherAdvisoryLevel = "warning" | "caution" | "ok";
+export interface WeatherAdvisory {
+  available: boolean;
+  location: string;
+  temp_c: number | null;
+  humidity: number | null;
+  description: string;
+  level: WeatherAdvisoryLevel;
+  message: string;
+}
+export async function getWeatherAdvisory(location?: string): Promise<WeatherAdvisory> {
+  const url = new URL(`${API_BASE}/api/weather/advisory`, urlBase());
+  if (location) url.searchParams.set("location", location);
+  const res = await apiFetch(url.toString());
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "날씨 정보를 불러오지 못했습니다."));
+  return res.json();
+}
+
 /* 관리자 화면 전용(/admin/recruiting): 가입 승인/거절, 뱃지·계정 직접 생성. */
 async function adminRecruitingFetch<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
   const res = await apiFetch(`${API_BASE}/api/recruiting${path}`, {

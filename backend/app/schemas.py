@@ -611,3 +611,17 @@ class WarrantyResponse(BaseModel):
     warranty_expires_at: str
     after_image_url: Optional[str] = None
     maintenance_tips: list[str]
+
+
+# ── 날씨 연동 들뜸·기포 하자 방지 주의보 ──────────────────────────────
+WeatherAdvisoryLevel = Literal["warning", "caution", "ok"]
+
+
+class WeatherAdvisoryResponse(BaseModel):
+    available: bool
+    location: str
+    temp_c: Optional[int] = None
+    humidity: Optional[int] = None
+    description: str = ""
+    level: WeatherAdvisoryLevel = "ok"
+    message: str = ""
