@@ -1059,8 +1059,16 @@ export default function CuttingCalculatorPage() {
   // 애초에 이 기능을 못 쓰면 "시작은 됐는데 끝나지도 실패하지도 않는" 상태로 영원히
   // 멈춘다 — 마이크가 빨갛게 계속 깜빡이기만 하고 아무 반응이 없어 "실행이 안 된다"로
   // 보인다). 그래서 일정 시간 안에 아무 이벤트도 안 오면 직접 타임아웃을 걸어 끊는다.
-  const VOICE_TIMEOUT_MS = 8000;
+  // [음성인식이 "됐다가 안됐다" 하는 문제] 네이티브 플러그인은 OS 자체
+  // SpeechRecognizer를 쓰는데, 권한을 막 받은 직후나 기기가 느릴 때는 실제로 듣기
+  // 시작하기까지 예열 시간이 들쭉날쭉하다 — 8초는 가끔 이 예열+발화+인식 전체 시간보다
+  // 짧아서, 정상적으로 진행 중이던 인식을 우리 쪽 타임아웃이 먼저 끊어버리는
+  // 경우가 있었다(기기/네트워크 상태에 따라 매번 다르게 "실패"로 보이는 이유).
+  const VOICE_TIMEOUT_MS = 12000;
   const voiceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 버튼을 빠르게 연타하거나 이전 세션이 아직 안 끝난 채로 다시 시작하면 네이티브
+  // SpeechRecognizer가 "busy" 상태로 조용히 실패한다 — 진행 중일 때는 새 시작을 막는다.
+  const voiceBusyRef = useRef(false);
 
   function clearVoiceTimeout() {
     if (voiceTimeoutRef.current) {
@@ -1077,45 +1085,51 @@ export default function CuttingCalculatorPage() {
    *  다시 빌드해서 새로 설치해야만 실제로 작동한다 — 서버 코드만 바뀌는 다른 기능과
    *  달리 기존 설치본에는 이 플러그인이 안 들어 있다.) */
   async function startVoiceNative() {
-    const { SpeechRecognition } = await import("@capacitor-community/speech-recognition");
+    if (voiceBusyRef.current) return;
+    voiceBusyRef.current = true;
     try {
-      const perm = await SpeechRecognition.checkPermissions();
-      if (perm.speechRecognition !== "granted") {
-        const requested = await SpeechRecognition.requestPermissions();
-        if (requested.speechRecognition !== "granted") {
-          showToast("마이크 권한이 꺼져 있어요. 기기 설정 > 앱 권한에서 마이크를 켜주세요");
-          return;
+      const { SpeechRecognition } = await import("@capacitor-community/speech-recognition");
+      try {
+        const perm = await SpeechRecognition.checkPermissions();
+        if (perm.speechRecognition !== "granted") {
+          const requested = await SpeechRecognition.requestPermissions();
+          if (requested.speechRecognition !== "granted") {
+            showToast("마이크 권한이 꺼져 있어요. 기기 설정 > 앱 권한에서 마이크를 켜주세요");
+            return;
+          }
         }
-      }
-    } catch {
-      showToast("마이크 권한을 확인하지 못했어요");
-      return;
-    }
-
-    setListening(true);
-    clearVoiceTimeout();
-    const timeoutPromise = new Promise<null>((resolve) => {
-      voiceTimeoutRef.current = setTimeout(() => resolve(null), VOICE_TIMEOUT_MS);
-    });
-    try {
-      const result = await Promise.race([
-        SpeechRecognition.start({ language: "ko-KR", popup: false, partialResults: false }),
-        timeoutPromise,
-      ]);
-      clearVoiceTimeout();
-      setListening(false);
-      if (result === null) {
-        await SpeechRecognition.stop().catch(() => {});
-        showToast("음성 인식이 응답하지 않아요. 치수를 직접 입력해 주세요");
+      } catch {
+        showToast("마이크 권한을 확인하지 못했어요");
         return;
       }
-      const text = result.matches?.[0]?.trim();
-      if (text) handleVoiceCommand(text);
-      else showToast("아무 말도 못 들었어요. 다시 눌러서 말씀해 주세요");
-    } catch {
+
+      setListening(true);
       clearVoiceTimeout();
-      setListening(false);
-      showToast("음성을 인식하지 못했어요. 다시 시도해주세요");
+      const timeoutPromise = new Promise<null>((resolve) => {
+        voiceTimeoutRef.current = setTimeout(() => resolve(null), VOICE_TIMEOUT_MS);
+      });
+      try {
+        const result = await Promise.race([
+          SpeechRecognition.start({ language: "ko-KR", popup: false, partialResults: false }),
+          timeoutPromise,
+        ]);
+        clearVoiceTimeout();
+        setListening(false);
+        if (result === null) {
+          await SpeechRecognition.stop().catch(() => {});
+          showToast("음성 인식이 응답하지 않아요. 치수를 직접 입력해 주세요");
+          return;
+        }
+        const text = result.matches?.[0]?.trim();
+        if (text) handleVoiceCommand(text);
+        else showToast("아무 말도 못 들었어요. 다시 눌러서 말씀해 주세요");
+      } catch {
+        clearVoiceTimeout();
+        setListening(false);
+        showToast("음성을 인식하지 못했어요. 다시 시도해주세요");
+      }
+    } finally {
+      voiceBusyRef.current = false;
     }
   }
   async function stopVoiceNative() {
