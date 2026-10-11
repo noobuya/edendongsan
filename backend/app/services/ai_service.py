@@ -459,12 +459,19 @@ def _run_edit(base: Image.Image, instruction: str) -> Image.Image:
             "prompt": instruction,
             "input_images": [_data_uri(base)],
             "output_format": "png",
-            "quality": "high",
-            # 원본 비율에 가장 가까운 값을 고른다. 기본값(1:1)으로 받으면 정사각형이
-            # 나오고, 그걸 원본 크기로 늘리는 순간 사진 속 문짝이 좌우로 밀려 마스크와
-            # 어긋난다 — 시트지가 문 한쪽만 덮고 잘린 것처럼 보이는 원인이었다.
-            # ("match_input_image"는 이 모델이 받지 않는 값이라 422로 거부됐다.)
-            "aspect_ratio": _closest_aspect(base.size),
+            # [초고화질 — 모델 스키마 직접 조회로 확인] quality는 high 위에 xhigh/max가
+            # 더 있다. max까지 가면 비용·시간이 크게 늘어 일상적인 렌더에는 과하다고
+            # 판단해, 한 단계만 올린 xhigh를 기본값으로 쓴다(사장님이 더 올리고 싶으면
+            # 바로 "max"로 바꿀 수 있게 상수 하나로 둠).
+            "quality": EDIT_QUALITY,
+            # 원본 비율에 가장 가까운 "실제 해상도 문자열"을 고른다. 예전엔 "1:1"
+            # 같은 비율 키워드만 보냈는데, 스키마를 다시 보니 같은 모델이 최대
+            # 2048x2048/2048x1152 같은 명시적 해상도도 받는다 — 결과를 원본 크기로
+            # 되돌리는 건 똑같지만, 모델이 더 큰 해상도로 "진짜로 그린" 뒤 줄이는
+            # 것과 작게 그린 걸 늘리는 것은 디테일이 다르다. 4K(3840x2160 등)는
+            # 스키마 설명에 "실험적이라 결과가 들쭉날쭉할 수 있다"고 적혀 있어
+            # 제외했다 — 영업용 사진은 안정성이 더 중요하다.
+            "aspect_ratio": _closest_resolution(base.size),
         },
     )
     if not output:
@@ -476,24 +483,40 @@ def _run_edit(base: Image.Image, instruction: str) -> Image.Image:
     return result.resize(base.size, Image.LANCZOS) if result.size != base.size else result
 
 
-# 이 모델이 허용하는 출력 비율 (422 응답이 알려준 목록).
-_ALLOWED_ASPECTS = {
-    "1:1": 1 / 1,
-    "3:2": 3 / 2,
-    "2:3": 2 / 3,
-    "4:3": 4 / 3,
-    "3:4": 3 / 4,
-    "16:9": 16 / 9,
-    "9:16": 9 / 16,
+# [초고화질] high 위에 xhigh, max가 더 있다(모델 스키마 enum으로 확인:
+# low/medium/high/xhigh/max/auto). max는 비용·처리 시간이 크게 늘어 일상 렌더에는
+# xhigh를 기본으로 쓴다.
+EDIT_QUALITY = "xhigh"
+
+# 이 모델이 허용하는 출력 해상도(422 응답과 스키마 enum으로 확인). 같은 비율이면
+# 더 큰 해상도를 쓴다 — "sizes above 2560x1440은 실험적"이라는 스키마 설명 때문에
+# 3840x2160/2160x3840(4K) 두 개는 제외했다.
+_ALLOWED_RESOLUTIONS = {
+    "1024x1024": 1 / 1,
+    "2048x2048": 1 / 1,
+    "1536x1024": 3 / 2,
+    "1024x1536": 2 / 3,
+    "1536x1152": 4 / 3,
+    "1152x1536": 3 / 4,
+    "2048x1152": 16 / 9,
+    "1152x2048": 9 / 16,
 }
 
 
-def _closest_aspect(size: tuple[int, int]) -> str:
-    """원본 비율과 가장 가까운 허용 비율을 고른다.
+def _closest_resolution(size: tuple[int, int]) -> str:
+    """원본 비율과 가장 가까운 허용 비율 중, 같은 비율이면 더 큰 해상도를 고른다.
     완전히 같지 않아도 되지만(결과를 원본 크기로 되돌리므로), 가까울수록
     사진 속 물건이 덜 늘어나 마스크와 잘 맞는다."""
     ratio = size[0] / size[1]
-    return min(_ALLOWED_ASPECTS.items(), key=lambda kv: abs(kv[1] - ratio))[0]
+
+    def pixel_count(name: str) -> int:
+        w, h = name.split("x")
+        return int(w) * int(h)
+
+    return min(
+        _ALLOWED_RESOLUTIONS.items(),
+        key=lambda kv: (round(abs(kv[1] - ratio), 4), -pixel_count(kv[0])),
+    )[0]
 
 
 # [카테고리별로 "실제로 뭘 지켜야 하는지"가 다르다 — 벽 사진에서 AI가 자주 헷갈리던 원인]

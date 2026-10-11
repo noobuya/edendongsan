@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowLeft, Loader2 } from "lucide-react";
+import { AlertCircle, ArrowLeft, Loader2, ShieldCheck } from "lucide-react";
 import AssetImage from "@/components/AssetImage";
 import BeforeAfterSlider from "@/components/BeforeAfterSlider";
 import BusinessBanner from "@/components/BusinessBanner";
@@ -107,6 +107,33 @@ export default function ProposalPublicPage() {
         </header>
 
         {proposal.estimate?.roi_comparison && <ROIBarChart roi={proposal.estimate.roi_comparison} />}
+
+        {/* 어떤 필름을 쓰는지(브랜드/품번)와 A/S 보증을 가격 바로 위에서 먼저
+            보여준다 — 고객이 "정체불명의 필름"이 아니라 실제 제품명을 보고,
+            가격을 보기 전에 보증이 있다는 걸 먼저 알면 금액에 대한 거부감이 준다. */}
+        {proposal.estimate && proposal.estimate.material_orders.length > 0 && (
+          <div className="mb-5 flex flex-wrap items-center gap-1.5">
+            {proposal.estimate.material_orders.map((m) => (
+              <span
+                key={m.pattern_id}
+                className="flex items-center gap-1.5 rounded-full border border-[#eef0f2] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-[#333d4b]"
+              >
+                {m.color_hex && (
+                  <span
+                    className="h-3 w-3 shrink-0 rounded-full border border-black/10"
+                    style={{ backgroundColor: m.color_hex }}
+                  />
+                )}
+                {m.name}
+              </span>
+            ))}
+            <span className="flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-[12.5px] font-semibold text-emerald-800">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              1년 무상 A/S 보증
+            </span>
+          </div>
+        )}
+
         {proposal.estimate && <ProposalEstimateSummary estimate={proposal.estimate} />}
         {proposal.site_conditions && <ProposalSiteConditionsSummary conditions={proposal.site_conditions} />}
 
