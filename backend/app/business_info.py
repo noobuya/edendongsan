@@ -8,4 +8,7 @@
 BUSINESS_NAME = "대한인테리어필름"
 BUSINESS_PHONE = "010-7664-8007"
 BUSINESS_SERVICE_AREA = "대구 전지역 및 경북 지역 출장 가능"
+# 블로그 제목 말머리("[대구 인테리어 필름]")처럼 짧게 들어가야 하는 자리용 —
+# BUSINESS_SERVICE_AREA는 "~출장 가능"까지 붙어 있어 제목에 그대로 쓰면 어색하다.
+BUSINESS_SERVICE_AREA_SHORT = "대구"
 BUSINESS_PHONE_TEL_HREF = f"tel:{BUSINESS_PHONE.replace('-', '')}"

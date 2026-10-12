@@ -10,6 +10,7 @@ import CallBanner from "@/components/CallBanner";
 import ShareLinkButton from "@/components/ShareLinkButton";
 import { getBlogDetail } from "@/lib/api";
 import type { BlogDetail, WorkPhoto, WorkPhotoStage } from "@/types";
+import { splitBoldSegments } from "@/lib/richText";
 import { useAndroidBack } from "@/lib/useAndroidBack";
 
 const STAGE_LABEL: Record<WorkPhotoStage, string> = {
@@ -150,7 +151,9 @@ export default function BlogDetailPage() {
             .filter(Boolean)
             .map((paragraph, i) => (
               <p key={i} className="whitespace-pre-line">
-                {paragraph}
+                {splitBoldSegments(paragraph).map((seg, j) =>
+                  seg.bold ? <strong key={j}>{seg.text}</strong> : <span key={j}>{seg.text}</span>
+                )}
               </p>
             ))}
         </div>

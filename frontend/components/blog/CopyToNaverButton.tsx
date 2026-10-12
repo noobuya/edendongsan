@@ -2,10 +2,19 @@
 
 import { useState } from "react";
 import { Check, Copy } from "lucide-react";
+import { splitBoldSegments } from "@/lib/richText";
 import type { BlogPost } from "@/types";
 
 function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** "**강조**" 구간을 <strong>으로 바꾼다 — 각 조각을 먼저 이스케이프한 뒤 감싸서,
+ *  강조 안 텍스트에 HTML 특수문자가 들어 있어도 안전하다. */
+function boldToHtml(text: string): string {
+  return splitBoldSegments(text)
+    .map((seg) => (seg.bold ? `<strong>${escapeHtml(seg.text)}</strong>` : escapeHtml(seg.text)))
+    .join("");
 }
 
 /** 문단(빈 줄로 구분)마다 <p>로, 문단 안 줄바꿈은 <br>로 — content는 blog_writer.py가
@@ -14,7 +23,7 @@ function toHtmlParagraphs(content: string): string {
   return content
     .split(/\n{2,}/)
     .filter((p) => p.trim())
-    .map((p) => `<p>${escapeHtml(p).replace(/\n/g, "<br>")}</p>`)
+    .map((p) => `<p>${boldToHtml(p).replace(/\n/g, "<br>")}</p>`)
     .join("");
 }
 
