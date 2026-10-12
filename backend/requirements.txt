@@ -14,3 +14,4 @@ sqlalchemy>=2.0.35
 a2wsgi>=1.10.0
 flask>=3.0.0
 websockets>=13.0
+firebase-admin>=6.5.0

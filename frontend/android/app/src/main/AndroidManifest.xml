@@ -51,4 +51,11 @@
          무관하게 브라우저 자체 권한 창이 뜬다. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
+
+    <!-- 안드로이드 13(API 33)부터는 이 권한을 매니페스트에 선언하고 런타임에
+         별도로 동의를 받아야 알림을 띄울 수 있다(@capacitor/push-notifications가
+         JS 쪽에서 requestPermissions()로 그 동의 창을 띄운다 — 이 선언이 없으면
+         동의를 받아도 알림 자체가 조용히 안 뜬다). 제안서 열람·지명 호출·헬프콜
+         실시간 알림에 쓴다. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

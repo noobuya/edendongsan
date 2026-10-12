@@ -53,3 +53,15 @@ def delete_proposal(proposal_id: str) -> bool:
         return False
     path.unlink()
     return True
+
+
+def mark_first_viewed(proposal_id: str, viewed_at: str) -> bool:
+    """고객이 공개 링크를 처음 열었을 때 한 번만 기록한다. 이미 기록돼 있으면
+    아무것도 안 하고 False를 돌려준다 — 호출하는 쪽(get_public_proposal)이
+    이 반환값으로 "이번이 진짜 첫 조회였는지"를 가려 푸시 알림 발송 여부를 정한다."""
+    data = load_proposal(proposal_id)
+    if data is None or data.get("first_viewed_at"):
+        return False
+    data["first_viewed_at"] = viewed_at
+    save_proposal(proposal_id, data)
+    return True

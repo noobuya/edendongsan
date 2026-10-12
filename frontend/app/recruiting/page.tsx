@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import AssetImage from "@/components/AssetImage";
 import WeatherAdvisoryBanner from "@/components/WeatherAdvisoryBanner";
+import { registerForPush } from "@/lib/pushRegistration";
 import LevelBadge from "@/components/recruiting/LevelBadge";
 import {
   recruitingApplicants,
@@ -42,6 +43,7 @@ import {
   recruitingSignup,
   recruitingSignupStatus,
   recruitingUploadApplicationPhoto,
+  registerRecruitingPushToken,
   type Applicant,
   type ApplicationPhoto,
   type FieldJob,
@@ -228,6 +230,9 @@ export default function RecruitingPage() {
       } catch {}
       setCode(c);
       setMe(profile);
+      // 지명 호출·헬프콜 알림 — 네이티브 앱이 아니거나 플러그인이 없는 빌드에서는
+      // 조용히 아무 일도 하지 않는다.
+      void registerForPush((token) => void registerRecruitingPushToken(c, token).catch(() => {}));
     } catch (err) {
       setMe(null);
       setError(err instanceof Error ? err.message : "입장하지 못했습니다.");

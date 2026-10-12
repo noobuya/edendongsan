@@ -569,6 +569,9 @@ class Proposal(BaseModel):
     before_image_url: Optional[str] = None
     estimate: Optional[EstimateBreakdown] = None
     site_conditions: Optional[SiteConditions] = None
+    # 고객이 공개 링크를 처음 연 시각 — 이때 사장님 기기로 푸시 알림을 보낸다
+    # (가장 관심이 높은 타이밍). 두 번째부터는 다시 안 보낸다(스팸 방지).
+    first_viewed_at: Optional[str] = None
 
 
 class ProposalListResponse(BaseModel):
@@ -646,3 +649,8 @@ class WeatherAdvisoryResponse(BaseModel):
     description: str = ""
     level: WeatherAdvisoryLevel = "ok"
     message: str = ""
+
+
+# ── 실시간 알림(FCM 푸시) ──────────────────────────────────────────────
+class PushTokenRequest(BaseModel):
+    token: str

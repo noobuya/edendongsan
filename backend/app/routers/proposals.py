@@ -10,14 +10,18 @@ import os
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
+from sqlalchemy.orm import Session
 
+from app.database import get_db
+from app.models import PushToken
 from app.owner_auth import is_owner
-from app.proposal_store import delete_proposal, list_proposals, load_proposal, save_proposal
+from app.proposal_store import delete_proposal, list_proposals, load_proposal, mark_first_viewed, save_proposal
 from app.quotes_store import load_quote
 from app.schemas import Proposal, ProposalFeedbackRequest, ProposalListResponse, ProposalPublicResponse
 from app.services.proposal_writer import adjust_brightness, generate_copy, generate_crops, regenerate_copy
+from app.services.push import send_push
 
 BRIGHTNESS_FACTORS = {"brighter": 1.25, "darker": 0.8}
 
@@ -180,9 +184,22 @@ async def remove_proposal(proposal_id: str, x_admin_token: str | None = Header(d
 
 
 @public_router.get("/{proposal_id}/public", response_model=ProposalPublicResponse)
-async def get_public_proposal(proposal_id: str):
-    """카톡·문자로 보내는 공개 링크가 보는 엔드포인트 — 인증 없음, published만 노출."""
+async def get_public_proposal(proposal_id: str, db: Session = Depends(get_db)):
+    """카톡·문자로 보내는 공개 링크가 보는 엔드포인트 — 인증 없음, published만 노출.
+
+    [첫 열람 시 사장님에게 푸시] 고객이 가장 관심이 높은 순간이 바로 이 링크를
+    처음 여는 순간이라, 그때 바로 전화를 걸 수 있게 사장님 전 기기에 알린다.
+    두 번째부터는(다시 열어봐도) mark_first_viewed가 False를 돌려주므로 조용히
+    넘어간다 — 고객이 같은 링크를 여러 번 열 때마다 사장님 폰이 울리면 안 된다."""
     data = load_proposal(proposal_id)
     if data is None or data["status"] != "published":
         raise HTTPException(status_code=404, detail="제안서를 찾을 수 없습니다.")
+    if mark_first_viewed(proposal_id, datetime.now(timezone.utc).isoformat()):
+        tokens = [t.token for t in db.query(PushToken).filter(PushToken.is_owner.is_(True))]
+        send_push(
+            tokens,
+            "고객이 제안서를 확인했어요!",
+            f"지금이 연락하기 좋은 타이밍이에요 — {data.get('headline', '')}",
+            data={"type": "proposal_viewed", "proposal_id": proposal_id},
+        )
     return ProposalPublicResponse(**data)

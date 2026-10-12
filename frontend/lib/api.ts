@@ -305,6 +305,16 @@ export async function clearJobSignature(jobId: string, ownerToken: string): Prom
   return res.json();
 }
 
+/** 사장님 기기의 FCM 토큰을 등록한다 — 제안서 열람 알림용. */
+export async function registerOwnerPushToken(ownerToken: string, token: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/push/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...ownerHeaders(ownerToken) },
+    body: JSON.stringify({ token }),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "푸시 토큰 등록에 실패했습니다."));
+}
+
 /** 사장님 기기일 때만 관리자 토큰 헤더를 붙인다(학생 기기는 헤더 없이 보낸다). */
 function ownerHeaders(token?: string | null): Record<string, string> {
   return token ? { "X-Admin-Token": token } : {};
@@ -1191,6 +1201,10 @@ export const recruitingSignup = (payload: {
 }) => recruitingPublicFetch<RecruitingSignupResult>("/signup", { method: "POST", body: JSON.stringify(payload) });
 export const recruitingSignupStatus = (requestToken: string) =>
   recruitingPublicFetch<RecruitingSignupStatus>(`/signup/${encodeURIComponent(requestToken)}`);
+
+/** 이 기기(조공/기공)의 FCM 토큰을 등록한다 — 지명 호출·헬프콜 알림용. */
+export const registerRecruitingPushToken = (code: string, token: string) =>
+  recruitingFetch<{ ok: boolean }>("/push-token", code, { method: "POST", body: JSON.stringify({ token }) });
 
 export const recruitingMe = (code: string) => recruitingFetch<RecruitingUser>("/me", code);
 export const recruitingBadges = (code: string) => recruitingFetch<SkillBadge[]>("/badges", code);

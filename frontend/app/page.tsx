@@ -14,7 +14,15 @@ import ManualMaskStage, { type MaskStageHandle } from "@/components/ManualMaskSt
 import StepItems from "@/components/steps/StepItems";
 import StepMapping from "@/components/steps/StepMapping";
 import StepSite from "@/components/steps/StepSite";
-import { checkOwnerToken, checkServerHealth, createJob, getJobStatus, resolveAssetUrl } from "@/lib/api";
+import {
+  checkOwnerToken,
+  checkServerHealth,
+  createJob,
+  getJobStatus,
+  registerOwnerPushToken,
+  resolveAssetUrl,
+} from "@/lib/api";
+import { registerForPush } from "@/lib/pushRegistration";
 import { clearOwnerToken, readOwnerToken, saveOwnerToken } from "@/lib/ownerToken";
 import { useAndroidBack } from "@/lib/useAndroidBack";
 import { DEFAULT_OPTIONS, DEFAULT_WORK_ITEMS, taskTypeOf } from "@/lib/workItems";
@@ -81,8 +89,12 @@ export default function HomePage() {
     const saved = readOwnerToken();
     if (!saved) return;
     void checkOwnerToken(saved).then((result) => {
-      if (result === "ok") setOwnerTokenState(saved);
-      else if (result === "rejected") clearOwnerToken();
+      if (result === "ok") {
+        setOwnerTokenState(saved);
+        // 제안서 열람 알림 — 네이티브 앱이 아니거나 아직 플러그인이 없는 빌드에서는
+        // registerForPush가 조용히 아무 일도 하지 않는다.
+        void registerForPush((token) => void registerOwnerPushToken(saved, token).catch(() => {}));
+      } else if (result === "rejected") clearOwnerToken();
     });
   }, []);
 

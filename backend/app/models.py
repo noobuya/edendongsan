@@ -8,7 +8,7 @@ CommunityPost / CommunityComment 다섯 테이블을 더한다. 다른 기능(�
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -299,3 +299,18 @@ class ApplicationPhoto(Base):
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     application: Mapped["JobApplication"] = relationship(back_populates="photos")
+
+
+class PushToken(Base):
+    """기기별 FCM(Firebase Cloud Messaging) 등록 토큰. 사장님 기기와 수강생/기공
+    계정이 서로 다른 인증(X-Admin-Token vs X-Access-Code)을 쓰므로, is_owner로
+    사장님 기기를 가르고 user_id는 그때만 비워 둔다(recruiting User가 아니라서).
+    같은 토큰으로 재등록하면 갱신만 한다(앱 재설치·토큰 회전 대비)."""
+
+    __tablename__ = "push_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    is_owner: Mapped[bool] = mapped_column(Boolean, default=False)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

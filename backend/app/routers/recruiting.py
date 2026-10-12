@@ -36,6 +36,7 @@ from app.models import (
     JobAudience,
     JobReview,
     JobStatus,
+    PushToken,
     ScoutRequest,
     ScoutStatus,
     SkillBadge,
@@ -43,7 +44,9 @@ from app.models import (
     UserBadge,
     UserRole,
 )
+from app.schemas import PushTokenRequest
 from app.services.leveling import XP_PER_RATING_POINT
+from app.services.push import send_push
 from app.services.qa_scan import scan_finish_quality
 from app.schemas_recruiting import (
     AdminApplicationRow,
@@ -275,6 +278,25 @@ def whoami(current_user: User = Depends(require_access_code)):
     return current_user
 
 
+@router.post("/push-token")
+def register_push_token(
+    payload: PushTokenRequest,
+    current_user: User = Depends(require_access_code),
+    db: Session = Depends(get_db),
+):
+    """이 계정(조공/기공) 기기의 FCM 토큰을 등록한다 — 지명 호출·헬프콜 알림에 쓴다.
+    같은 토큰으로 다시 등록하면 소유자만 이 계정으로 갱신한다(기기를 재설치하거나
+    다른 사람에게 넘겼을 때 예전 소유자에게 계속 알림이 가지 않도록)."""
+    existing = db.query(PushToken).filter(PushToken.token == payload.token).first()
+    if existing:
+        existing.is_owner = False
+        existing.user_id = current_user.id
+    else:
+        db.add(PushToken(token=payload.token, is_owner=False, user_id=current_user.id))
+    db.commit()
+    return {"ok": True}
+
+
 @router.get("/badges", response_model=list[SkillBadgeRead])
 def list_badges(current_user: User = Depends(require_access_code), db: Session = Depends(get_db)):
     return db.query(SkillBadge).all()
@@ -328,6 +350,18 @@ def create_field_job(
     db.add(job)
     db.commit()
     db.refresh(job)
+    if job.audience == JobAudience.EXPERT:
+        # 헬프콜 — "같은 공고를 보는 모두" 중 올린 본인만 빼고 다른 기공 전원에게 알린다.
+        expert_ids = [
+            u.id for u in db.query(User).filter(User.role == UserRole.EXPERT, User.id != current_user.id)
+        ]
+        tokens = [t.token for t in db.query(PushToken).filter(PushToken.user_id.in_(expert_ids))]
+        send_push(
+            tokens,
+            "긴급 헬프콜",
+            f"{current_user.name} 기공님이 도움을 요청했어요 — {job.location}",
+            data={"type": "help_call", "field_job_id": str(job.id)},
+        )
     return _job_to_read(job)
 
 
@@ -623,6 +657,15 @@ def create_scout_request(
     db.add(scout_request)
     db.commit()
     db.refresh(scout_request)
+
+    tokens = [t.token for t in db.query(PushToken).filter(PushToken.user_id == target.id)]
+    send_push(
+        tokens,
+        "지명 호출이 도착했어요",
+        f"{current_user.name} 기공님이 콕 집어 불렀어요"
+        + (f": {payload.message}" if payload.message else ""),
+        data={"type": "scout_request", "scout_request_id": str(scout_request.id)},
+    )
     return _scout_request_to_read(scout_request)
 
 
