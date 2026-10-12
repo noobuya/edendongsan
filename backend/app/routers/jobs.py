@@ -18,8 +18,17 @@ from app.pipeline import (
     run_inpaint_edit,
     run_remask,
 )
-from app.quotes_store import clear_signature, load_quote, save_quote, set_signature, set_site_conditions
+from app.quotes_store import (
+    clear_signature,
+    find_change_order,
+    load_quote,
+    save_quote,
+    set_change_order_signature,
+    set_signature,
+    set_site_conditions,
+)
 from app.schemas import (
+    ChangeOrderSignatureRequest,
     IllustrationRequest,
     InpaintAcceptedResponse,
     InpaintRequest,
@@ -67,6 +76,7 @@ async def get_job(job_id: str):
             blog_post=(quote or {}).get("blog_post"),
             signature=(quote or {}).get("signature"),
             site_conditions=(quote or {}).get("site_conditions"),
+            change_orders=(quote or {}).get("change_orders", []),
         )
 
     # 서버가 재시작돼 인메모리 JOBS에서 사라졌거나(브라우저를 오래 열어둔 경우 등)
@@ -294,6 +304,33 @@ async def sign_job(job_id: str, request: SignatureRequest):
     if updated is None:
         # load_quote 이후 거의 동시에 다른 요청이 먼저 서명한 드문 경합.
         raise HTTPException(status_code=409, detail="이미 서명이 완료된 견적서입니다.")
+    return JobStatusResponse(**updated)
+
+
+@router.post("/{job_id}/change-orders/{change_order_id}/signature", response_model=JobStatusResponse)
+async def sign_change_order(job_id: str, change_order_id: str, request: ChangeOrderSignatureRequest):
+    """고객이 현장 추가 시공 건에 원격으로(카톡 링크를 열어 본인 폰에서) 서명한다.
+    sign_job과 같은 이유로 인증을 요구하지 않는다 — 추측 불가능한 job_id+
+    change_order_id 조합을 아는 사람(공유 링크를 받은 바로 그 고객)만 서명할 수
+    있다."""
+    change_order = find_change_order(job_id, change_order_id)
+    if change_order is None:
+        raise HTTPException(status_code=404, detail="추가 시공 건을 찾을 수 없습니다.")
+    if change_order.get("signature"):
+        raise HTTPException(status_code=409, detail="이미 서명이 완료된 건입니다.")
+    if not request.image.startswith("data:image/png;base64,"):
+        raise HTTPException(status_code=422, detail="서명 이미지 형식이 올바르지 않습니다.")
+    if len(request.image) > MAX_SIGNATURE_BYTES:
+        raise HTTPException(status_code=413, detail="서명 이미지가 너무 큽니다.")
+
+    signature = {
+        "image": request.image,
+        "signed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    updated = set_change_order_signature(job_id, change_order_id, signature)
+    if updated is None:
+        # find_change_order 이후 거의 동시에 다른 요청이 먼저 서명한 드문 경합.
+        raise HTTPException(status_code=409, detail="이미 서명이 완료된 건입니다.")
     return JobStatusResponse(**updated)
 
 

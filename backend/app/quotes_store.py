@@ -94,6 +94,44 @@ def set_payment_status(job_id: str, payment_status: str) -> dict | None:
     return quote
 
 
+def append_change_order(job_id: str, change_order: dict) -> dict | None:
+    """현장 추가 시공 한 건을 견적서에 추가한다. append_work_photo와 같은 패턴."""
+    quote = load_quote(job_id)
+    if quote is None:
+        return None
+    quote.setdefault("change_orders", []).append(change_order)
+    save_quote(job_id, quote)
+    return quote
+
+
+def find_change_order(job_id: str, change_order_id: str) -> dict | None:
+    """라우터가 서명 전에 "이미 서명됐는지"를 먼저 확인할 수 있게 조회만 한다
+    (sign_job이 set_signature 호출 전에 quote.get("signature")를 먼저 보는 것과 같은 이유)."""
+    quote = load_quote(job_id)
+    if quote is None:
+        return None
+    for co in quote.get("change_orders", []):
+        if co.get("id") == change_order_id:
+            return co
+    return None
+
+
+def set_change_order_signature(job_id: str, change_order_id: str, signature: dict) -> dict | None:
+    """고객이 추가 시공 건에 서명한다. set_signature와 같은 원칙으로, 이미 서명된
+    건은 덮어쓰지 않는다 — 분쟁 방지 기록이라 한 번 받으면 바꾸지 않는다."""
+    quote = load_quote(job_id)
+    if quote is None:
+        return None
+    for co in quote.get("change_orders", []):
+        if co.get("id") == change_order_id:
+            if co.get("signature"):
+                return None
+            co["signature"] = signature
+            save_quote(job_id, quote)
+            return quote
+    return None
+
+
 def set_blog_post(job_id: str, blog_post: dict) -> dict | None:
     quote = load_quote(job_id)
     if quote is None:

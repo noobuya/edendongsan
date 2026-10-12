@@ -357,6 +357,7 @@ export default function HomePage() {
         editing: false,
         customer_name: customerName,
         work_photos: [],
+        change_orders: [],
       });
       syncJobToUrl(job_id);
       pollJob(job_id);

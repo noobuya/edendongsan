@@ -320,12 +320,24 @@ export interface JobStatusResponse {
   blog_post?: BlogPost;
   signature?: Signature | null;
   site_conditions?: SiteConditions | null;
+  change_orders: ChangeOrder[];
 }
 
 /** 현장에서 고객이 화면에 직접 그린 서명. */
 export interface Signature {
   image: string;
   signed_at: string;
+}
+
+/** 현장 돌발 변수(밑작업 추가 등)로 생긴 추가 시공 — 원래 견적과 별개로
+ *  사진·금액·서명을 따로 들고 다닌다. */
+export interface ChangeOrder {
+  id: string;
+  photo_url: string;
+  description: string;
+  amount: number;
+  created_at: string;
+  signature?: Signature | null;
 }
 
 /** 시공 전 하지(바탕면) 점검 — 일본 3M 다이노크 시공 매뉴얼의 핵심 점검 항목. */

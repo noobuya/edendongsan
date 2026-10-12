@@ -6,6 +6,7 @@ import type { JobStatusResponse } from "@/types";
 import { getJobStatus, requestIllustration, requestInpaint, resolveAssetUrl, signJob } from "@/lib/api";
 import AssetImage from "@/components/AssetImage";
 import BeforeAfterSlider from "@/components/BeforeAfterSlider";
+import ChangeOrderSection from "@/components/ChangeOrderSection";
 import PremiumReceipt from "@/components/PremiumReceipt";
 import ShareEstimateDialog from "@/components/community/ShareEstimateDialog";
 import InteractiveResultCanvas from "@/components/InteractiveResultCanvas";
@@ -398,6 +399,13 @@ export default function SimulationPanel({
           ownerToken={ownerToken}
           isDone={liveJob.status === "done"}
           hasSignature={!!liveJob.signature}
+        />
+
+        <ChangeOrderSection
+          key={`${liveJob.job_id}-co`}
+          jobId={liveJob.job_id}
+          initialChangeOrders={liveJob.change_orders}
+          ownerToken={ownerToken}
         />
       </div>
     </div>

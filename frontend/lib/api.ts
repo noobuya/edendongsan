@@ -2,6 +2,7 @@ import type {
   BlogDetail,
   BlogPost,
   BlogSummary,
+  ChangeOrder,
   CreateJobParams,
   JobStatusResponse,
   JournalEntry,
@@ -408,6 +409,43 @@ export async function uploadWorkPhoto(
     headers: ownerHeaders(ownerToken),
   });
   if (!res.ok) throw new Error(await extractErrorMessage(res, "현장 사진 업로드에 실패했습니다."));
+  return res.json();
+}
+
+/** 현장 돌발 변수(밑작업 추가 등)를 사진+금액으로 기록한다. 사장님 전용. */
+export async function createChangeOrder(
+  jobId: string,
+  file: File,
+  description: string,
+  amount: number,
+  ownerToken: string
+): Promise<ChangeOrder> {
+  const form = new FormData();
+  form.append("photo", file);
+  form.append("description", description);
+  form.append("amount", String(amount));
+  const res = await apiFetch(`${API_BASE}/api/quotes/${jobId}/change-orders`, {
+    method: "POST",
+    body: form,
+    headers: ownerHeaders(ownerToken),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "추가 시공 등록에 실패했습니다."));
+  return res.json();
+}
+
+/** 고객이 추가 시공 건에 원격으로(카톡 링크를 열어 본인 폰에서) 서명한다.
+ *  signJob과 같은 이유로 인증이 필요 없다. */
+export async function signChangeOrder(
+  jobId: string,
+  changeOrderId: string,
+  imageDataUrl: string
+): Promise<JobStatusResponse> {
+  const res = await apiFetch(`${API_BASE}/api/jobs/${jobId}/change-orders/${changeOrderId}/signature`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image: imageDataUrl }),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "서명 저장에 실패했습니다."));
   return res.json();
 }
 

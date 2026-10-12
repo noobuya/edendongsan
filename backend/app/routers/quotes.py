@@ -10,6 +10,7 @@ from app.business_info import BUSINESS_NAME
 from app.owner_auth import is_owner
 from app.services.blackboard import stamp_blackboard
 from app.quotes_store import (
+    append_change_order,
     append_work_photo,
     clear_blog_post,
     list_quotes,
@@ -20,6 +21,7 @@ from app.quotes_store import (
 )
 from app.schemas import (
     BlogPost,
+    ChangeOrder,
     PaymentStatusRequest,
     QuoteListResponse,
     QuoteSummary,
@@ -119,6 +121,51 @@ async def delete_work_photo(job_id: str, photo_id: str):
     if remove_work_photo(job_id, photo_id) is None:
         raise HTTPException(status_code=404, detail="견적서를 찾을 수 없습니다.")
     return {"ok": True}
+
+
+@router.post("/{job_id}/change-orders", response_model=ChangeOrder)
+async def create_change_order(
+    job_id: str,
+    description: str = Form(...),
+    amount: int = Form(...),
+    photo: UploadFile = File(...),
+):
+    """현장에서 돌발 변수(밑작업 추가 등)가 생겼을 때, 그 자리에서 사진과 추가
+    금액을 묶어 기록한다. 고객에게 보낼 공유 링크(/change-order?job=&co=)는
+    프론트가 이 응답의 id로 직접 만든다 — 블로그·제안서 링크와 같은 방식."""
+    quote = load_quote(job_id)
+    if quote is None:
+        raise HTTPException(status_code=404, detail="견적서를 찾을 수 없습니다.")
+    if amount <= 0:
+        raise HTTPException(status_code=422, detail="추가 금액은 0보다 커야 합니다.")
+
+    raw_bytes = await photo.read()
+    if not raw_bytes:
+        raise HTTPException(status_code=422, detail="사진 파일이 비어 있습니다.")
+    try:
+        with Image.open(io.BytesIO(raw_bytes)) as img:
+            normalized = img.convert("RGB")
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="사진 파일을 읽을 수 없습니다. 파일이 손상되었거나 지원하지 않는 형식일 수 있습니다.",
+        ) from exc
+
+    co_id = uuid.uuid4().hex[:10]
+    storage_path = f"storage/uploads/{job_id}_co_{co_id}.jpg"
+    normalized.save(storage_path, "JPEG", quality=90)
+
+    entry = {
+        "id": co_id,
+        "photo_url": _to_static_url(storage_path),
+        "description": description,
+        "amount": amount,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "signature": None,
+    }
+    if append_change_order(job_id, entry) is None:
+        raise HTTPException(status_code=404, detail="견적서를 찾을 수 없습니다.")
+    return ChangeOrder(**entry)
 
 
 @router.post("/{job_id}/blog", response_model=BlogPost)

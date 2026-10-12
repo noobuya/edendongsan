@@ -366,6 +366,24 @@ class Signature(BaseModel):
     signed_at: str
 
 
+class ChangeOrder(BaseModel):
+    """현장 돌발 변수(밑작업 추가 등)로 생긴 추가 시공 — 원래 견적과 별개로 사진·
+    금액·서명을 따로 들고 다닌다. 나중에 "그런 말 들은 적 없다"는 분쟁을 막기
+    위한 기록이라, signature가 한 번 채워지면 그 뒤로는 바꾸지 않는다(Signature와
+    같은 원칙)."""
+
+    id: str
+    photo_url: str
+    description: str
+    amount: int
+    created_at: str
+    signature: Optional[Signature] = None
+
+
+class ChangeOrderSignatureRequest(BaseModel):
+    image: str
+
+
 class SignatureRequest(BaseModel):
     image: str
 
@@ -426,6 +444,9 @@ class JobStatusResponse(BaseModel):
     signature: Optional[Signature] = None
     site_conditions: Optional[SiteConditions] = None
     payment_status: PaymentStatus = "pending"
+    # 현장 추가 시공(ChangeOrder) 기록 — work_photos와 같은 이유로 조회 시점에
+    # 저장된 견적서에서 덧붙여진다.
+    change_orders: list[ChangeOrder] = Field(default_factory=list)
 
 
 class InpaintRequest(BaseModel):
