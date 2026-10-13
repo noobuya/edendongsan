@@ -35,6 +35,22 @@ BASE_INSTRUCTION = (
     "described below. Keep the same camera angle, perspective, room layout, wall positions, "
     "window position and ceiling height. Do not add, remove or move any furniture that is not "
     "mentioned. Do not write any text, label, watermark or logo anywhere in the image. "
+    # [색 번짐/환각 차단 — "문틀만 시공했는데 타일·거울 색까지 바뀌고 문짝이
+    # 새로 생겼다"는 제보의 원인] 이 모델은 마스크 없이 사진 전체를 다시 그리므로,
+    # 아래에서 각 항목에 "그 항목의 손잡이/경첩만 지켜라"고 적어도 그건 "이 항목은
+    # 이렇게 그려라"는 뜻일 뿐 "나머지는 절대 손대지 말라"는 뜻은 아니다. 그래서
+    # 모델이 전체적인 "그럴듯함"을 위해 옆에 있는 타일·거울 색조를 슬쩍 맞추거나,
+    # 문틀만 있고 문짝이 없는 사진에서 "완성된 문"처럼 문짝을 상상해 그려 넣는
+    # 사고가 실제로 있었다. 아래 문장으로 "언급된 것 외엔 전부 원본 그대로"를
+    # 못박는다 — 가전처럼 가구에만 한정된 위 문장보다 범위가 훨씬 넓다(타일·거울·
+    # 바닥·고정 구조물·기존 문짝 유무까지 포함).
+    "Every surface, fixture and object in this photo that is NOT explicitly named in the "
+    "renovation list below — including wall tiles, mirrors, flooring, countertops, fixed "
+    "cabinetry and any door panel that is not listed for refinishing — must stay pixel-for-pixel "
+    "identical to the original photo: same color, same material, same reflections. Never invent "
+    "or add an object that is not already visibly present in the original photo (for example, if "
+    "a doorway or frame has no door panel installed in the original photo, do not add one, even "
+    "if the frame is being refinished). "
     # [원근/깊이 문제 대응] 실제 사진 비교에서, 비스듬히 보이는 면(문틀 안쪽, 각진
     # 싱크대 옆면 등)에 필름을 "정면에서 찍은 사각형"처럼 평평하게 붙여버리는 경우가
     # 있었다. 이 모델에는 깊이맵을 따로 못 주니(ControlNet 입력을 못 받는 모델),

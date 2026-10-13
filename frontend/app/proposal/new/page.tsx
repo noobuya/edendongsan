@@ -168,8 +168,15 @@ export default function NewProposalPage() {
 
       {!proposal ? (
         <section className="space-y-4 rounded-2xl bg-white p-5 shadow-sm">
+          <p className="rounded-xl bg-indigo-50 px-3.5 py-3 text-[13px] leading-relaxed text-indigo-800">
+            아직 계약을 고민 중인 고객 한 명에게 보내는 전용 링크예요. 시공 후 사진 한 장으로
+            전체 모습·질감 확대컷·맞춤 영업 카피·견적·AS 보증을 한 화면에 담아, 카카오톡·문자로
+            바로 보내 계약을 유도합니다. (불특정 다수가 검색으로 보는 &quot;시공 후기 블로그&quot;와는
+            달리, 이 링크는 보낸 고객만 열어볼 수 있어요.)
+          </p>
           <p className="text-[13.5px] leading-relaxed text-slate-500">
-            시공 후 사진 한 장만 올리면, AI가 와이드컷·디테일컷·영업 카피를 자동으로 만들어 드려요.
+            시공 후 사진 한 장만 올리면, AI가 전체 모습(와이드컷)·질감 확대컷(디테일컷)·영업
+            카피를 자동으로 만들어 드려요.
             {jobId && " 이 견적의 비용 비교 문구도 함께 참고합니다."}
           </p>
 

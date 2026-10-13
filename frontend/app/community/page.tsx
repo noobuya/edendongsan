@@ -115,13 +115,21 @@ export default function CommunityPage() {
       )}
 
       {!error && estimates !== null && visibleEstimates?.length === 0 && (
-        <p className="py-16 text-center text-sm text-slate-400">
-          {activeTag
-            ? `"${activeTag}" 품목이 들어간 견적이 없습니다`
-            : query
-              ? `"${query}"에 대한 견적을 찾지 못했습니다`
-              : "아직 공유된 견적이 없습니다"}
-        </p>
+        <div className="py-16 text-center text-sm text-slate-400">
+          <p>
+            {activeTag
+              ? `"${activeTag}" 품목이 들어간 견적이 없습니다`
+              : query
+                ? `"${query}"에 대한 견적을 찾지 못했습니다`
+                : "아직 공유된 견적이 없습니다"}
+          </p>
+          {!activeTag && !query && (
+            <p className="mt-2 text-xs text-slate-400">
+              완료된 견적 화면의 &quot;이 견적 커뮤니티에 공유하기&quot; 버튼을 누르면
+              여기에 나타나요. 고객 이름·사진 없이 품목·단가만 올라갑니다.
+            </p>
+          )}
+        </div>
       )}
 
       <div className="grid gap-4 xs:grid-cols-2">

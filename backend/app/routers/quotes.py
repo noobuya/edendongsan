@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app.business_info import BUSINESS_NAME
 from app.owner_auth import is_owner
@@ -82,7 +82,16 @@ async def upload_work_photo(
         raise HTTPException(status_code=422, detail="사진 파일이 비어 있습니다.")
     try:
         with Image.open(io.BytesIO(raw_bytes)) as img:
-            normalized = img.convert("RGB")
+            # 휴대폰은 가로로 찍은 사진도 센서 방향(세로) 그대로 저장하고 EXIF
+            # Orientation 태그로 "90도 돌려서 보여줘"라고만 표시한다. 이 태그를
+            # 무시하고 그냥 convert("RGB")만 하면(이전 버그) 픽셀 자체는 돌지 않은
+            # 채로 저장되고, Pillow는 저장할 때 그 태그를 다시 넣어주지 않아 이후
+            # 어디서 열어도 옆으로 누운 사진이 된다 — "가로로 찍으면 화면이
+            # 뒤집힌다"는 제보, 그리고 전자흑판 배너가 잘못된 모서리에 찍혀
+            # 갤러리 썸네일(object-cover)에서 잘려 보이는 것도 같은 원인이다.
+            # exif_transpose로 실제 픽셀을 미리 정방향으로 돌려두면 이후 어떤
+            # 뷰어에서 열어도 항상 올바른 방향으로 보인다.
+            normalized = ImageOps.exif_transpose(img).convert("RGB")
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         raise HTTPException(
             status_code=422,

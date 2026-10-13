@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -52,7 +52,9 @@ async def create_proposal(
         raise HTTPException(status_code=422, detail="사진 파일이 비어 있습니다.")
     try:
         with Image.open(io.BytesIO(raw_bytes)) as img:
-            normalized = img.convert("RGB")
+            # quotes.py의 upload_work_photo와 같은 이유 — EXIF Orientation을 먼저
+            # 픽셀에 적용해야 가로/세로로 찍은 사진이 전부 정방향으로 저장된다.
+            normalized = ImageOps.exif_transpose(img).convert("RGB")
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         raise HTTPException(
             status_code=422, detail="사진 파일을 읽을 수 없습니다. 파일이 손상되었거나 지원하지 않는 형식일 수 있습니다."

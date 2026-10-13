@@ -43,12 +43,16 @@ export default function ProposalReviewPanel({ proposal, ownerToken, onChange, on
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <p className="mb-1.5 px-1 text-[12px] font-semibold text-slate-500">와이드컷</p>
-          <AssetImage src={proposal.wide_image_url} alt="와이드컷" className="aspect-square w-full rounded-xl object-cover" />
+          <p className="mb-1.5 px-1 text-[12px] font-semibold text-slate-500">
+            와이드컷 <span className="font-normal text-slate-400">· 전체 모습</span>
+          </p>
+          <AssetImage src={proposal.wide_image_url} alt="시공 전체 모습" className="aspect-square w-full rounded-xl object-cover" />
         </div>
         <div>
-          <p className="mb-1.5 px-1 text-[12px] font-semibold text-slate-500">디테일컷</p>
-          <AssetImage src={proposal.detail_image_url} alt="디테일컷" className="aspect-square w-full rounded-xl object-cover" />
+          <p className="mb-1.5 px-1 text-[12px] font-semibold text-slate-500">
+            디테일컷 <span className="font-normal text-slate-400">· 질감 확대</span>
+          </p>
+          <AssetImage src={proposal.detail_image_url} alt="마감 질감을 확대한 모습" className="aspect-square w-full rounded-xl object-cover" />
           <div className="mt-2 flex gap-2">
             <button
               type="button"

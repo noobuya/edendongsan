@@ -61,25 +61,36 @@ export default function SitePhotoGallery({
     after: afterInputRef,
   };
 
+  // 앨범(input)에서는 여러 장을 한꺼번에 고를 수 있다(아래 input의 multiple 속성).
+  // 카메라 촬영은 한 번에 한 장만 나오므로 이 함수를 그대로 재사용해도 자연히
+  // 한 장짜리 배열이 된다.
   function handleFile(stage: WorkPhotoStage, e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files ?? []);
     e.target.value = "";
-    if (file) void uploadPhoto(stage, file);
+    if (files.length) void uploadPhotos(stage, files);
   }
 
-  async function uploadPhoto(stage: WorkPhotoStage, file: File) {
-    if (!ownerToken) return;
+  async function uploadPhotos(stage: WorkPhotoStage, files: File[]) {
+    if (!ownerToken || files.length === 0) return;
     setError(null);
     setUploadingStage(stage);
     try {
-      const photo = await uploadWorkPhoto(jobId, file, stage, captions[stage].trim(), ownerToken);
-      setPhotos((prev) => [...prev, photo]);
+      // 서버가 한 번에 한 장만 받으므로 순서대로 올린다 — 동시에 여러 요청을 쏘면
+      // 업로드 순서가 뒤섞여 "시공 전" 사진들이 엉뚱한 순서로 쌓일 수 있다.
+      for (const file of files) {
+        const photo = await uploadWorkPhoto(jobId, file, stage, captions[stage].trim(), ownerToken);
+        setPhotos((prev) => [...prev, photo]);
+      }
       setCaptions((prev) => ({ ...prev, [stage]: "" }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "사진 업로드에 실패했습니다.");
     } finally {
       setUploadingStage(null);
     }
+  }
+
+  async function uploadPhoto(stage: WorkPhotoStage, file: File) {
+    await uploadPhotos(stage, [file]);
   }
 
   async function handleDelete(photoId: string) {
@@ -218,12 +229,14 @@ export default function SitePhotoGallery({
                 />
               )}
               {/* capture 속성은 쓰지 않는다 — 기본 카메라 앱이 열리면 촬영본이 폰
-                  갤러리에 그대로 쌓인다. 이 입력은 앨범에서 고를 때만 쓴다. */}
+                  갤러리에 그대로 쌓인다. 이 입력은 앨범에서 고를 때만 쓴다.
+                  multiple을 줘서 여러 장을 한꺼번에 골라 올릴 수 있게 한다. */}
               {isOwner && (
                 <input
                   ref={inputRefs[stage.id]}
                   type="file"
                   accept="image/*"
+                  multiple
                   className="hidden"
                   onChange={(e) => handleFile(stage.id, e)}
                 />

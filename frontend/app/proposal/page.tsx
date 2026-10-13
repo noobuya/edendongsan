@@ -88,17 +88,25 @@ export default function ProposalPublicPage() {
 
       <article>
         {proposal.before_image_url ? (
-          <BeforeAfterSlider
-            beforeSrc={proposal.before_image_url}
-            afterSrc={proposal.wide_image_url}
-            className="mb-5 aspect-[4/3] w-full overflow-hidden rounded-xl shadow-sm"
-          />
+          <>
+            <BeforeAfterSlider
+              beforeSrc={proposal.before_image_url}
+              afterSrc={proposal.wide_image_url}
+              className="aspect-[4/3] w-full overflow-hidden rounded-xl shadow-sm"
+            />
+            <p className="mb-5 mt-1.5 text-center text-[12px] text-slate-400">
+              좌우로 밀어서 시공 전/후를 비교해 보세요
+            </p>
+          </>
         ) : (
-          <AssetImage
-            src={proposal.wide_image_url}
-            alt={proposal.headline}
-            className="mb-5 aspect-[4/3] w-full rounded-xl object-cover shadow-sm"
-          />
+          <>
+            <AssetImage
+              src={proposal.wide_image_url}
+              alt={proposal.headline}
+              className="aspect-[4/3] w-full rounded-xl object-cover shadow-sm"
+            />
+            <p className="mb-5 mt-1.5 text-center text-[12px] text-slate-400">시공 전체 모습</p>
+          </>
         )}
 
         <header className="mb-5">
@@ -140,8 +148,11 @@ export default function ProposalPublicPage() {
         <AssetImage
           src={proposal.detail_image_url}
           alt="시공 디테일"
-          className="mb-8 aspect-square w-full rounded-xl object-cover shadow-sm"
+          className="aspect-square w-full rounded-xl object-cover shadow-sm"
         />
+        <p className="mb-8 mt-1.5 text-center text-[12px] text-slate-400">
+          마감 질감을 가까이서 확대한 모습
+        </p>
 
         <CallBanner />
       </article>
