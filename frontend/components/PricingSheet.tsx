@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { KeyRound, Loader2, RotateCcw } from "lucide-react";
+import { KeyRound, Loader2, Radar, RotateCcw } from "lucide-react";
 import type { PricingField } from "@/types";
 import BottomSheet from "@/components/ui/BottomSheet";
 import { getPricing, savePricing } from "@/lib/api";
@@ -116,7 +116,10 @@ export default function PricingSheet({
         </div>
       ) : (
         <div className="space-y-7">
-          {/* 관리자 전용 입구 — 수강생 코드 만들기·삭제 화면으로 간다(같은 길게 누르기로 열린 시트에서만 보인다). */}
+          {/* 관리자 전용 입구 — 수강생 코드 관리, 현장 실습 매칭 관리 둘 다 이 시트에서만
+              들어갈 수 있다(/admin/recruiting·/admin/finance는 메인 화면 어디에도 링크가
+              없어서, 길게 누르기로 이 시트를 열어 본 적이 없으면 관리자조차 그 화면이
+              있는지 찾을 길이 없었다 — 그게 "매칭 현황이 안 보인다"는 제보의 원인이었다). */}
           <Link
             href="/admin/students"
             onClick={onClose}
@@ -125,6 +128,18 @@ export default function PricingSheet({
             <span className="flex items-center gap-2">
               <KeyRound className="h-4 w-4" />
               수강생 코드 관리
+            </span>
+            <span className="text-slate-400">→</span>
+          </Link>
+
+          <Link
+            href="/admin/recruiting"
+            onClick={onClose}
+            className="flex h-14 items-center justify-between rounded-2xl bg-slate-100 px-4 text-[15px] font-semibold text-slate-800 transition-transform active:scale-[0.98]"
+          >
+            <span className="flex items-center gap-2">
+              <Radar className="h-4 w-4" />
+              현장 실습 매칭 관리
             </span>
             <span className="text-slate-400">→</span>
           </Link>
