@@ -260,8 +260,17 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
   return (
     /* 펼친 화면(Z Fold)에서는 오른쪽 420px을 자재 패널이 늘 차지하므로, 사진과
        도구 막대를 그 왼쪽 영역 안에 가둔다. 세로 화면에서는 패널이 접혀 있어
-       화면 전체를 쓴다. */
-    <div className="absolute inset-0 flex flex-col foldLandscape:pr-[27.5rem]">
+       화면 전체를 쓴다.
+
+       [embedded일 때는 이 여백을 주면 안 된다 — "가로 모드에서 사진이 한쪽
+       구석에 작게 나온다"의 원인]
+       이 오른쪽 여백은 ReeditOverlay/page.tsx의 "전체 화면" 사용처에만 맞는
+       가정이다 — 그쪽은 실제로 오른쪽에 자재 패널이 떠 있다. 반면 SectorReedit은
+       embedded=true로 이 컴포넌트를 쓰면서 자재 선택을 사진 "아래" 별도 메뉴로
+       빼서, 오른쪽에는 애초에 아무 패널도 없다. 그런데도 이 여백이 무조건
+       걸려 있어서, 가로 화면에 들어가면 사진이 왼쪽 440px(27.5rem)짜리 좁은
+       칸에 눌려 작게 보였다 — 오른쪽 440px은 그냥 빈 채로 버려졌다. */
+    <div className={`absolute inset-0 flex flex-col ${embedded ? "" : "foldLandscape:pr-[27.5rem]"}`}>
       {/* 사진 영역 — 화면에서 도구 막대를 뺀 전부를 쓴다.
           위쪽 여백은 떠 있는 앱 바가 사진 맨 위를 가리지 않도록 둔 것이다. */}
       <div className={`relative min-h-0 flex-1 pb-1 ${embedded ? "pt-1" : "pt-[4.5rem]"}`}>

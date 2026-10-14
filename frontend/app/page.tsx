@@ -572,26 +572,51 @@ export default function HomePage() {
       {step === 3 ? (
         /* 결과 — 무대 위에 결과 패널을 통째로 띄운다.
            아래 여백(pb-24)은 화면 아래 가운데 떠 있는 "새 현장 견적 시작" 알약 자리다.
-           없으면 결과 패널의 마지막 내용이 그 알약 밑에 깔려 눌리지 않는다. */
-        <section className="absolute inset-x-3 bottom-3 top-20 z-10 overflow-y-auto rounded-3xl pb-24 foldLandscape:inset-y-4 foldLandscape:left-4 foldLandscape:right-4 foldLandscape:top-20 foldLandscape:pb-4">
-          {submitError && <ErrorNote message={submitError} />}
-          {!submitError && slowNotice && <WaitNote message={slowNotice} />}
-          {job?.notices && job.notices.length > 0 && (
-            <div className="mx-1 mb-3 space-y-2 rounded-2xl border border-amber-200 bg-amber-50 p-4" role="alert">
-              <p className="text-[14px] font-bold text-amber-900">일부 시공이 적용되지 않았어요</p>
-              {job.notices.map((n) => (
-                <p key={n} className="text-[13px] leading-relaxed text-amber-900 break-keep">· {n}</p>
-              ))}
-            </div>
-          )}
-          {job ? (
-            <SimulationPanel job={job} ownerToken={ownerToken} onSecretHold={() => setPricingOpen(true)} />
-          ) : (
-            <div className="glass-panel flex h-full flex-col items-center justify-center gap-3">
-              <Loader2 className="h-7 w-7 animate-spin text-indigo-500" />
-              <p className="text-[15px] font-light text-slate-600">견적을 준비하는 중입니다...</p>
-            </div>
-          )}
+           없으면 결과 패널의 마지막 내용이 그 알약 밑에 깔려 눌리지 않는다.
+
+           [펼친 화면(가로)에서 스크롤이 안 먹던 원인]
+           SimulationPanel은 펼친 화면에서 왼쪽(사진)·오른쪽(견적) 두 칸으로 갈라지고
+           각 칸이 foldLandscape:overflow-y-auto로 "따로" 스크롤된다. 그런데 이 바깥
+           section에도 overflow-y-auto가 그대로 남아 있어서, 같은 화면에 스크롤 가능한
+           영역이 이중으로 겹쳤다 — 손가락으로 안쪽 칸(사진·견적)을 쓸어 올려도, 터치가
+           안쪽 칸으로 갈지 바깥 section으로 갈지 애매해지면서 실기기에서 스크롤 제스처
+           자체가 먹히지 않았다(스크립트로 scrollTop을 직접 바꾸면 되는데 손가락 제스처만
+           안 먹힌 이유 — 제스처 인식이 꼬인 것이지 스크롤 자체가 막힌 게 아니었다).
+           세로 화면은 안쪽 두 칸이 나뉘지 않고 한 덩어리로 이어지므로(foldLandscape 전용
+           클래스라 세로에선 적용 안 됨) 바깥 section 하나만 스크롤되는 게 맞다. 그래서
+           가로일 때만 바깥 section의 overflow를 꺼서, 스크롤 주인을 안쪽 두 칸으로
+           완전히 넘긴다. */
+        <section className="absolute inset-x-3 bottom-3 top-20 z-10 overflow-y-auto rounded-3xl pb-24 foldLandscape:flex foldLandscape:flex-col foldLandscape:inset-y-4 foldLandscape:left-4 foldLandscape:right-4 foldLandscape:top-20 foldLandscape:overflow-y-visible foldLandscape:pb-4">
+          {/* [가로 화면에서 h-full이 바깥으로 삐져나오던 부분]
+              SimulationPanel은 foldLandscape:h-full로 "부모 높이의 100%"를 쓴다. 이
+              배너들이 SimulationPanel보다 먼저 같은 section 안에 쌓이는 형제인데, section
+              자체가 flex 컨테이너가 아니면 SimulationPanel의 100%는 배너 높이를 빼지 않은
+              채로 계산돼 그만큼 section 밖으로 넘친다. foldLandscape:flex-col로 바꾸고
+              배너는 shrink-0, SimulationPanel 자리는 flex-1 min-h-0으로 주면 100%가
+              배너를 뺀 "진짜 남은 공간" 기준으로 계산된다(세로 화면은 flex가 아니므로
+              영향 없음 — 원래대로 전체가 한 덩어리로 스크롤된다). */}
+          <div className="foldLandscape:shrink-0">
+            {submitError && <ErrorNote message={submitError} />}
+            {!submitError && slowNotice && <WaitNote message={slowNotice} />}
+            {job?.notices && job.notices.length > 0 && (
+              <div className="mx-1 mb-3 space-y-2 rounded-2xl border border-amber-200 bg-amber-50 p-4" role="alert">
+                <p className="text-[14px] font-bold text-amber-900">일부 시공이 적용되지 않았어요</p>
+                {job.notices.map((n) => (
+                  <p key={n} className="text-[13px] leading-relaxed text-amber-900 break-keep">· {n}</p>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="foldLandscape:min-h-0 foldLandscape:flex-1">
+            {job ? (
+              <SimulationPanel job={job} ownerToken={ownerToken} onSecretHold={() => setPricingOpen(true)} />
+            ) : (
+              <div className="glass-panel flex h-full flex-col items-center justify-center gap-3">
+                <Loader2 className="h-7 w-7 animate-spin text-indigo-500" />
+                <p className="text-[15px] font-light text-slate-600">견적을 준비하는 중입니다...</p>
+              </div>
+            )}
+          </div>
         </section>
       ) : (
         /* 조작 패널 — 화면을 반으로 가르지 않고, 여백을 두고 떠 있다.
