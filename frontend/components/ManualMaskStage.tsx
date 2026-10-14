@@ -104,6 +104,12 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
 
   // 그림을 그릴 수 있는 영역(도구 막대를 뺀 화면 전체)을 계속 따라간다.
   // 폰을 접었다 펴면 여기가 달라지고, 그때마다 사진을 다시 맞춰야 한다.
+  //
+  // ResizeObserver 하나만 믿지 않는다 — 실제로 안드로이드 폴더폰에서 힌지 상태가
+  // 바뀌는 순간(접힘<->펼침) ResizeObserver 콜백이 누락되는 경우가 있어, 그때는
+  // 화면이 커졌는데도 사진·도구 막대가 접혀 있던 때의 작은 크기로 멈춰 있었다.
+  // window resize/orientationchange/visualViewport resize에도 같은 측정 함수를
+  // 걸어 어느 신호든 하나는 걸리게 한다.
   useEffect(() => {
     const el = areaRef.current;
     if (!el) return;
@@ -111,7 +117,15 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
-    return () => observer.disconnect();
+    window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+    window.visualViewport?.addEventListener("resize", measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
+      window.visualViewport?.removeEventListener("resize", measure);
+    };
   }, []);
 
   // 사진을 영역에 맞춰 최대한 크게 넣는다(잘리지 않게 — 현장 사진은 구석까지 봐야

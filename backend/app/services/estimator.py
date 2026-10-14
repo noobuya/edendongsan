@@ -34,6 +34,7 @@ from app.catalog import (
 from app import pricing_store
 from app.schemas import (
     DoorFrameOptions,
+    FurnitureOptions,
     MeshScreenOptions,
     WallFilmOptions,
     WardrobeOptions,
@@ -613,6 +614,36 @@ def _sink_line_item(opts: SinkOptions) -> dict:
     return _line_item("sink", details)
 
 
+FURNITURE_PIECE_NAMES = {
+    "chairs": ("chair", "의자"),
+    "desks": ("desk", "책상"),
+    "bookshelves": ("bookshelf", "책꽂이"),
+    "drawer_cabinets": ("drawer_cabinet", "서랍장"),
+    "display_cabinets": ("display_cabinet", "장식장"),
+}
+
+
+def _furniture_line_item(opts: FurnitureOptions) -> dict:
+    """가구(의자/책상/책꽂이/서랍장/장식장) 필름 시공. 규격이 제각각이라 면적이
+    아니라 종류별 개당 정액(원단값+공임)으로 계산한다."""
+    table = _prices()["furniture"]
+    details: list[dict] = []
+    for field, (price_key, name) in FURNITURE_PIECE_NAMES.items():
+        count = max(0, getattr(opts, field))
+        if count <= 0:
+            continue
+        details.append(
+            _detail(f"{name} 필름 원단", count, "개", table["material_price"][price_key], "material", material_code=opts.pattern_id)
+        )
+        details.append(_detail(f"{name} 시공 공임", count, "개", table["labor_price"][price_key], "labor"))
+
+    total_count = sum(max(0, getattr(opts, field)) for field in FURNITURE_PIECE_NAMES)
+    if opts.needs_primer and total_count > 0:
+        details.append(_detail("가구 프라이머 도포비", total_count, "개", table["primer_per_piece"], "expense"))
+
+    return _line_item("furniture", details)
+
+
 def _material_orders(line_items: list[dict]) -> list[dict]:
     """품번(패턴 id)별 자재 발주 집계 — 일본 クロス職人(크로스 기공) 업계 앱(採寸くん 등)의
     "품번별로 모아 한 번에 발주" 방식을 그대로 따른다. 사장님이 싱크대 필름과 문짝을
@@ -775,6 +806,8 @@ def calculate_estimate(
         line_items.append(_sink_line_item(options.sink))
     if "illustration" in selected_items and options.illustration:
         line_items.append(_illustration_line_item(options.illustration))
+    if "furniture" in selected_items and options.furniture:
+        line_items.append(_furniture_line_item(options.furniture))
 
     line_items = [item for item in line_items if item["details"]]
 

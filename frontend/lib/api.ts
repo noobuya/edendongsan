@@ -212,6 +212,17 @@ export async function createJob(
             drain_type: options.sink.drainType,
           }
         : undefined,
+      furniture: selectedItems.includes("furniture")
+        ? {
+            pattern_id: options.furniture.patternId,
+            needs_primer: options.furniture.needsPrimer,
+            chairs: options.furniture.chairs,
+            desks: options.furniture.desks,
+            bookshelves: options.furniture.bookshelves,
+            drawer_cabinets: options.furniture.drawerCabinets,
+            display_cabinets: options.furniture.displayCabinets,
+          }
+        : undefined,
     },
   };
 

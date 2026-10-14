@@ -16,6 +16,7 @@ WORK_ITEMS = {
     "wardrobe": {"id": "wardrobe", "name": "장롱/옷장"},
     "wall_film": {"id": "wall_film", "name": "벽면 시트지"},
     "illustration": {"id": "illustration", "name": "일러스트 (사장님 전용)"},
+    "furniture": {"id": "furniture", "name": "가구 필름(의자·책상 등)"},
 }
 
 # 미세방충망 원단 종류. 촘촘할수록 벌레는 잘 막지만 바람이 덜 통한다.
@@ -315,6 +316,7 @@ MANUAL_CATEGORY_PROMPTS = {
     "toilet": "white ceramic toilet",
     "wardrobe": "wardrobe door wrapping film",
     "wall_film": "wall covering film",
+    "furniture": "furniture wrapping film",
 }
 
 

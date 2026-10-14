@@ -79,6 +79,7 @@ CATEGORY_NAMES = {
     "ceiling_fan": "실링팬",
     "window_sash": "샷시(창틀)",
     "glass_panel": "유리문/유리창",
+    "furniture": "가구",
 }
 
 # 방화/현관문은 같은 "door" 카테고리로 두되(시공 흐름·파이프라인은 그대로 쓴다),
@@ -104,7 +105,13 @@ PRIORITY_CATEGORIES = ("ceiling_fan", "sink_bowl", "light_fixture", "window_sash
 # SAM 후보를 확인해보니 각각 19개/30개 후보 중 유리면 전체를 덮는 후보가 하나도
 # 없었고, 그래서 Gemini 분류 단계에 "유리문"이라는 선택지를 줘도 고를 대상 자체가
 # 없어 매번 "인식된 문 없음"으로 끝났다. 박스 검출은 이 단계를 통째로 건너뛴다.
-VISION_BOX_CATEGORIES = ("glass_panel", "window_sash", "door")
+#
+# 가구(의자/책상/책꽂이/서랍장/장식장)도 여기 넣는다. SAM은 "면이 평평하고 균일한
+# 덩어리"를 찾는 쪽으로 편향돼 있는데(위 _is_flat_panel 참고) 의자 다리·등받이처럼
+# 입체적이고 조각난 형태는 SAM 후보에서 통째로 하나로 잡히는 경우가 거의 없다.
+# 가구 한 개 전체를 직접 상자로 찾아달라고 Gemini에 물으면, 문짝/캐비닛 카테고리로
+# 억지로 분류되거나(엉뚱한 지시문이 붙는 원인) 아예 인식되지 않던 문제가 풀린다.
+VISION_BOX_CATEGORIES = ("glass_panel", "window_sash", "door", "furniture")
 BOX_DETECT_TIMEOUT_S = 30
 MAX_BOX_REGIONS = 8
 # 박스 검출 결과가 사진을 거의 다 덮으면(예: 유리 너머 배경까지 통째로 잡은 경우)
@@ -139,6 +146,10 @@ ITEM_TARGET_CATEGORIES: dict[str, list[str]] = {
     "lighting": ["ceiling", "light_fixture"],
     # 완성된 실링팬을 클릭해 날개 색을 바꿀 수 있어야 하므로 ceiling_fan도 찾는다.
     "fan": ["ceiling", "ceiling_fan"],
+    # 의자/책상/책꽂이/서랍장/장식장처럼 규격화된 캐비닛 문짝이 아닌 낱개 가구.
+    # film의 캐비닛 카테고리와 겹치지 않는 별도 카테고리라, 가구 사진에 film을
+    # 골라도(또는 반대로) 서로 엉뚱하게 분류되지 않는다.
+    "furniture": ["furniture"],
 }
 
 
@@ -519,6 +530,10 @@ CATEGORY_VISUAL_HINTS = {
     "lower_cabinet_door": "하부장 문짝 — 주방 바닥 쪽 수납장의 문 한 짝",
     "window_sash": "샷시(창틀) — 창문 프레임",
     "glass_panel": "유리문/유리창 — 유리 면 전체",
+    "furniture": (
+        "가구 한 개 — 의자, 책상, 책꽂이, 서랍장, 장식장 등 독립된 가구의 전체 몸체 "
+        "(다리부터 상판·등받이까지 그 가구 하나 전체를 감싸는 범위)"
+    ),
 }
 
 

@@ -727,6 +727,23 @@ def _build_scene_instructions(
         elif options.illustration.count > 0:
             instructions.append(_illust_instruction("", ""))
 
+    if "furniture" in selected_items and options.furniture:
+        color_phrase = FAN_BLADE_COLOR_PROMPTS.get(options.furniture.pattern_id, "matte white")
+        targets = _furniture_target_phrases(options.furniture)
+        # film과 달리 "아무것도 입력 안 하면 주방 캐비닛"류의 기본값을 두지 않는다.
+        # 가구는 사진마다 뭐가 있는지 전혀 다른데, 엉뚱한 기본 대상으로 지시문을 보내면
+        # (실제로 교회 의자 사진에 "싱크대 상하부장을 바꿔라"가 나간 사고의 원인이었다)
+        # 사진과 무관한 곳이 시공된다. 개수를 하나도 입력하지 않았으면 지시문 자체를 넣지 않는다.
+        if targets:
+            grain_clause = ""
+            if _is_wood(options.furniture.pattern_id):
+                grain_clause = " Follow the natural wood grain direction along each piece."
+            instructions.append(
+                f"Refinish the {', '.join(targets)} with a {color_phrase} interior film — "
+                "keep the exact shape, legs, frame structure and proportions of each piece "
+                f"exactly as they are, only the surface finish changes.{grain_clause}"
+            )
+
     if "sink" in selected_items and options.sink:
         bowl = SINK_BOWL_SPECS[options.sink.spec]["prompt_keyword"]
         faucet = FAUCET_TYPES[options.sink.faucet_type]["prompt_keyword"]
@@ -782,6 +799,20 @@ def _film_target_phrases(film) -> list[str]:
     # 아무 부위도 입력하지 않았으면 주방장 전체를 기본 대상으로 삼는다 —
     # 색상만 고르고 치수는 나중에 넣는 사용 흐름이 흔하기 때문이다.
     return targets or ["upper and lower kitchen cabinet doors"]
+
+
+def _furniture_target_phrases(furniture) -> list[str]:
+    """가구 견적 폼에서 실제로 개수를 입력한 종류만 시공 대상으로 지시문에 넣는다.
+    film과 달리 "아무것도 안 입력하면 기본값"을 두지 않는다 — 가구 사진은 현장마다
+    무엇이 있는지 완전히 다르므로, 안전한 기본값 자체가 없다."""
+    mapping = [
+        (furniture.chairs, "chairs"),
+        (furniture.desks, "desks"),
+        (furniture.bookshelves, "bookshelves"),
+        (furniture.drawer_cabinets, "drawer cabinets"),
+        (furniture.display_cabinets, "display cabinets"),
+    ]
+    return [phrase for count, phrase in mapping if count > 0]
 
 
 # 필름 대상 부위 평균 색이 목표 색과 이 거리(LAB) 이내면 AI 결과가 제대로 입혀진 것으로 본다.

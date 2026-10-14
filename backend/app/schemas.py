@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 WorkItemId = Literal[
     "film", "sash", "glass", "lighting", "fan", "sink", "door_frame", "mesh_screen", "toilet", "wardrobe", "wall_film",
-    "illustration",
+    "illustration", "furniture",
 ]
 MeshType = Literal["fine_20", "ultra_30", "pet_proof"]
 ToiletSpec = Literal["standard", "one_piece", "bidet_combo"]
@@ -175,6 +175,26 @@ class SinkOptions(BaseModel):
     drain_type: DrainType = "stainless_basic"
 
 
+class FurnitureOptions(BaseModel):
+    """의자·책상·책꽂이·서랍장·장식장 등 낱개 가구 필름 시공. 규격이 제각각이라
+    가로×세로로 면적을 재는 film/wardrobe와 달리 가구 종류별 "개수"로만 받는다
+    (교회 의자처럼 수십 개를 하나하나 재는 건 현실적이지 않다).
+
+    이 항목이 생긴 이유: 예전엔 의자·책상 같은 가구를 시공할 메뉴가 없어서
+    사장님이 "film"(싱크대 상하부장) 같은 항목으로 대신 선택했는데, 그러면
+    _build_scene_instructions가 "주방 상하부장을 바꿔라"는 지시문을 그대로
+    AI에게 보내 사진 속 가구와 전혀 안 맞는 지시가 들어갔고(엉뚱한 곳에 시공),
+    segmentation.py도 캐비닛 문짝만 찾게 돼 있어 가구 영역 자체를 못 찾았다."""
+
+    pattern_id: str = "matte-white"
+    needs_primer: bool = False
+    chairs: int = 0
+    desks: int = 0
+    bookshelves: int = 0
+    drawer_cabinets: int = 0
+    display_cabinets: int = 0
+
+
 class JobOptions(BaseModel):
     film: Optional[FilmOptions] = None
     sash: Optional[SashOptions] = None
@@ -188,6 +208,7 @@ class JobOptions(BaseModel):
     wardrobe: Optional[WardrobeOptions] = None
     wall_film: Optional[WallFilmOptions] = None
     illustration: Optional[IllustrationOptions] = None
+    furniture: Optional[FurnitureOptions] = None
 
 
 class ManualRegion(BaseModel):

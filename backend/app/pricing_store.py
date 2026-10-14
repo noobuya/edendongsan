@@ -142,6 +142,26 @@ DEFAULT_PRICING: dict = {
             "drain_price": {"stainless_basic": 25_000},
             "install_labor": 150_000,
         },
+        # 가구(의자/책상/책꽂이/서랍장/장식장): 규격이 제각각이라 ㎡가 아니라
+        # 종류별 "개당" 정액(원단값+공임)으로 받는다. 전부 임시값 — 실제 현장
+        # 단가로 단가 설정 화면(PRICING_FIELDS)에서 조정할 것.
+        "furniture": {
+            "primer_per_piece": 3_000,
+            "material_price": {
+                "chair": 25_000,
+                "desk": 60_000,
+                "bookshelf": 70_000,
+                "drawer_cabinet": 70_000,
+                "display_cabinet": 90_000,
+            },
+            "labor_price": {
+                "chair": 20_000,
+                "desk": 40_000,
+                "bookshelf": 50_000,
+                "drawer_cabinet": 50_000,
+                "display_cabinet": 60_000,
+            },
+        },
     },
 }
 
@@ -230,6 +250,18 @@ PRICING_FIELDS: list[dict] = [
     {"key": "price_table.film.manday_coverage.molding_m", "label": "몰딩 1품 처리량", "group": "품 산출", "unit": "m"},
     {"key": "price_table.sash.manday_coverage.sash_m2", "label": "샷시 1품 처리량", "group": "품 산출", "unit": "㎡"},
     {"key": "price_table.glass.tint_manday_m2", "label": "썬팅 1품 처리량", "group": "품 산출", "unit": "㎡"},
+
+    {"key": "price_table.furniture.primer_per_piece", "label": "가구 프라이머 (개당)", "group": "재료비", "unit": "원/개"},
+    {"key": "price_table.furniture.material_price.chair", "label": "의자 원단값 (개당)", "group": "재료비", "unit": "원/개"},
+    {"key": "price_table.furniture.material_price.desk", "label": "책상 원단값 (개당)", "group": "재료비", "unit": "원/개"},
+    {"key": "price_table.furniture.material_price.bookshelf", "label": "책꽂이 원단값 (개당)", "group": "재료비", "unit": "원/개"},
+    {"key": "price_table.furniture.material_price.drawer_cabinet", "label": "서랍장 원단값 (개당)", "group": "재료비", "unit": "원/개"},
+    {"key": "price_table.furniture.material_price.display_cabinet", "label": "장식장 원단값 (개당)", "group": "재료비", "unit": "원/개"},
+    {"key": "price_table.furniture.labor_price.chair", "label": "의자 시공 공임 (개당)", "group": "공임", "unit": "원/개"},
+    {"key": "price_table.furniture.labor_price.desk", "label": "책상 시공 공임 (개당)", "group": "공임", "unit": "원/개"},
+    {"key": "price_table.furniture.labor_price.bookshelf", "label": "책꽂이 시공 공임 (개당)", "group": "공임", "unit": "원/개"},
+    {"key": "price_table.furniture.labor_price.drawer_cabinet", "label": "서랍장 시공 공임 (개당)", "group": "공임", "unit": "원/개"},
+    {"key": "price_table.furniture.labor_price.display_cabinet", "label": "장식장 시공 공임 (개당)", "group": "공임", "unit": "원/개"},
 ]
 
 

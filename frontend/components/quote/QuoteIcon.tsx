@@ -1,5 +1,6 @@
 import {
   AppWindow,
+  Armchair,
   Blinds,
   CookingPot,
   DoorClosed,
@@ -49,6 +50,7 @@ const BY_WORK_ITEM: Record<string, LucideIcon> = {
   toilet: Toilet,
   wardrobe: LayoutGrid,
   wall_film: Layers,
+  furniture: Armchair,
 };
 
 export type Tone = "indigo" | "amber" | "teal" | "sky";

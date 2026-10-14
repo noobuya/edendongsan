@@ -14,6 +14,7 @@ import LightingForm from "@/components/forms/LightingForm";
 import FanForm from "@/components/forms/FanForm";
 import SinkForm from "@/components/forms/SinkForm";
 import IllustrationForm from "@/components/forms/IllustrationForm";
+import FurnitureForm from "@/components/forms/FurnitureForm";
 import { WORK_ITEM_META } from "@/lib/workItems";
 
 interface Props {
@@ -84,6 +85,9 @@ export default function ItemOptionsSheet({ item, options, onChange, onClose }: P
           value={options.illustration}
           onChange={(illustration) => onChange({ ...options, illustration })}
         />
+      )}
+      {item === "furniture" && (
+        <FurnitureForm value={options.furniture} onChange={(furniture) => onChange({ ...options, furniture })} />
       )}
     </BottomSheet>
   );

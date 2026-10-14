@@ -41,6 +41,15 @@ export default function SectorReedit({ jobId, imageUrl, busy, onSubmitted, extra
   const [aspect, setAspect] = useState<number | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const [boxWidth, setBoxWidth] = useState(0);
+  // 화면 높이(window.innerHeight)를 state로 따로 들고 간다. 예전에는 아래
+  // boxHeight 계산에서 window.innerHeight를 직접 읽었는데, 그 값은 boxWidth가
+  // 바뀔 때만 (ResizeObserver가 재렌더를 일으켜) "우연히" 새로 읽혔다. 폭이
+  // 그대로인 채 높이만 바뀌는 경우 — 폰 화면을 위로 스크롤해 주소창이 접히는
+  // 순간, 또는 폴더폰을 펼쳐 화면이 커지는 순간 — 재렌더가 안 일어나 예전
+  // window.innerHeight 값으로 굳어버렸다. 그러면 캔버스 높이가 실제 화면보다
+  // 작게 고정돼 도구 막대·삭제 버튼이 화면 밖으로 밀려 안 보이거나, 폴더폰을
+  // 펼쳤는데 사진이 계속 작은 채로 남는 증상이 됐다.
+  const [viewportH, setViewportH] = useState(() => (typeof window !== "undefined" ? window.innerHeight : 800));
 
   useEffect(() => {
     const el = boxRef.current;
@@ -52,11 +61,24 @@ export default function SectorReedit({ jobId, imageUrl, busy, onSubmitted, extra
     return () => ro.disconnect();
   }, []);
 
+  useEffect(() => {
+    const measureViewport = () => setViewportH(window.innerHeight);
+    measureViewport();
+    // resize 하나만 걸면 안드로이드 폴더폰에서 힌지 상태가 바뀔 때(접힘<->펼침)
+    // 이벤트가 누락되는 경우가 실측으로 확인돼, 같은 측정 함수를 여러 신호에
+    // 중복으로 걸어 둔다 — 어느 하나라도 걸리면 바로잡힌다.
+    window.addEventListener("resize", measureViewport);
+    window.addEventListener("orientationchange", measureViewport);
+    window.visualViewport?.addEventListener("resize", measureViewport);
+    return () => {
+      window.removeEventListener("resize", measureViewport);
+      window.removeEventListener("orientationchange", measureViewport);
+      window.visualViewport?.removeEventListener("resize", measureViewport);
+    };
+  }, []);
+
   // 사진 높이 + 도구 막대(56px). 화면 높이의 70%는 넘지 않게 막는다.
-  const boxHeight = Math.min(
-    Math.round(boxWidth / (aspect ?? 4 / 3)) + 56,
-    typeof window !== "undefined" ? Math.round(window.innerHeight * 0.7) : 600
-  );
+  const boxHeight = Math.min(Math.round(boxWidth / (aspect ?? 4 / 3)) + 56, Math.round(viewportH * 0.7));
   // 사진은 blob으로 받아 넘긴다. 결과 사진 주소는 ngrok을 거치는데 그 주소를
   // new Image()에 그대로 물리면 경고 페이지가 내려와 로딩이 실패하고,
   // 편집기가 "아무것도 없는 화면"으로 뜬다(AssetImage가 있는 이유와 같다).

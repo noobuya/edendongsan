@@ -14,7 +14,8 @@ export type WorkItemId =
   | "toilet"
   | "wardrobe"
   | "wall_film"
-  | "illustration";
+  | "illustration"
+  | "furniture";
 export type GlassWorkType = "tint";
 export type GlassTintType = "clear" | "frosted" | "mirror" | "blackout";
 export type CeilingMaterial = "gypsum" | "concrete" | "wood_reinforced";
@@ -148,6 +149,18 @@ export interface SinkOptions {
   drainType: DrainType;
 }
 
+/** 의자/책상/책꽂이/서랍장/장식장 등 낱개 가구 필름 시공. 규격이 제각각이라
+ *  가로×세로로 면적을 재는 film/wardrobe와 달리 가구 종류별 "개수"로만 받는다. */
+export interface FurnitureOptions {
+  patternId: string;
+  needsPrimer: boolean;
+  chairs: number;
+  desks: number;
+  bookshelves: number;
+  drawerCabinets: number;
+  displayCabinets: number;
+}
+
 export interface JobOptionsState {
   film: FilmOptions;
   sash: SashOptions;
@@ -161,6 +174,7 @@ export interface JobOptionsState {
   wardrobe: WardrobeOptions;
   wall_film: WallFilmOptions;
   illustration: IllustrationOptions;
+  furniture: FurnitureOptions;
 }
 
 export interface CreateJobParams {

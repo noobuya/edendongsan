@@ -394,6 +394,7 @@ def surface_label(category: str) -> str:
         "wardrobe": "wardrobe door",
         "glass": "glass panel",
         "wall_film": "wall surface",
+        "furniture": "furniture piece (chair, desk, bookshelf, drawer cabinet, or display cabinet)",
     }.get(category, MANUAL_CATEGORY_PROMPTS.get(category, "interior"))
 
 
@@ -533,13 +534,14 @@ PRESERVE_HINTS = {
     "wall_film": "light switches, power outlets, corners, baseboards and existing wall structure",
     "glass": "the glass panel edges and frame",
     "mesh_screen": "the frame profile and structural geometry",
+    "furniture": "the furniture's original shape, legs, joints, frame structure and proportions",
 }
-# 실제로 나무 마감이 흔한 항목(싱크대장·문짝·옷장)에서만 "나뭇결을 없애라"고 구체적으로
-# 말해 기존 무늬를 강하게 덮어쓰게 한다(안 그러면 모델이 기존 나뭇결을 살짝 살려
-# "색만 바뀐 듯 마는 듯"하게 그리는 경향이 있다 — 위 인페인팅 모델 실측 메모 참고).
+# 실제로 나무 마감이 흔한 항목(싱크대장·문짝·옷장·가구)에서만 "나뭇결을 없애라"고
+# 구체적으로 말해 기존 무늬를 강하게 덮어쓰게 한다(안 그러면 모델이 기존 나뭇결을 살짝
+# 살려 "색만 바뀐 듯 마는 듯"하게 그리는 경향이 있다 — 위 인페인팅 모델 실측 메모 참고).
 # 벽·창틀·유리·방충망은 페인트·벽지·유리라 애초에 나뭇결이 없는 경우가 많아, 없는
 # 걸 없애라고 하면 방화문 때와 똑같은 혼란을 준다 — 일반적인 "기존 마감"으로 대신한다.
-WOOD_TYPICAL_CATEGORIES = {"film", "door_frame", "wardrobe"}
+WOOD_TYPICAL_CATEGORIES = {"film", "door_frame", "wardrobe", "furniture"}
 
 
 def _perspective_hint(mask: Image.Image) -> str:

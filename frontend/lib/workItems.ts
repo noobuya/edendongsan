@@ -1,4 +1,4 @@
-import { Blinds, DoorOpen, Droplets, Fan, Grid2x2, Layers, Lightbulb, Rows3, Shirt, Sparkles, Toilet, Wand2 } from "lucide-react";
+import { Armchair, Blinds, DoorOpen, Droplets, Fan, Grid2x2, Layers, Lightbulb, Rows3, Shirt, Sparkles, Toilet, Wand2 } from "lucide-react";
 import type { JobOptionsState, WorkItemId } from "@/types";
 
 /** 시공 항목 정의 한 곳. 항목 선택 시트, 항목 카드, 옵션 시트가 모두 여기를 본다. */
@@ -18,6 +18,7 @@ export const WORK_ITEM_META: Record<
   wardrobe: { label: "장롱/옷장", icon: Shirt, description: "옷장 문짝·몸통 필름 랩핑" },
   wall_film: { label: "벽면 시트지", icon: Rows3, description: "벽면 필름 시공·면처리" },
   illustration: { label: "일러스트 (사장님 전용)", icon: Wand2, description: "문구·그림을 시공 사진에 그려 넣기" },
+  furniture: { label: "가구 필름", icon: Armchair, description: "의자·책상·책꽂이·서랍장·장식장 필름 시공" },
 };
 
 /** 시공 항목의 상위 묶음.
@@ -40,7 +41,7 @@ export const WORK_ITEM_GROUPS: WorkItemGroup[] = [
     label: "인테리어 필름",
     description: "같은 필름 자재로 부위만 다르게 시공합니다",
     icon: Layers,
-    children: ["film", "sash", "door_frame", "wardrobe", "wall_film"],
+    children: ["film", "sash", "door_frame", "wardrobe", "wall_film", "furniture"],
   },
   {
     id: "glass_family",
@@ -146,6 +147,15 @@ export const DEFAULT_OPTIONS: JobOptionsState = {
   // 개수 기본값은 0 — 건드리지도 않은 항목이 견적에 얹히면 안 된다.
   toilet: { spec: "standard", count: 0, removeExisting: true, replaceSupplyLine: true },
   illustration: { count: 0, text: "", description: "" },
+  furniture: {
+    patternId: "matte-white",
+    needsPrimer: false,
+    chairs: 0,
+    desks: 0,
+    bookshelves: 0,
+    drawerCabinets: 0,
+    displayCabinets: 0,
+  },
 };
 
 /** 전체 시공 항목. 목록을 따로 적지 않고 그룹에서 뽑아낸다 —
@@ -273,6 +283,14 @@ export const MATERIAL_OPTIONS: Record<
     { id: "one_piece", label: "원피스 변기" },
     { id: "bidet_combo", label: "비데 일체형" },
   ],
+  furniture: [
+    { id: "matte-white", label: "매트 화이트", colorHex: "#F2F1ED" },
+    { id: "cream-white", label: "크림 화이트", colorHex: "#F5EEDC" },
+    { id: "matte-black", label: "매트 블랙", colorHex: "#2B2B2E" },
+    { id: "oak-wood", label: "오크 우드", colorHex: "#B08B5A" },
+    { id: "walnut-wood", label: "월넛 우드", colorHex: "#5C3A28" },
+    ...BODAQ_MATERIAL_OPTIONS,
+  ],
 };
 
 /** door_frame(문짝/문틀)에서만 보여주는 "문 종류" 선택지 — 원래 문이 나무 문인지,
@@ -357,6 +375,11 @@ export function summarizeItem(item: WorkItemId, options: JobOptionsState): strin
   }
   if (item === "fan") {
     return options.fan.fanCount > 0 ? `실링팬 ${options.fan.fanCount}대` : "대수를 입력해주세요";
+  }
+  if (item === "furniture") {
+    const f = options.furniture;
+    const total = f.chairs + f.desks + f.bookshelves + f.drawerCabinets + f.displayCabinets;
+    return total > 0 ? `가구 ${total}개` : "가구 개수를 입력해주세요";
   }
   return "규격 선택됨";
 }
