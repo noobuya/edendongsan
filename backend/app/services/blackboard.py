@@ -66,9 +66,18 @@ def stamp_blackboard(image: Image.Image, business_name: str, customer_name: str,
         line_heights.append(bbox[3] - bbox[1])
         max_text_w = max(max_text_w, bbox[2] - bbox[0])
 
-    board_w = max_text_w + pad * 2
+    board_w = min(max_text_w + pad * 2, w)  # 고객명이 길어도 사진 폭을 넘지 않게 막는다
     board_h = sum(line_heights) + line_gap * (len(lines) - 1) + pad * 2
-    board_x0, board_y0 = 0, h - board_h
+    # [가로 중앙 정렬 — "글씨가 왼쪽으로 쏠려 짤린다"의 원인]
+    # 예전엔 board_x0 = 0으로 사진 왼쪽 끝에 바로 붙여 찍었다. 그런데 이 사진은
+    # 블로그·갤러리 화면에서 object-cover로 정사각형/4:3 썸네일에 맞춰 잘리는데,
+    # object-cover의 기본 기준점은 "가운데"라 가로로 긴 사진일수록 양옆이 잘리고
+    # 가운데만 남는다. 왼쪽 끝에 찍힌 흑판 패널은 그 양옆 잘림의 첫 희생양이라,
+    # 썸네일에서는 패널이 아예 반 토막 나거나 통째로 사라졌다. 가운데로 옮기면
+    # object-cover가 어느 비율로 잘라내든(가로가 길든 세로가 길든) 사진의 정중앙은
+    # 항상 살아남으므로 패널도 항상 온전히 보인다.
+    board_x0 = max(0, (w - board_w) // 2)
+    board_y0 = h - board_h
     draw.rectangle([board_x0, board_y0, board_x0 + board_w, h], fill=(17, 20, 26, 176))
 
     y = board_y0 + pad
