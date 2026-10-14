@@ -105,26 +105,39 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
   // 그림을 그릴 수 있는 영역(도구 막대를 뺀 화면 전체)을 계속 따라간다.
   // 폰을 접었다 펴면 여기가 달라지고, 그때마다 사진을 다시 맞춰야 한다.
   //
-  // ResizeObserver 하나만 믿지 않는다 — 실제로 안드로이드 폴더폰에서 힌지 상태가
-  // 바뀌는 순간(접힘<->펼침) ResizeObserver 콜백이 누락되는 경우가 있어, 그때는
-  // 화면이 커졌는데도 사진·도구 막대가 접혀 있던 때의 작은 크기로 멈춰 있었다.
-  // window resize/orientationchange/visualViewport resize에도 같은 측정 함수를
-  // 걸어 어느 신호든 하나는 걸리게 한다.
+  // ResizeObserver와 window resize/orientationchange/visualViewport resize를
+  // 전부 걸어 둬도, 삼성 갤럭시 Z 폴드 실기기에서 힌지 상태를 접었다 펴면
+  // 이벤트가 하나도 안 걸리고 영역이 접힌 크기로 그대로 남는 게 실제로
+  // 재현됐다 — 이 기종(또는 이 WebView)은 폴드 전환을 리사이즈로 안 알려주는
+  // 것으로 보인다. 이벤트만으로는 못 믿으므로 0.4초마다 실제 크기를 직접 재서
+  // 비교하는 폴링을 최후의 보루로 추가한다 — 신호가 전혀 안 와도 늦어도
+  // 0.4초 안에는 따라잡는다.
   useEffect(() => {
     const el = areaRef.current;
     if (!el) return;
-    const measure = () => setArea({ w: el.clientWidth, h: el.clientHeight });
+    let last = { w: el.clientWidth, h: el.clientHeight };
+    const measure = () => {
+      const next = { w: el.clientWidth, h: el.clientHeight };
+      last = next;
+      setArea(next);
+    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     window.addEventListener("resize", measure);
     window.addEventListener("orientationchange", measure);
     window.visualViewport?.addEventListener("resize", measure);
+    document.addEventListener("visibilitychange", measure);
+    const poll = window.setInterval(() => {
+      if (el.clientWidth !== last.w || el.clientHeight !== last.h) measure();
+    }, 400);
     return () => {
       observer.disconnect();
       window.removeEventListener("resize", measure);
       window.removeEventListener("orientationchange", measure);
       window.visualViewport?.removeEventListener("resize", measure);
+      document.removeEventListener("visibilitychange", measure);
+      window.clearInterval(poll);
     };
   }, []);
 

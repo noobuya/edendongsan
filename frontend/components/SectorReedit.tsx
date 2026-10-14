@@ -50,6 +50,17 @@ export default function SectorReedit({ jobId, imageUrl, busy, onSubmitted, extra
   // 작게 고정돼 도구 막대·삭제 버튼이 화면 밖으로 밀려 안 보이거나, 폴더폰을
   // 펼쳤는데 사진이 계속 작은 채로 남는 증상이 됐다.
   const [viewportH, setViewportH] = useState(() => (typeof window !== "undefined" ? window.innerHeight : 800));
+  // setInterval 클로저가 매번 최신 값을 보도록 — effect는 한 번만 등록되므로
+  // state를 직접 읽으면 등록 시점 값에 갇힌다(stale closure).
+  const viewportHRef = useRef(viewportH);
+  useEffect(() => {
+    viewportHRef.current = viewportH;
+  }, [viewportH]);
+
+  const boxWidthRef = useRef(boxWidth);
+  useEffect(() => {
+    boxWidthRef.current = boxWidth;
+  }, [boxWidth]);
 
   useEffect(() => {
     const el = boxRef.current;
@@ -58,22 +69,38 @@ export default function SectorReedit({ jobId, imageUrl, busy, onSubmitted, extra
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
-    return () => ro.disconnect();
+    // 위 viewportH 폴링과 같은 이유 — ResizeObserver도 못 믿을 기종이 있었다.
+    const poll = window.setInterval(() => {
+      if (el.clientWidth !== boxWidthRef.current) measure();
+    }, 400);
+    return () => {
+      ro.disconnect();
+      window.clearInterval(poll);
+    };
   }, []);
 
   useEffect(() => {
     const measureViewport = () => setViewportH(window.innerHeight);
     measureViewport();
-    // resize 하나만 걸면 안드로이드 폴더폰에서 힌지 상태가 바뀔 때(접힘<->펼침)
-    // 이벤트가 누락되는 경우가 실측으로 확인돼, 같은 측정 함수를 여러 신호에
-    // 중복으로 걸어 둔다 — 어느 하나라도 걸리면 바로잡힌다.
+    // resize 하나만 걸면 안 되는 기종이 실제로 있었다 — 삼성 갤럭시 Z 폴드에서
+    // 힌지 상태를 접었다 펴도(실기기 확인) resize/orientationchange/visualViewport
+    // 이벤트가 전혀 안 걸리는 경우가 있어, 리스너를 늘려도 여전히 화면이 작게
+    // 고정돼 있었다. 그래서 이벤트에 기대는 대신 0.4초마다 window.innerHeight를
+    // 직접 비교하는 폴링을 "최후의 보루"로 둔다 — 어떤 기종이 어떤 신호를
+    // 누락하든 늦어도 0.4초 안에는 반드시 따라잡는다.
     window.addEventListener("resize", measureViewport);
     window.addEventListener("orientationchange", measureViewport);
     window.visualViewport?.addEventListener("resize", measureViewport);
+    document.addEventListener("visibilitychange", measureViewport);
+    const poll = window.setInterval(() => {
+      if (window.innerHeight !== viewportHRef.current) measureViewport();
+    }, 400);
     return () => {
       window.removeEventListener("resize", measureViewport);
       window.removeEventListener("orientationchange", measureViewport);
       window.visualViewport?.removeEventListener("resize", measureViewport);
+      document.removeEventListener("visibilitychange", measureViewport);
+      window.clearInterval(poll);
     };
   }, []);
 
