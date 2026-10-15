@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Check, ChevronLeft, PenLine, X } from "lucide-react";
+import { useRef, useState } from "react";
+import { Camera, Check, ChevronLeft, PenLine, RotateCcw, X } from "lucide-react";
 import type { MappedRegion, WorkItemId } from "@/types";
 import { DOOR_MATERIAL_OPTIONS, MATERIAL_OPTIONS, REGION_COLORS, WORK_ITEM_GROUPS, WORK_ITEM_META } from "@/lib/workItems";
 
@@ -15,7 +15,10 @@ interface Props {
     option: string,
     optionLabel: string,
     customDesign: string,
-    doorMaterial?: "wood" | "steel"
+    doorMaterial?: "wood" | "steel",
+    /** 실제 필름 견본을 찍은 사진(data URL). 있으면 색상 칩 대신 이 사진으로
+     *  AI가 자재를 맞춘다 — 견본이 없으면 생략해 기존 방식 그대로 쓴다. */
+    swatchImageDataUrl?: string
   ) => void;
 }
 
@@ -26,6 +29,20 @@ interface PendingPick {
   optionLabel: string;
   /** door_frame에서만 쓴다 — DOOR_MATERIAL_OPTIONS의 id(화면 선택 상태 구분용). */
   doorMaterialOptionId: string;
+  /** 실제 견본 사진을 찍었으면 여기 담긴다. 있으면 아래 색상 칩 선택은
+   *  "견본이 없을 때의 대안"으로만 쓰이고, 적용 시에는 이 사진이 우선한다. */
+  swatchImageDataUrl?: string;
+}
+
+/** 사진 파일을 data URL로 읽는다 — 마스크(dataUrlToBlob)와 짝을 맞춰 전송 직전에
+ *  Blob으로 바꾸기 쉽게 data URL 형태로 들고 있는다. */
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error("사진을 읽지 못했습니다."));
+    reader.readAsDataURL(file);
+  });
 }
 
 type MaterialOption = { id: string; label: string; colorHex?: string; brand?: string; code?: string };
@@ -82,10 +99,33 @@ export default function MaterialPicker({
       pending.category === "door_frame"
         ? DOOR_MATERIAL_OPTIONS.find((d) => d.id === pending.doorMaterialOptionId)?.material ?? "wood"
         : undefined;
-    onPickMaterial(pending.category, pending.option, pending.optionLabel, customDesign.trim(), doorMaterial);
+    onPickMaterial(
+      pending.category,
+      pending.option,
+      pending.swatchImageDataUrl ? "견본 사진 자재" : pending.optionLabel,
+      customDesign.trim(),
+      doorMaterial,
+      pending.swatchImageDataUrl
+    );
     setPending(null);
     setOpenGroup(null);
     setCustomDesign("");
+  }
+
+  const swatchInputRef = useRef<HTMLInputElement>(null);
+  const [swatchBusy, setSwatchBusy] = useState(false);
+
+  async function handleSwatchFile(file: File | null) {
+    if (!file || !pending) return;
+    setSwatchBusy(true);
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      setPending({ ...pending, swatchImageDataUrl: dataUrl });
+    } catch {
+      // 못 읽으면 조용히 포기 — 사용자는 그냥 다시 누르거나 색상 칩을 쓰면 된다.
+    } finally {
+      setSwatchBusy(false);
+    }
   }
 
   const group = WORK_ITEM_GROUPS.find((g) => g.id === openGroup) ?? null;
@@ -126,12 +166,72 @@ export default function MaterialPicker({
                   {WORK_ITEM_META[pending.category].label}
                 </button>
 
-                <div className="space-y-3">
+                {/* [실제 필름 견본 사진으로 색·질감 맞추기]
+                    색상 칩(카탈로그 색상 id)은 화면 밝기·설정에 따라 실제 자재와
+                    다르게 보일 수 있고, AI도 "매트 화이트" 같은 이름만으로는 정확한
+                    색을 못 맞춘다. 가진 필름 견본을 그 자리에서 찍으면, 그 사진을
+                    AI에게 "이 자재와 똑같이" 입히라는 참고 이미지로 그대로 넘긴다 —
+                    카탈로그 이름보다 훨씬 사실적인 결과가 나온다. 견본이 없으면
+                    아래 색상 칩을 그대로 쓰면 된다(기존 방식 그대로 유지). */}
+                <div>
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    실제 필름 견본 사진 (추천)
+                  </span>
+                  {pending.swatchImageDataUrl ? (
+                    <div className="mt-2 flex items-center gap-3 rounded-xl border border-indigo-200 bg-indigo-50/60 p-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={pending.swatchImageDataUrl}
+                        alt="견본 사진"
+                        className="h-14 w-14 shrink-0 rounded-lg object-cover"
+                      />
+                      <p className="flex-1 text-[12px] font-semibold leading-snug text-indigo-700">
+                        이 견본 사진 그대로 입혀요
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setPending({ ...pending, swatchImageDataUrl: undefined })}
+                        aria-label="견본 사진 다시 찍기"
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-indigo-600 shadow-sm transition-transform active:scale-90"
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={swatchBusy}
+                      onClick={() => swatchInputRef.current?.click()}
+                      className="mt-2 flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-indigo-300 bg-indigo-50/40 text-[12px] font-semibold text-indigo-600 transition-transform active:scale-[0.98] disabled:opacity-50"
+                    >
+                      <Camera className="h-4 w-4" />
+                      {swatchBusy ? "불러오는 중..." : "견본 사진 찍기 · 올리기"}
+                    </button>
+                  )}
+                  <input
+                    ref={swatchInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={(e) => {
+                      void handleSwatchFile(e.target.files?.[0] ?? null);
+                      e.target.value = "";
+                    }}
+                  />
+                </div>
+
+                <div className={`space-y-3 ${pending.swatchImageDataUrl ? "opacity-50" : ""}`}>
                   {/* 실제 제조사 브랜드가 있는 옵션(현대보닥 등)은 묶어서 이름표를 단다 —
                       "기본 색상"은 일반명뿐이라 이름표 없이 바로 보여주고, 그 뒤로
                       브랜드가 바뀔 때마다 "현대보닥(BODAQ)"처럼 새 이름표가 붙는다.
                       화면에서 고른 게 실제 어느 제품인지(코드까지) 그대로 보여야
-                      현장에서 자재 발주서에 옮길 수 있다. */}
+                      현장에서 자재 발주서에 옮길 수 있다.
+                      견본 사진을 찍었으면 이 칩들은 "견본이 없을 때의 대안"이라
+                      흐리게 둔다 — 적용 시 견본 사진이 우선한다(applyPick 참고). */}
+                  <span className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    또는 색상 칩에서 고르기 (견본 사진이 없을 때)
+                  </span>
                   {groupMaterialsByBrand(MATERIAL_OPTIONS[pending.category]).map((group, idx) => (
                     <div key={group.label ?? `basic-${idx}`}>
                       <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">

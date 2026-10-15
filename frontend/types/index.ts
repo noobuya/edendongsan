@@ -485,6 +485,11 @@ export interface MappedRegion {
    *  현관문·방화문처럼 페인트칠한 스틸 문인지. AI 편집 지시문이 문 재질에 맞는
    *  문장을 쓰도록(나뭇결이 없는 문에 "나뭇결을 없애라"고 하지 않도록) 갈라 준다. */
   doorMaterial?: "wood" | "steel";
+  /** 실제 필름 견본(스와치)을 찍은 사진의 data URL. 있으면 카탈로그 색상 id
+   *  대신 이 사진을 AI 편집 모델에 "두 번째 참고 이미지"로 보내 그 자재와
+   *  똑같이 입힌다 — 색상 칩으로 고른 임의 색보다 훨씬 사실적이다. 견본 사진이
+   *  없으면(기존처럼) option(카탈로그 색상 id)만으로 렌더링한다. */
+  swatchImageDataUrl?: string;
   /** 화면 표시용 색 인덱스 (REGION_COLORS) */
   colorIndex: number;
   /** 라벨을 띄울 위치 — 사진 크기 대비 0~1 비율 */

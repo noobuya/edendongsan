@@ -64,7 +64,14 @@ export default function ReeditOverlay({ jobId, imageUrl, onClose, onSubmitted }:
   }, [imageUrl]);
 
   const commitRegion = useCallback(
-    (category: WorkItemId, option: string, optionLabel: string, customDesign: string) => {
+    (
+      category: WorkItemId,
+      option: string,
+      optionLabel: string,
+      customDesign: string,
+      doorMaterial?: "wood" | "steel",
+      swatchImageDataUrl?: string
+    ) => {
       const shape = maskStageRef.current?.extractShape();
       if (!shape) return;
       setRegions((prev) => [
@@ -80,6 +87,8 @@ export default function ReeditOverlay({ jobId, imageUrl, onClose, onSubmitted }:
           taskType: taskTypeOf(category),
           prompt: optionLabel,
           customDesign: customDesign || undefined,
+          doorMaterial,
+          swatchImageDataUrl,
           colorIndex: prev.length,
         },
       ]);

@@ -242,6 +242,16 @@ class ManualRegion(BaseModel):
     # 않고 더 자유롭게 다시 그리게 둔다 — 원본 라인이 지저분하거나, 형태 자체를
     # 과감히 바꾸고 싶을 때 쓴다.
     preserve_geometry: bool = True
+    # [실제 필름 견본 사진으로 색·질감을 맞추는 기능]
+    # 사장님이 자재 샘플(스와치북 조각)을 사진으로 찍어 올리면, 그 사진 자체를
+    # AI 편집 모델의 두 번째 참고 이미지로 넘겨 "이 자재와 똑같이" 입히게 한다.
+    # 색상 칩에서 고른 카탈로그 색(matte-white 등)보다 훨씬 사실적인 결과가
+    # 나온다 — 실제 보유한 필름 롤과 다른 임의의 색을 보여주는 사고를 막는다.
+    # None이면 기존처럼 option(카탈로그 색상 id)만으로 렌더링한다 — 견본 사진이
+    # 없을 때는 지금 방식 그대로 쓸 수 있어야 한다는 요구사항 그대로다.
+    # 실제 이미지 파일은 같은 multipart 요청의 swatches 파트로 따로 올라오고,
+    # 이 값이 그중 몇 번째 파일인지를 가리킨다(mask_index와 같은 방식).
+    swatch_index: Optional[int] = None
 
 
 class CreateJobRequest(BaseModel):

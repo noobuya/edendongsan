@@ -28,6 +28,9 @@ async def create_job(
     payload: str = Form(...),
     # 수동 모드에서 칠한 영역 마스크들. 원본 사진과 같은 요청으로 함께 올라온다.
     masks: list[UploadFile] = File(default=[]),
+    # 실제 필름 견본을 찍은 사진들(있는 구역만). region.swatch_index가 이 목록의
+    # 몇 번째 파일인지 가리킨다 — masks와 같은 "인덱스로 참조" 방식.
+    swatches: list[UploadFile] = File(default=[]),
     x_admin_token: str | None = Header(default=None),
 ):
     try:
@@ -76,6 +79,7 @@ async def create_job(
     # 수동 모드로 보낸 영역들: 사진과 함께 한 번에 올라온 마스크(dataURL)를 파일로
     # 풀어 둔다. 사진 해상도에 맞춰 저장해야 나중에 그대로 겹쳐 쓸 수 있다.
     mask_bytes = [await m.read() for m in masks]
+    swatch_bytes = [await s.read() for s in swatches]
     manual_regions: list[dict] = []
     for index, region in enumerate(request.manual_regions, start=1):
         if not 0 <= region.mask_index < len(mask_bytes):
@@ -90,6 +94,17 @@ async def create_job(
             ) from exc
         mask_path = f"storage/uploads/{job_id}_manual{index}_mask.png"
         mask.save(mask_path)
+
+        # 견본 사진은 선택 사항이다 — 없으면(swatch_index가 None) 지금까지처럼
+        # 카탈로그 색상 id만으로 렌더링한다.
+        swatch_path = None
+        if region.swatch_index is not None:
+            if not 0 <= region.swatch_index < len(swatch_bytes):
+                raise HTTPException(
+                    status_code=422, detail=f"{index}번째 지정 영역의 견본 사진이 함께 오지 않았습니다."
+                )
+            swatch_path = _save_swatch(swatch_bytes[region.swatch_index], job_id, index)
+
         manual_regions.append(
             {
                 "mask_path": mask_path,
@@ -108,6 +123,7 @@ async def create_job(
                 "custom_design": region.custom_design,
                 "door_material": region.door_material,
                 "preserve_geometry": region.preserve_geometry,
+                "swatch_path": swatch_path,
             }
         )
 
@@ -143,3 +159,20 @@ def _decode_mask(raw: bytes, size: tuple[int, int]) -> Image.Image:
         gray = gray.resize(size, Image.NEAREST)
     # 반투명 붓 자국이 섞여 들어와도 시공/비시공이 분명해지도록 이진화한다.
     return gray.point(lambda v: 255 if v > 96 else 0, mode="L")
+
+
+def _save_swatch(raw: bytes, job_id: str, suffix: int | str) -> str:
+    """업로드된 필름 견본 사진을 저장한다. 마스크와 달리 사진 해상도에 맞출
+    필요가 없다 — 덧씌울 영역이 아니라 "이 자재와 똑같이" AI에게 보여줄
+    참고 이미지일 뿐이라 원본 비율 그대로 둔다. 처음 견적(숫자 인덱스)과
+    "구역 다시 시공"(remask{n}) 양쪽에서 같은 함수를 쓴다."""
+    if not raw:
+        raise HTTPException(status_code=422, detail="견본 사진이 비어 있습니다.")
+    try:
+        with Image.open(io.BytesIO(raw)) as img:
+            normalized = ImageOps.exif_transpose(img).convert("RGB")
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+        raise HTTPException(status_code=422, detail="견본 사진을 읽을 수 없습니다.") from exc
+    path = f"storage/uploads/{job_id}_swatch{suffix}.jpg"
+    normalized.save(path, "JPEG", quality=92)
+    return path

@@ -65,7 +65,13 @@ export default function HomePage() {
   const [quoteDialogOpen, setQuoteDialogOpen] = useState(false);
   const [serverOnline, setServerOnline] = useState<boolean | null>(null);
   const [pricingOpen, setPricingOpen] = useState(false);
-  const [renderMode, setRenderMode] = useState<RenderMode>("auto");
+  // 기본값을 "수동"으로 바꿨다(2026-10-15) — 자동 AI 영역 인식이 엉뚱한 곳에
+  // 색을 입히는 사고가 반복돼, 기공이 사진에서 직접 도형으로 짚은 자리만
+  // 정확히 시공되는 수동 모드를 기본으로 쓰기로 했다. 조명/실링팬은 수동
+  // 모드에서도 원형(타원) 도구로 자리를 짚으면 기존 자동 생성 방식
+  // (object_creation, 원본 없이 새로 그림) 그대로 렌더링돼 똑같이 동작한다 —
+  // 바뀌는 건 "어디에"를 AI가 추정하지 않고 사람이 짚는다는 것뿐이다.
+  const [renderMode, setRenderMode] = useState<RenderMode>("manual");
   const [autoDescription, setAutoDescription] = useState("");
   const [mappedRegions, setMappedRegions] = useState<MappedRegion[]>([]);
   const [hasShape, setHasShape] = useState(false);
@@ -124,7 +130,8 @@ export default function HomePage() {
       option: string,
       optionLabel: string,
       customDesign: string,
-      doorMaterial?: "wood" | "steel"
+      doorMaterial?: "wood" | "steel",
+      swatchImageDataUrl?: string
     ) => {
       const shape = maskStageRef.current?.extractShape();
       if (!shape) return;
@@ -148,6 +155,8 @@ export default function HomePage() {
           // 문짝/문틀에서만 의미 있음 — 나무 문(기본)인지 현관문·방화문 같은 스틸
           // 문인지. AI 편집 지시문이 문 재질에 맞는 문장을 쓰도록 갈라 준다.
           doorMaterial,
+          // 실제 필름 견본을 찍었으면 카탈로그 색상 대신 이 사진으로 AI가 자재를 맞춘다.
+          swatchImageDataUrl,
           colorIndex: prev.length,
         },
       ]);
@@ -402,7 +411,7 @@ export default function HomePage() {
     setCustomerName("");
     setSelectedItems(DEFAULT_WORK_ITEMS);
     setOptions(DEFAULT_OPTIONS);
-    setRenderMode("auto");
+    setRenderMode("manual");
     setAutoDescription("");
     setMappedRegions([]);
     setHasShape(false);

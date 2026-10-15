@@ -232,6 +232,7 @@ def render_region(
     category: str = "",
     door_material: str = "wood",
     preserve_geometry: bool = True,
+    reference_image_path: str | None = None,
 ) -> Image.Image:
     """영역 하나를 렌더링해 "마스크 밖은 원본 그대로"인 이미지를 돌려준다.
 
@@ -243,10 +244,20 @@ def render_region(
     따라 "나뭇결을 없애라"는 문구를 넣을지 말지를 정확히 가른다.
 
     preserve_geometry가 False면 표면 변경이어도 구조 재주입(_reinject_structure)을
-    건너뛴다 — object_creation은 지킬 원본 구조가 없으므로 이 값과 무관하게 항상 꺼진다."""
+    건너뛴다 — object_creation은 지킬 원본 구조가 없으므로 이 값과 무관하게 항상 꺼진다.
+
+    reference_image_path가 있으면(실제 필름 견본을 찍은 사진) 카탈로그 색상 id
+    대신 그 사진을 AI 편집 모델에 "두 번째 참고 이미지"로 함께 보내 "이 자재와
+    똑같이" 입히게 한다 — 미리 정의한 색 이름(matte-white 등)보다 훨씬 사실적인
+    결과가 나온다. object_creation(조명·실링팬 등)에는 의미가 없어 무시한다."""
     base = Image.open(image_path).convert("RGB")
     mask = _hard_mask(Image.open(mask_path).convert("L"), base.size)
     design = (custom_design or "").strip()
+    reference_image = (
+        Image.open(reference_image_path).convert("RGB")
+        if reference_image_path and task_type != "object_creation"
+        else None
+    )
 
     if task_type == "object_creation":
         params, suffix, keep_structure = OBJECT_PARAMS, OBJECT_SUFFIX, False
@@ -275,11 +286,15 @@ def render_region(
         crop_box = _padded_crop_box(crop_bbox, base.size) if crop_bbox else None
         edit_source = base.crop(crop_box) if crop_box else base
 
+        if reference_image is not None:
+            instruction = build_reference_instruction(category, design, door_material, _perspective_hint(mask))
+            edit_images = [edit_source, reference_image]
+        else:
+            instruction = build_instruction(option_id, category, design, door_material, _perspective_hint(mask))
+            edit_images = [edit_source]
+
         try:
-            edited = _run_edit(
-                edit_source,
-                build_instruction(option_id, category, design, door_material, _perspective_hint(mask)),
-            )
+            edited = _run_edit(edit_images, instruction)
         except Exception as exc:  # noqa: BLE001 - 외부 AI 실패는 아래 폴백으로 받는다
             # [AI가 실패해도 "색이 안 바뀌는" 일은 없어야 한다]
             # 외부 편집 모델(Replicate 경유 OpenAI)은 ReadTimeout·과부하로 종종 실패하고,
@@ -287,10 +302,14 @@ def render_region(
             # 딥 네이비를 지정했는데 결과 사진이 그대로였다). 고른 자재에 색이 있으면
             # 원본의 명암을 살린 채 색만 갈아끼우는 결정적 리컬러(네트워크 호출 없음)로
             # 대신한다. 문구·그림을 넣는 요청은 리컬러로 못 만드니 원래 오류를 올린다.
-            recolored = None if design else _recolor(image_path, mask_path, option_id)
+            # 견본 사진 기반이면 카탈로그 색이 없으니, 견본 사진에서 평균색을 직접
+            # 뽑아 그 색으로 대신한다(정확한 질감까지는 아니어도 "색이 안 바뀌는"
+            # 최악의 상황은 피한다).
+            fallback_hex = _average_hex_color(reference_image) if reference_image is not None else None
+            recolored = None if design else _recolor(image_path, mask_path, option_id, fallback_hex)
             if recolored is None:
                 raise
-            print(f"[ai_service] AI 편집 실패({type(exc).__name__}: {exc}) -> 간이 리컬러로 대체: {option_id}")
+            print(f"[ai_service] AI 편집 실패({type(exc).__name__}: {exc}) -> 간이 리컬러로 대체: {option_id or fallback_hex}")
             # _recolor는 이미 원본과 같은 전체 크기라 조각을 다시 붙일 필요가 없다.
             return _paste_back(base, recolored, mask)
 
@@ -334,25 +353,33 @@ def render_region(
     return _paste_back(base, rendered, mask)
 
 
-def _recolor(image_path: str, mask_path: str, option_id: str) -> Image.Image | None:
-    """고른 자재의 색으로 마스크 영역을 다시 칠한다. 색을 모르면 None."""
+def _recolor(
+    image_path: str, mask_path: str, option_id: str, fallback_hex: str | None = None
+) -> Image.Image | None:
+    """고른 자재의 색으로 마스크 영역을 다시 칠한다.
+
+    option_id가 카탈로그에 없어도(실제 견본 사진 기반이라 색상 id 자체가 없는
+    경우) fallback_hex가 있으면 그 색으로 대신한다 — _average_hex_color로 뽑은
+    견본 사진의 평균색이 여기로 들어온다. 둘 다 없으면 None."""
     from app.catalog import PATTERNS  # 순환 import 방지를 위해 지연 로드
     from app.services.rendering import recolor_surface
 
     pattern = PATTERNS.get(option_id)
-    if pattern is None:
+    color_hex = pattern["color_hex"] if pattern else fallback_hex
+    if color_hex is None:
         return None
     out_path = f"{os.path.splitext(image_path)[0]}_recolor_{uuid.uuid4().hex[:8]}.png"
     recolor_surface(
         image_path,
         mask_path,
-        pattern["color_hex"],
+        color_hex,
         out_path,
         # 예전엔 option_id에 "wood"라는 글자가 들어있는지로만 판단했다("oak-wood").
         # 현대보닥(BODAQ) 코드(예: "bodaq-w015")는 그 글자가 없어 이 방식으로는
         # 나뭇결 처리가 빠진다 — PATTERNS에 명시적으로 적어 둔 wood_grain을 먼저 보고,
-        # 없으면(기존 항목들) 그동안 쓰던 글자 포함 여부로 물러선다.
-        wood_grain=pattern.get("wood_grain", "wood" in option_id),
+        # 없으면(기존 항목들) 그동안 쓰던 글자 포함 여부로 물러선다. 견본 사진
+        # 기반(패턴 없음)은 나뭇결 여부를 알 길이 없으니 일반 색상으로 둔다.
+        wood_grain=pattern.get("wood_grain", "wood" in option_id) if pattern else False,
     )
     result = Image.open(out_path).convert("RGB")
     try:
@@ -360,6 +387,15 @@ def _recolor(image_path: str, mask_path: str, option_id: str) -> Image.Image | N
     except OSError:
         pass
     return result
+
+
+def _average_hex_color(image: Image.Image) -> str:
+    """견본 사진 전체의 평균색을 "#rrggbb"로 뽑는다. AI 편집이 실패했을 때
+    리컬러 폴백에 쓸 색 — 가장자리에 손가락·배경이 살짝 섞여도 평균이라 크게
+    틀어지지 않는다."""
+    small = image.convert("RGB").resize((32, 32), Image.BILINEAR)
+    r, g, b = (int(c) for c in np.asarray(small, dtype=np.float32).mean(axis=(0, 1)))
+    return f"#{r:02x}{g:02x}{b:02x}"
 
 
 def material_label(option_id: str, fallback: str) -> str:
@@ -443,13 +479,20 @@ def _versioned(client: "replicate.Client", slug: str) -> str:
     return resolved
 
 
-def _run_edit(base: Image.Image, instruction: str) -> Image.Image:
-    """말로 지시해 사진을 고친다. 결과는 항상 원본 크기로 되돌려 준다 —
+def _run_edit(images: list[Image.Image], instruction: str) -> Image.Image:
+    """말로 지시해 사진을 고친다. 결과는 항상 원본(images[0]) 크기로 되돌려 준다 —
     이 모델은 정해진 비율로 내보내기 때문에, 크기가 어긋난 채 합성하면
-    마스크가 밀려 엉뚱한 자리가 시공된다."""
+    마스크가 밀려 엉뚱한 자리가 시공된다.
+
+    images[0]이 실제로 고칠 현장 사진(또는 그 조각)이다. 길이가 2 이상이면
+    나머지는 "참고 이미지"로 같이 보낸다 — 이 모델은 input_images를 리스트로
+    받는 멀티 이미지 편집을 지원해서, 두 번째 이미지에 실제 필름 견본 사진을
+    넣으면 "이 자재와 똑같이 입혀라"는 참고 자료로 그대로 쓸 수 있다
+    (build_reference_instruction과 짝을 이룬다)."""
     settings = get_settings()
     if not settings.replicate_api_token:
         raise RuntimeError("Replicate API 토큰이 설정되어 있지 않습니다.")
+    base = images[0]
 
     client = replicate.Client(api_token=settings.replicate_api_token)
     output = run_replicate_with_retry(
@@ -458,7 +501,7 @@ def _run_edit(base: Image.Image, instruction: str) -> Image.Image:
         _versioned(client, EDIT_MODEL),
         input={
             "prompt": instruction,
-            "input_images": [_data_uri(base)],
+            "input_images": [_data_uri(img) for img in images],
             "output_format": "png",
             # [초고화질 — 모델 스키마 직접 조회로 확인] quality는 high 위에 xhigh/max가
             # 더 있다. max까지 가면 비용·시간이 크게 늘어 일상적인 렌더에는 과하다고
@@ -613,6 +656,41 @@ def build_instruction(
         f"{material} interior vinyl film applied.{surface_note}{perspective_hint} Make it look "
         f"highly detailed and photorealistic, and ensure the new thick film texture {covers_clause}, "
         f"while perfectly preserving {preserve}. Do not change anything else in the room."
+    )
+    if design:
+        text += f', with the text "{design}" neatly applied on it'
+    return text
+
+
+def build_reference_instruction(
+    category: str,
+    design: str,
+    door_material: str = "wood",
+    perspective_hint: str = "",
+) -> str:
+    """build_instruction과 같은 목적이지만, 미리 정해둔 색 이름(matte white 등) 대신
+    "두 번째로 첨부한 참고 사진과 똑같은 자재"를 입히라고 지시한다 — 실제 필름
+    견본을 찍어 올렸을 때 쓴다. preserve/surface_note 로직은 build_instruction과
+    동일하게 맞춰, 문 재질·카테고리별 보존 규칙이 색상 지정 방식과 무관하게
+    똑같이 적용되게 한다."""
+    surface = surface_label(category)
+
+    if category == "door_frame" and door_material == "steel":
+        preserve = "the door handle, digital door lock, peephole, hinges and structural geometry"
+        surface_note = " This is a painted steel security/fire-rated entrance door (no wood grain originally)."
+    else:
+        preserve = PRESERVE_HINTS.get(category, "the structural geometry and existing fixtures")
+        surface_note = ""
+
+    text = (
+        f"The second attached image is a photo of a real interior film / vinyl wrap sample swatch "
+        f"(a physical material sample, not a room). Change the {surface} in the first photo to be "
+        f"wrapped in that exact same film — match its precise color, sheen (matte/satin/gloss) and "
+        f"surface texture as closely as possible, as if that exact physical sample had been applied "
+        f"there.{surface_note}{perspective_hint} Make it look highly detailed and photorealistic, "
+        f"and ensure the film completely and evenly covers the existing surface finish, while "
+        f"perfectly preserving {preserve}. Do not change anything else in the room, and do not show "
+        f"the swatch sample itself in the result — only apply its material to the surface."
     )
     if design:
         text += f', with the text "{design}" neatly applied on it'

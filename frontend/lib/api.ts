@@ -89,6 +89,15 @@ export async function createJob(
 ): Promise<{ job_id: string; status: string }> {
   const { selectedItems, options } = params;
 
+  // 견본 사진이 있는 영역만 순서대로 번호를 매긴다 — masks와 별개의 목록이라
+  // 아래 form.append("swatches", ...) 루프와 같은 순서를 써야 서버가 올바른
+  // swatch_index로 짝지을 수 있다. 영역 배열 안의 위치(mask_index)를 키로 써서
+  // 같은 region 객체를 두 번 찾는 일 없이 바로 연결한다.
+  const swatchIndexByRegionIndex = new Map<number, number>();
+  params.manualRegions.forEach((r, index) => {
+    if (r.swatchImageDataUrl) swatchIndexByRegionIndex.set(index, swatchIndexByRegionIndex.size);
+  });
+
   const payload = {
     customer_name: params.customerName,
     selected_items: selectedItems,
@@ -98,7 +107,8 @@ export async function createJob(
     auto_description: params.autoDescription,
     // 수동 모드에서 칠한 영역들의 "설명"만 여기 담는다. 마스크 이미지는 base64로
     // 부풀려 JSON에 넣지 않고 아래에서 파일 파트로 따로 붙인다 — 영역이 늘어날수록
-    // base64는 원본보다 33% 커지고 파싱도 느려진다.
+    // base64는 원본보다 33% 커지고 파싱도 느려진다. 견본 사진도 같은 이유로
+    // swatch_index(아래 swatchIndexOf)로만 가리킨다.
     manual_regions: params.manualRegions.map((r, index) => ({
       mask_index: index,
       category: r.category,
@@ -108,6 +118,7 @@ export async function createJob(
       prompt: r.prompt,
       custom_design: r.customDesign ?? "",
       door_material: r.doorMaterial ?? "wood",
+      swatch_index: swatchIndexByRegionIndex.get(index) ?? null,
     })),
     options: {
       film: selectedItems.includes("film")
@@ -233,6 +244,9 @@ export async function createJob(
   form.append("payload", JSON.stringify(payload));
   for (const [index, region] of params.manualRegions.entries()) {
     form.append("masks", dataUrlToBlob(region.maskDataUrl), `mask_${index}.png`);
+    if (region.swatchImageDataUrl) {
+      form.append("swatches", dataUrlToBlob(region.swatchImageDataUrl), `swatch_${index}.jpg`);
+    }
   }
 
   const res = await apiFetch(`${API_BASE}/api/jobs`, {
@@ -633,6 +647,13 @@ export async function fetchAssetObjectUrl(path: string): Promise<string> {
  *  같은 방식이다(createJob 주석 참고). 바탕 이미지는 서버가 들고 있는 "현재 시공 후
  *  사진"을 쓰므로 여기서 보낼 필요가 없다. */
 export async function remaskJob(jobId: string, regions: MappedRegion[]): Promise<void> {
+  // createJob과 같은 방식 — 견본 사진이 있는 영역만 순서대로 번호를 매겨
+  // swatches 파트와 짝짓는다.
+  const swatchIndexByRegionIndex = new Map<number, number>();
+  regions.forEach((r, index) => {
+    if (r.swatchImageDataUrl) swatchIndexByRegionIndex.set(index, swatchIndexByRegionIndex.size);
+  });
+
   const form = new FormData();
   form.append(
     "payload",
@@ -645,11 +666,15 @@ export async function remaskJob(jobId: string, regions: MappedRegion[]): Promise
         task_type: r.taskType,
         custom_design: r.customDesign ?? "",
         door_material: r.doorMaterial ?? "wood",
+        swatch_index: swatchIndexByRegionIndex.get(index) ?? null,
       })),
     })
   );
   for (const [index, region] of regions.entries()) {
     form.append("masks", dataUrlToBlob(region.maskDataUrl), `remask_${index}.png`);
+    if (region.swatchImageDataUrl) {
+      form.append("swatches", dataUrlToBlob(region.swatchImageDataUrl), `swatch_${index}.jpg`);
+    }
   }
 
   const res = await apiFetch(`${API_BASE}/api/jobs/${jobId}/remask`, { method: "POST", body: form });

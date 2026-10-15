@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, Header, HTTPException, UploadFile
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app.catalog import PATTERNS
 from app.jobs_store import JOBS
@@ -215,6 +215,8 @@ async def remask(
     background_tasks: BackgroundTasks,
     payload: str = Form(...),
     masks: list[UploadFile] = File(default=[]),
+    # 실제 필름 견본을 찍은 사진들(있는 구역만) — masks와 같은 "인덱스로 참조" 방식.
+    swatches: list[UploadFile] = File(default=[]),
 ):
     """결과 사진 위에 다시 잡은 구역만 새로 렌더링한다(부분 재시뮬레이션).
 
@@ -241,6 +243,7 @@ async def remask(
         size = base.size
 
     mask_bytes = [await m.read() for m in masks]
+    swatch_bytes = [await s.read() for s in swatches]
     regions: list[dict] = []
     for index, region in enumerate(regions_in, start=1):
         mask_index = region.get("mask_index", index - 1)
@@ -254,6 +257,16 @@ async def remask(
             raise HTTPException(status_code=422, detail=f"{index}번째 구역을 읽지 못했습니다: {exc}") from exc
         mask_path = f"storage/uploads/{job_id}_remask{uuid.uuid4().hex[:8]}.png"
         mask.save(mask_path)
+
+        swatch_path = None
+        swatch_index = region.get("swatch_index")
+        if swatch_index is not None:
+            if not 0 <= swatch_index < len(swatch_bytes):
+                raise HTTPException(
+                    status_code=422, detail=f"{index}번째 구역의 견본 사진이 함께 오지 않았습니다."
+                )
+            swatch_path = _save_swatch(swatch_bytes[swatch_index], job_id, f"remask{index}")
+
         regions.append(
             {
                 "mask_path": mask_path,
@@ -268,6 +281,7 @@ async def remask(
                 "custom_design": region.get("custom_design", ""),
                 "door_material": region.get("door_material", "wood"),
                 "preserve_geometry": region.get("preserve_geometry", True),
+                "swatch_path": swatch_path,
             }
         )
 
@@ -376,3 +390,18 @@ def _decode_mask(raw: bytes, size: tuple[int, int]) -> Image.Image:
     if gray.size != size:
         gray = gray.resize(size, Image.NEAREST)
     return gray.point(lambda v: 255 if v > 96 else 0, mode="L")
+
+
+def _save_swatch(raw: bytes, job_id: str, suffix: int | str) -> str:
+    """업로드된 필름 견본 사진을 저장한다 — routers/upload.py의 같은 이름 함수와
+    동일한 로직(모듈 간 교차 import를 피하려고 각자 둔다, _decode_mask와 같은 방식)."""
+    if not raw:
+        raise HTTPException(status_code=422, detail="견본 사진이 비어 있습니다.")
+    try:
+        with Image.open(io.BytesIO(raw)) as img:
+            normalized = ImageOps.exif_transpose(img).convert("RGB")
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+        raise HTTPException(status_code=422, detail="견본 사진을 읽을 수 없습니다.") from exc
+    path = f"storage/uploads/{job_id}_swatch{suffix}.jpg"
+    normalized.save(path, "JPEG", quality=92)
+    return path

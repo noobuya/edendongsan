@@ -457,6 +457,7 @@ def _render_manual_regions(job_id: str, image_path: str, manual_regions: list[di
                 region.get("category", ""),
                 region.get("door_material", "wood"),
                 region.get("preserve_geometry", True),
+                region.get("swatch_path"),
             )
         except Exception as exc:  # noqa: BLE001 - 한 영역이 실패해도 나머지는 살린다
             print(f"[pipeline] 지정 영역 {index} 렌더링 실패, 건너뜀: {exc}")
@@ -996,6 +997,7 @@ def run_remask(job_id: str, regions: list[dict]) -> None:
                     region.get("category", ""),
                     region.get("door_material", "wood"),
                     region.get("preserve_geometry", True),
+                    region.get("swatch_path"),
                 )
             except Exception as exc:  # noqa: BLE001 - 한 구역이 실패해도 나머지는 살린다
                 print(f"[pipeline] 재시공 영역 {index} 실패, 건너뜀: {exc}")

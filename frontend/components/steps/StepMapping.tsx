@@ -18,7 +18,8 @@ interface Props {
     option: string,
     optionLabel: string,
     customDesign: string,
-    doorMaterial?: "wood" | "steel"
+    doorMaterial?: "wood" | "steel",
+    swatchImageDataUrl?: string
   ) => void;
 }
 
