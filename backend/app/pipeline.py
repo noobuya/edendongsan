@@ -129,7 +129,19 @@ def run_pipeline(
         # 문제가 재발하지 않는다. 이 값이 빠져 있던 게 "벽면 시공을 골라도 AI
         # 사진이 안 바뀐다"의 직접 원인이었다 — 아래 segment_surfaces 호출에
         # needs_ceiling_ref만 넘기고 needs_wall은 아예 안 넘겨서 늘 False였다.
-        needs_wall_ref = bool("wall_film" in selected_items and options.wall_film)
+        #
+        # [2026-10-15 추가 수정 — "문짝/문틀만 그렸는데 벽까지 흰색으로 칠해졌다"]
+        # wall_film이 selected_items에 있다는 것만으로 벽을 찾아 나섰다 — 벽 치수를
+        # 하나도 안 넣었어도(기본으로 켜진 film_family 항목 중 실제로 안 쓴 것)
+        # True였다. 벽을 찾으면 아래 _ensure_wall_film_applied가 "AI가 충분히 안
+        # 칠했으니" 리컬러로 덮어썼는데, 애초에 벽을 칠할 생각이 없었으니 AI가
+        # 안 칠한 게 당연하고 그걸 "실패"로 보고 흰색을 억지로 입힌 꼴이었다.
+        # film(_film_target_phrases)과 같은 원칙 — 실제로 입력한 벽이 있을 때만.
+        needs_wall_ref = bool(
+            "wall_film" in selected_items
+            and options.wall_film
+            and any(w.count > 0 for w in options.wall_film.walls)
+        )
         # 결과 사진에서 클릭해 색을 바꿀 개별 부위(region) 후보는 어떤 항목을 골랐든
         # 항상 뽑는다 — 실링팬만 선택한 경우에도 완성된 팬을 클릭해 색을 바꿀 수
         # 있어야 하기 때문이다 (예전에는 film/sink일 때만 뽑아서, 실링팬만 고르면
@@ -219,9 +231,30 @@ def run_pipeline(
 
         # AI 장면 생성이 응답을 줘도 필름 색이 실제로 입혀졌다는 보장은 없다. 대상 부위가 목표 색과
         # 크게 다르면 같은 부위를 결정적 리컬러로 다시 칠하고, 그 사실을 안내로 남긴다.
-        if scene_rendered and not manual_regions and masks is not None and "film" in selected_items and options.film:
+        #
+        # [두 조건 모두 "실제로 입력한 게 있을 때만" 확인한다 — 2026-10-15]
+        # film/wall_film이 selected_items에 있다는 것만으로 이 검사를 돌리면,
+        # 애초에 치수를 하나도 안 넣은(기본으로 켜진 film_family 항목 중 실제로
+        # 안 쓴 것) 경우에도 "AI가 색을 안 입혔다"를 "실패"로 오판해 리컬러로
+        # 엉뚱하게 덮어썼다 — 지시문 자체가 안 나갔으니 AI가 안 바꾼 게 당연한데도.
+        # 위 _film_target_phrases/needs_wall_ref와 같은 기준으로 맞춘다.
+        if (
+            scene_rendered
+            and not manual_regions
+            and masks is not None
+            and "film" in selected_items
+            and options.film
+            and _film_target_phrases(options.film)
+        ):
             current_path = _ensure_film_applied(job_id, current_path, masks, options)
-        if scene_rendered and not manual_regions and masks is not None and "wall_film" in selected_items and options.wall_film:
+        if (
+            scene_rendered
+            and not manual_regions
+            and masks is not None
+            and "wall_film" in selected_items
+            and options.wall_film
+            and any(w.count > 0 for w in options.wall_film.walls)
+        ):
             current_path = _ensure_wall_film_applied(job_id, current_path, masks, options)
 
         if masks is not None:
@@ -256,7 +289,12 @@ def run_pipeline(
                     "사진에서 문짝이나 문틀을 찾지 못했어요. 문 손잡이와 테두리가 정면에서 보이게 다시 찍거나, 수동 영역 지정을 이용해 주세요."
                 )
 
-        if not scene_rendered and "film" in selected_items and options.film:
+        if (
+            not scene_rendered
+            and "film" in selected_items
+            and options.film
+            and _film_target_phrases(options.film)
+        ):
             pattern_meta = PATTERNS.get(options.film.pattern_id, PATTERNS["matte-white"])
             # 필름 시공 대상 = AI가 인식한 개별 부위(문짝/장 등). 벽 시공은 지원하지
             # 않는다 — 벽을 시공 대상 카테고리에 포함시켰더니 Gemini가 상/하부장
@@ -826,9 +864,20 @@ def _film_target_phrases(film) -> list[str]:
     targets = [phrase for items, phrase in mapping if any(i.count > 0 for i in items)]
     if film.molding_length_m > 0:
         targets.append("baseboards and moldings")
-    # 아무 부위도 입력하지 않았으면 주방장 전체를 기본 대상으로 삼는다 —
-    # 색상만 고르고 치수는 나중에 넣는 사용 흐름이 흔하기 때문이다.
-    return targets or ["upper and lower kitchen cabinet doors"]
+    # [2026-10-15 수정 — "분명 문짝/문틀만 그렸는데 천장·바닥·시계까지 색이
+    # 바뀌었다" 사고의 원인]
+    # 예전엔 아무 부위도 입력 안 하면 "주방 상하부장"을 기본 대상으로 삼았다.
+    # film_family 그룹(인테리어 필름·샷시·문짝/문틀·옷장·벽면·가구)은 기본으로
+    # 전부 선택된 채 시작하는데(DEFAULT_WORK_ITEMS), 사용자가 "문짝/문틀"만
+    # 작업하려고 그 항목만 치수를 넣고 "인테리어 필름"은 건드리지 않아도 여전히
+    # selected_items에는 남아 있다. 그 상태로 AI 장면 생성을 돌리면 이 기본값이
+    # "주방 상하부장을 바꿔라"는 지시문을 추가로 끼워 넣었고, 사진에 주방
+    # 상하부장이 없으면(이 사고처럼 문짝만 있는 사진) Gemini가 그 지시를 억지로
+    # 만족시키려다 사진 전체를 더 크게 재해석해 천장·바닥·벽시계 같은 무관한
+    # 곳까지 건드렸다. furniture(_furniture_target_phrases)에서 이미 쓴 것과
+    # 같은 원칙으로 바꾼다 — 실제로 입력한 부위가 없으면 아무 것도 추측하지
+    # 않고 지시문 자체를 안 만든다(호출부의 `if targets:`가 자연히 건너뛴다).
+    return targets
 
 
 def _furniture_target_phrases(furniture) -> list[str]:
