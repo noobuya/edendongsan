@@ -110,27 +110,39 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
   // 이벤트가 하나도 안 걸리고 영역이 접힌 크기로 그대로 남는 게 실제로
   // 재현됐다 — 이 기종(또는 이 WebView)은 폴드 전환을 리사이즈로 안 알려주는
   // 것으로 보인다. 이벤트만으로는 못 믿으므로 0.4초마다 실제 크기를 직접 재서
-  // 비교하는 폴링을 최후의 보루로 추가한다 — 신호가 전혀 안 와도 늦어도
-  // 0.4초 안에는 따라잡는다.
+  // 비교하는 폴링을 최후의 보루로 추가했다.
+  //
+  // [화면이 가만히 있는데 계속 깜빡이던 버그 — 2026-10-15 수정]
+  // 위 신호 5개(ResizeObserver·resize·orientationchange·visualViewport·
+  // visibilitychange)를 전부 같은 measure()에 걸어 두면서, measure()가 값이
+  // 실제로 바뀌었는지 보지도 않고 매번 setArea({...}) 새 객체를 넣었다. 크기가
+  // 1px도 안 바뀌었어도 객체 레퍼런스는 매번 새것이라 리액트가 매번 다시
+  // 그렸고, 이 신호들은 모바일에서 화면을 가만히 둬도 수시로(상태바가 살짝
+  // 깜빡이거나, 주소창이 미세하게 흔들리거나, visibilitychange가 스치듯
+  // 지나가거나) 공짜로 발동한다 — 그 결과가 "화면이 꺼졌다 켜졌다", "스크롤이
+  // 됐다 안됐다", "확대한 화면이 도로 작아짐"으로 보였다(캔버스가 매 렌더마다
+  // 다시 그려지며 진행 중이던 터치 제스처가 끊겼다). 이제 measure()가 가로/
+  // 세로가 "실제로" 달라졌을 때만 setArea를 부른다 — 신호가 아무리 자주
+  // 와도 값이 같으면 리액트까지 가지 않는다.
   useEffect(() => {
     const el = areaRef.current;
     if (!el) return;
     let last = { w: el.clientWidth, h: el.clientHeight };
+    setArea(last);
     const measure = () => {
-      const next = { w: el.clientWidth, h: el.clientHeight };
-      last = next;
-      setArea(next);
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      if (w === last.w && h === last.h) return; // 값이 같으면 아무 일도 하지 않는다
+      last = { w, h };
+      setArea(last);
     };
-    measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     window.addEventListener("resize", measure);
     window.addEventListener("orientationchange", measure);
     window.visualViewport?.addEventListener("resize", measure);
     document.addEventListener("visibilitychange", measure);
-    const poll = window.setInterval(() => {
-      if (el.clientWidth !== last.w || el.clientHeight !== last.h) measure();
-    }, 400);
+    const poll = window.setInterval(measure, 400);
     return () => {
       observer.disconnect();
       window.removeEventListener("resize", measure);
