@@ -6,6 +6,7 @@ import {
   Check,
   ChevronUp,
   Circle as CircleIcon,
+  LassoSelect,
   Maximize2,
   MousePointer2,
   Square,
@@ -198,6 +199,20 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
     onDrawFocus?.(false);
   }, [draftPoints, onDrawFocus]);
 
+  /** 손으로 쓸어 그린 경로를 그대로 다각형 도형으로 확정한다. closeDraft와 같은
+   *  마무리 동작(선택 상태로 전환 + 자재 패널 열기)을 쓴다 — 손으로 그리는 것도
+   *  "구역 하나를 한 번에 정의"하는 동작이라 다각형을 다 그렸을 때와 성격이 같다. */
+  const handleFreehandComplete = useCallback(
+    (points: Pt[]) => {
+      const shape: MaskShape = { id: shapeIdRef.current++, kind: "polygon", points };
+      setShapes((prev) => [...prev, shape]);
+      setSelectedId(shape.id);
+      setTool("select");
+      onDrawFocus?.(false);
+    },
+    [onDrawFocus]
+  );
+
   function handleStageTap(point: Pt) {
     if (tool === "polygon") {
       // 시작점 근처를 다시 누르면 면을 닫는다. 확대 중이면 화면 기준 거리가
@@ -343,6 +358,7 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
                         onStageTap={handleStageTap}
                         onShapeChange={updateShape}
                         onCloseDraft={closeDraft}
+                        onFreehandComplete={handleFreehandComplete}
                       />
                     </div>
                   )}
@@ -416,6 +432,8 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
         <div className="glass-panel flex items-center gap-1 rounded-2xl p-1.5">
           <ToolButton active={tool === "polygon"} onClick={() => pickTool("polygon")}
                       icon={<Square className="h-4 w-4" />} label="다각형" />
+          <ToolButton active={tool === "freehand"} onClick={() => pickTool("freehand")}
+                      icon={<LassoSelect className="h-4 w-4" />} label="손그림" />
           <ToolButton active={tool === "ellipse"} onClick={() => pickTool("ellipse")}
                       icon={<CircleIcon className="h-4 w-4" />} label="원형" />
           <ToolButton active={tool === "select"} onClick={() => pickTool("select")}
@@ -486,6 +504,7 @@ function hintFor(tool: Tool, draftCount: number, shapeCount: number): string {
     if (draftCount < MIN_POLYGON_POINTS) return `${draftCount}점 · 계속 탭하세요`;
     return `${draftCount}점 · 시작점을 눌러 닫기`;
   }
+  if (tool === "freehand") return "손가락으로 테두리를 따라 그으세요";
   if (tool === "ellipse") return "조명 자리를 탭하세요";
   if (shapeCount === 0) return "도구를 고르세요";
   return "도형을 탭해 수정·삭제";

@@ -17,7 +17,7 @@ export interface Pt {
   y: number;
 }
 
-export type Tool = "polygon" | "ellipse" | "select";
+export type Tool = "polygon" | "freehand" | "ellipse" | "select";
 
 /** 이 클래스가 붙은 요소에서 시작한 1손가락 제스처는 화면 이동(패닝)으로 넘기지
  *  않는다 — 꼭짓점을 끌어야 하기 때문이다. react-zoom-pan-pinch의 panning.excluded가
@@ -63,6 +63,51 @@ export type MaskShape = PolygonShape | EllipseShape;
 export const MIN_POLYGON_POINTS = 3;
 /** 시작점을 다시 눌러 도형을 닫을 때의 판정 반경(화면 기준 px). */
 export const CLOSE_SNAP_SCREEN_PX = 24;
+
+/** 손가락으로 쓸어 그린 경로를 단순화한다. touchmove는 1초에도 수십 번 쏟아지므로
+ *  그대로 다 쌓으면 점이 수백 개가 되어(저장·전송 낭비, 다각형 닫을 때도 느려짐)
+ *  최소 간격(화면 기준 px, 호출부에서 확대 배율로 나눠 넘긴다)보다 가까운 점은
+ *  건너뛴다 — 손이 떨려도 결과 선은 매끈하게 남는다. */
+export function simplifyFreehandPath(points: Pt[], minDistance: number): Pt[] {
+  if (points.length <= 2) return points;
+  const result: Pt[] = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    const last = result[result.length - 1];
+    if (Math.hypot(points[i].x - last.x, points[i].y - last.y) >= minDistance) {
+      result.push(points[i]);
+    }
+  }
+  return result;
+}
+
+/** 다각형 안쪽을 채우는 빗금(해치) 패턴 타일을 만든다. 손으로 그려 넣은 구역이
+ *  "칠해진 면"이 아니라 "표시된 영역"으로 보이도록, 단색 반투명 채우기 대신
+ *  제도 도면 느낌의 대각선 빗금을 쓴다 — 특히 겹치는 도형이 많을 때 경계가
+ *  더 또렷이 보인다. Konva의 fillPatternImage는 HTMLCanvasElement를 그대로
+ *  받으므로 Image 로딩을 기다릴 필요가 없다.
+ *
+ *  stroke는 선 색(16진 CSS 색상 문자열), tile은 타일 한 변의 길이(px, unit 배율
+ *  반영은 호출부에서 fillPatternScale로 한다 — 타일 자체는 항상 같은 해상도로
+ *  만들어 둬야 축소해도 선이 안 뭉개진다). */
+export function createHatchPattern(stroke: string, tile = 10): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = tile;
+  canvas.height = tile;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return canvas;
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = Math.max(1, tile * 0.12);
+  ctx.lineCap = "square";
+  // 타일 경계를 넘나드는 대각선 3개(가운데 + 양쪽 모서리 절반)를 그려야
+  // 타일을 이어 붙였을 때 빗금이 끊기지 않고 이어진다.
+  for (const offset of [-tile, 0, tile]) {
+    ctx.beginPath();
+    ctx.moveTo(offset, tile);
+    ctx.lineTo(offset + tile, 0);
+    ctx.stroke();
+  }
+  return canvas;
+}
 
 export function isPolygon(shape: MaskShape): shape is PolygonShape {
   return shape.kind === "polygon";

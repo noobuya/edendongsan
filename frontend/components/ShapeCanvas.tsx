@@ -1,13 +1,15 @@
 "use client";
 
-import { Fragment, useEffect, useRef } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type Konva from "konva";
 import { Circle, Ellipse, Image as KonvaImage, Layer, Line, Stage, Transformer } from "react-konva";
 import {
   DRAW_LAYER_CLASS,
   MIN_POLYGON_POINTS,
+  createHatchPattern,
   getClosestLineSegment,
   isPolygon,
+  simplifyFreehandPath,
   type MaskShape,
   type PolygonShape,
   type Pt,
@@ -30,6 +32,12 @@ const EDGE_GRAB_PX = 10;
 const TR_ANCHOR_PX = 6;
 const TR_ANCHOR_RADIUS_PX = 3;
 const TR_BORDER_PX = 1;
+/** 손가락으로 쓸어 그릴 때 점을 찍는 최소 간격(화면 기준 px). 너무 촘촘하면
+ *  점이 수백 개씩 쌓이고, 너무 성기면 곡선이 각져 보인다. */
+const FREEHAND_MIN_DIST_PX = 6;
+/** 빗금 무늬의 선 색 — 선택 여부와 같은 인디고 계열로 맞춘다. */
+const HATCH_STROKE = "rgba(79, 70, 229, 0.55)";
+const HATCH_STROKE_SELECTED = "rgba(79, 70, 229, 0.8)";
 
 export interface CommittedLayer {
   shapes: MaskShape[];
@@ -61,6 +69,9 @@ interface Props {
   onShapeChange: (shape: MaskShape) => void;
   /** 시작점을 다시 눌러 다각형을 닫을 때 */
   onCloseDraft: () => void;
+  /** 손가락으로 쓸어 그린 경로(사진 원본 픽셀)가 손을 뗀 순간 올라온다.
+   *  점이 너무 적으면(실수로 살짝 스친 경우) 아예 안 불린다. */
+  onFreehandComplete: (points: Pt[]) => void;
 }
 
 /** 도형을 만들고 다듬는 벡터 편집 레이어 (react-konva).
@@ -88,6 +99,7 @@ export default function ShapeCanvas({
   onStageTap,
   onShapeChange,
   onCloseDraft,
+  onFreehandComplete,
 }: Props) {
   const stageRef = useRef<Konva.Stage>(null);
   const trRef = useRef<Konva.Transformer>(null);
@@ -95,6 +107,21 @@ export default function ShapeCanvas({
   // 두 손가락(확대) 중에 찍히는 탭을 무시하기 위한 표시. 확대하다 엉뚱한 꼭짓점이
   // 찍히면 현장에서 다시 지워야 해서 성가시다.
   const multiTouchRef = useRef(false);
+  // 손가락으로 쓸어 그리는 중인 경로 — 손을 떼기 전까지는 로컬 state로만 들고
+  // 있다가(매 touchmove마다 부모까지 올리면 리렌더가 너무 잦다) 뗀 순간에만
+  // onFreehandComplete로 한 번에 넘긴다.
+  const [freehandPoints, setFreehandPoints] = useState<Pt[]>([]);
+  const freehandDrawingRef = useRef(false);
+  // 빗금 타일은 한 번만 만들어 두고 계속 재사용한다(Canvas 생성 비용을 매
+  // 렌더마다 치르지 않도록) — 색만 다른 두 장(기본/선택됨).
+  // Konva는 fillPatternImage로 HTMLCanvasElement도 실제로 받아들이지만(런타임
+  // GetSet 타입에는 있음), react-konva의 JSX 속성 타입은 HTMLImageElement로만
+  // 좁게 선언돼 있다 — 라이브러리 타입 선언의 불일치라 단언으로 맞춘다.
+  const hatchPattern = useMemo(() => createHatchPattern(HATCH_STROKE) as unknown as HTMLImageElement, []);
+  const hatchPatternSelected = useMemo(
+    () => createHatchPattern(HATCH_STROKE_SELECTED) as unknown as HTMLImageElement,
+    []
+  );
 
   // 화면 기준으로 일정한 크기를 유지하려면 레이어 배율만큼 나눠야 한다.
   const unit = 1 / (displayScale * viewScale || 1);
@@ -159,7 +186,53 @@ export default function ShapeCanvas({
 
   function handleStagePointer(e: Konva.KonvaEventObject<PointerEvent | TouchEvent>) {
     const touches = (e.evt as TouchEvent).touches;
-    if (touches && touches.length > 1) multiTouchRef.current = true;
+    if (touches && touches.length > 1) {
+      multiTouchRef.current = true;
+      // 손으로 그리던 중에 두 번째 손가락이 닿으면(확대하려는 의도) 지금까지
+      // 그린 경로는 버린다 — 어중간한 선이 도형으로 확정되면 지우고 다시
+      // 그려야 해서 번거롭다.
+      if (freehandDrawingRef.current) {
+        freehandDrawingRef.current = false;
+        setFreehandPoints([]);
+      }
+      return;
+    }
+    if (tool !== "freehand") return;
+    const stage = stageRef.current;
+    const pos = stage?.getPointerPosition();
+    if (!stage || !pos) return;
+    freehandDrawingRef.current = true;
+    setFreehandPoints([{ x: pos.x / displayScale, y: pos.y / displayScale }]);
+  }
+
+  /** 손가락이 움직이는 동안 쓸어 그린 경로에 점을 더한다. 최소 간격보다
+   *  가까우면 건너뛴다(simplifyFreehandPath와 같은 기준, 그리는 중에는 매번
+   *  배열 전체를 다시 훑을 필요 없이 마지막 점과만 비교하면 된다). */
+  function handleFreehandMove() {
+    if (tool !== "freehand" || !freehandDrawingRef.current || multiTouchRef.current) return;
+    const stage = stageRef.current;
+    const pos = stage?.getPointerPosition();
+    if (!stage || !pos) return;
+    const next = { x: pos.x / displayScale, y: pos.y / displayScale };
+    setFreehandPoints((prev) => {
+      const last = prev[prev.length - 1];
+      if (last && Math.hypot(next.x - last.x, next.y - last.y) < FREEHAND_MIN_DIST_PX * unit) return prev;
+      return [...prev, next];
+    });
+  }
+
+  /** 손을 뗀 순간 지금까지 그린 경로를 확정한다. 더 단순화(simplifyFreehandPath)해
+   *  한 번 더 거르는 이유: move 중 필터는 "마지막 점"하고만 비교해 손이 떨리며
+   *  살짝 되돌아왔다 다시 나가는 지그재그를 다 통과시킬 수 있다 — 최종 결과는
+   *  전체 경로 기준으로 한 번 더 정리해 매끈하게 남긴다. */
+  function handleFreehandUp() {
+    if (tool !== "freehand" || !freehandDrawingRef.current) return;
+    freehandDrawingRef.current = false;
+    setFreehandPoints((prev) => {
+      const simplified = simplifyFreehandPath(prev, FREEHAND_MIN_DIST_PX * unit);
+      if (simplified.length >= MIN_POLYGON_POINTS) onFreehandComplete(simplified);
+      return [];
+    });
   }
 
   /** [왜 onClick/onTap이 아니라 onPointerClick인가]
@@ -189,6 +262,8 @@ export default function ShapeCanvas({
       height={displayHeight}
       onPointerDown={handleStagePointer}
       onTouchStart={handleStagePointer}
+      onPointerMove={handleFreehandMove}
+      onPointerUp={handleFreehandUp}
       onPointerClick={handleTap}
       style={{ touchAction: "none", cursor: tool === "select" ? "default" : "crosshair" }}
     >
@@ -263,6 +338,13 @@ export default function ShapeCanvas({
               <Fragment key={shape.id}>
                 <Line
                   {...common}
+                  // 다각형은 단색 대신 빗금으로 채운다 — "칠해진 면"이 아니라
+                  // "표시된 구역"으로 보이게 하려는 것. 타원(조명 자리)은
+                  // common의 단색 fill을 그대로 쓴다(아래 Ellipse는 override 안 함).
+                  fill={undefined}
+                  fillPatternImage={selected ? hatchPatternSelected : hatchPattern}
+                  fillPatternRepeat="repeat"
+                  fillPatternScale={{ x: unit, y: unit }}
                   points={shape.points.flatMap((p) => [p.x, p.y])}
                   closed
                   hitStrokeWidth={0}
@@ -414,6 +496,23 @@ export default function ShapeCanvas({
           </>
         )}
 
+        {/* 손으로 쓸어 그리는 중인 경로 — 손을 떼기 전까지 실시간으로 자란다.
+            첫 점으로 되돌아가 닫은 채로(closed) 그려서, 다 그리기 전에도
+            "지금까지 그은 선 안쪽"이 빗금으로 채워진 모습을 바로 보여준다. */}
+        {freehandPoints.length > 0 && (
+          <Line
+            points={freehandPoints.flatMap((p) => [p.x, p.y])}
+            closed
+            fillPatternImage={hatchPatternSelected}
+            fillPatternRepeat="repeat"
+            fillPatternScale={{ x: unit, y: unit }}
+            stroke="#4f46e5"
+            strokeWidth={2.5 * unit}
+            lineCap="round"
+            lineJoin="round"
+            listening={false}
+          />
+        )}
 
         {/* 타원 전용 4방향 핸들. 모서리(대각선) 핸들을 빼서 손가락으로도 가로/세로를
             따로 늘릴 수 있게 하고, 천장 원근에 맞추도록 회전은 열어둔다. */}
