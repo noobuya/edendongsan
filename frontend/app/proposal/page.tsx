@@ -143,12 +143,14 @@ export default function ProposalPublicPage() {
           </div>
         )}
 
+        {proposal.estimate && <ProposalEstimateSummary estimate={proposal.estimate} />}
+
         {/* 대표님이 고른 색 말고 다른 보닥 컬러도 고객이 직접 둘러보고 싶을 수
-            있다 — 현대엘앤씨 공식 사이트로 보내 "다른 색은 왜 안 보여주냐"는
-            불안을 없애고, 정품 필름을 쓴다는 신뢰도 같이 전달한다. */}
+            있다 — 견적까지 다 보고 난 자리에서, 현대엘앤씨 공식 사이트로 보내
+            "다른 색은 왜 안 보여주냐"는 불안을 없애고, 정품 필름을 쓴다는
+            신뢰도 같이 전달한다. */}
         <BodaqSimulatorBanner variant="customer" />
 
-        {proposal.estimate && <ProposalEstimateSummary estimate={proposal.estimate} />}
         {proposal.site_conditions && <ProposalSiteConditionsSummary conditions={proposal.site_conditions} />}
 
         <AssetImage

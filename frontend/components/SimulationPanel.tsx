@@ -8,6 +8,7 @@ import AssetImage from "@/components/AssetImage";
 import BeforeAfterSlider from "@/components/BeforeAfterSlider";
 import BodaqSimulatorBanner from "@/components/BodaqSimulatorBanner";
 import ChangeOrderSection from "@/components/ChangeOrderSection";
+import MaterialOrderCalculator from "@/components/MaterialOrderCalculator";
 import PremiumReceipt from "@/components/PremiumReceipt";
 import ShareEstimateDialog from "@/components/community/ShareEstimateDialog";
 import InteractiveResultCanvas from "@/components/InteractiveResultCanvas";
@@ -376,9 +377,9 @@ export default function SimulationPanel({
           onSign={handleSign}
         />
 
-        {/* 현장에서 고객과 마주 앉아 상담할 때 바로 열어 보여주는 퀵메뉴 —
-            "현대 L&C 공식 시스템으로 정품 시공한다"는 인상을 주면서, 대표님이
-            제안한 색 외에 다른 보닥 컬러도 그 자리에서 같이 둘러볼 수 있다. */}
+        {/* 실무 퀵메뉴 — 발주 전 롤 수·로스·금액을 현장에서 바로 계산하고,
+            바로 아래에서 현대 L&C 공식 컬러도 그 자리에서 같이 둘러볼 수 있다. */}
+        <MaterialOrderCalculator />
         <BodaqSimulatorBanner variant="owner" />
 
         <button
