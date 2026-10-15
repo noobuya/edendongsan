@@ -121,12 +121,21 @@ def run_pipeline(
             ("lighting" in selected_items and options.lighting)
             or ("fan" in selected_items and options.fan)
         )
+        # 벽면 시트지(wall_film)가 실제로 AI 사진에 반영되게 하려면 벽 전용 마스크가
+        # 필요하다. "개별 부위" 분류(상/하부장 문짝 등)에 벽을 끼워 넣으면 Gemini가
+        # 문짝을 벽으로 잘못 묶는 문제가 있어 그 경로에서는 뺐지만(segmentation.py
+        # ITEM_TARGET_CATEGORIES 주석 참고), 천장처럼 "넓은 면 하나"를 따로 찾는
+        # segment_surfaces(needs_wall=True) 경로는 그 분류와 완전히 별개라 같은
+        # 문제가 재발하지 않는다. 이 값이 빠져 있던 게 "벽면 시공을 골라도 AI
+        # 사진이 안 바뀐다"의 직접 원인이었다 — 아래 segment_surfaces 호출에
+        # needs_ceiling_ref만 넘기고 needs_wall은 아예 안 넘겨서 늘 False였다.
+        needs_wall_ref = bool("wall_film" in selected_items and options.wall_film)
         # 결과 사진에서 클릭해 색을 바꿀 개별 부위(region) 후보는 어떤 항목을 골랐든
         # 항상 뽑는다 — 실링팬만 선택한 경우에도 완성된 팬을 클릭해 색을 바꿀 수
         # 있어야 하기 때문이다 (예전에는 film/sink일 때만 뽑아서, 실링팬만 고르면
         # 클릭할 수 있는 부위가 하나도 없었다).
         needs_regions = bool(selected_items)
-        needs_segmentation = needs_ceiling_ref or needs_regions
+        needs_segmentation = needs_ceiling_ref or needs_wall_ref or needs_regions
         # 견적서에 표시할 "AI 인식 천장 면적"은 벽 시공과 무관하게 필름이 선택되면
         # 항상 계산한다. (예전엔 "벽면 시공 포함" 토글을 켰을 때만 이 실측 호출이
         # 돌아 천장 면적도 같이 나왔는데, 벽 시공 기능 자체를 없앤 지금은 그 토글에
@@ -206,12 +215,14 @@ def run_pipeline(
             masks = _regions_from_manual(manual_regions)
         elif needs_segmentation:
             _stage(job_id, "영역 인식 중")
-            masks = segment_surfaces(current_path, job_id, selected_items, needs_ceiling_ref)
+            masks = segment_surfaces(current_path, job_id, selected_items, needs_ceiling_ref, needs_wall_ref)
 
         # AI 장면 생성이 응답을 줘도 필름 색이 실제로 입혀졌다는 보장은 없다. 대상 부위가 목표 색과
         # 크게 다르면 같은 부위를 결정적 리컬러로 다시 칠하고, 그 사실을 안내로 남긴다.
         if scene_rendered and not manual_regions and masks is not None and "film" in selected_items and options.film:
             current_path = _ensure_film_applied(job_id, current_path, masks, options)
+        if scene_rendered and not manual_regions and masks is not None and "wall_film" in selected_items and options.wall_film:
+            current_path = _ensure_wall_film_applied(job_id, current_path, masks, options)
 
         if masks is not None:
             ceiling_mask_path = masks.get("ceiling_mask_path")
@@ -687,6 +698,24 @@ def _build_scene_instructions(
                 "hinges, lock, peephole and the door's panel shape exactly as they are; only the surface finish changes."
             )
 
+    if "wall_film" in selected_items and options.wall_film and any(w.count > 0 for w in options.wall_film.walls):
+        # [이 항목이 빠져 있던 것이 "벽면 시공을 골라도 사진이 안 바뀐다"의 원인]
+        # film/door_frame/sash 등은 전부 여기서 구체적으로 "이 부위를 이 색으로
+        # 바꿔라"는 영문 지시문을 만들어 Gemini에게 보내는데, wall_film만 이 함수에
+        # 아예 없어서 AI는 벽을 바꾸라는 말을 들어본 적이 없었다 — 그래서 결과
+        # 사진의 벽은 AI가 다른 지시(문짝 등)를 따르다 생긴 부작용으로만 우연히
+        # 달라졌을 뿐, 고객이 실제로 고른 색(예: 애시 그레이)과는 무관했다.
+        wall_color = FAN_BLADE_COLOR_PROMPTS.get(options.wall_film.pattern_id, "matte white")
+        grain_clause = ""
+        if _is_wood(options.wall_film.pattern_id):
+            grain_clause = " The wood grain must run vertically."
+        instructions.append(
+            f"Refinish the wall surface with a {wall_color} interior film, evenly covering the "
+            "entire visible wall from floor to ceiling — keep light switches, power outlets, "
+            "corners, baseboards, and any window or door openings exactly as they are; only the "
+            f"wall's surface finish changes.{grain_clause}"
+        )
+
     if "sash" in selected_items and options.sash and any(f.count > 0 for f in options.sash.frames):
         sash_color = FAN_BLADE_COLOR_PROMPTS.get(options.sash.pattern_id, "matte white")
         instructions.append(
@@ -852,6 +881,35 @@ def _ensure_film_applied(job_id: str, image_path: str, masks: dict, options: Job
     )
     JOBS[job_id].setdefault("notices", []).append(
         "AI 시공 사진에 필름 색이 충분히 입혀지지 않아, 필름 대상 부위를 직접 다시 칠했어요."
+    )
+    return corrected_path
+
+
+def _ensure_wall_film_applied(job_id: str, image_path: str, masks: dict, options: JobOptions) -> str:
+    """_ensure_film_applied와 같은 목적, 벽 전용. film은 여러 개별 부위(문짝 등)
+    마스크를 합쳐 검사하지만, 벽은 segment_surfaces가 needs_wall=True일 때 미리
+    내놓는 단일 wall_mask_path 하나로 충분하다(위 run_pipeline의 needs_wall_ref
+    주석 참고 — 개별 부위 분류와는 별개 경로라 벽 전용 마스크가 항상 하나 나온다)."""
+    wall_mask_path = masks.get("wall_mask_path")
+    if not wall_mask_path:
+        return image_path
+
+    pattern_meta = PATTERNS.get(options.wall_film.pattern_id, PATTERNS["matte-white"])
+    delta = film_color_delta(image_path, wall_mask_path, pattern_meta["color_hex"])
+    if delta is None or delta <= FILM_MATCH_MAX_DELTA:
+        return image_path
+
+    print(f"[pipeline] AI 장면의 벽면 색이 목표와 {delta:.0f} 차이 — 리컬러로 보정")
+    corrected_path = f"storage/results/{job_id}_wall_corrected.png"
+    recolor_surface(
+        image_path,
+        wall_mask_path,
+        pattern_meta["color_hex"],
+        corrected_path,
+        wood_grain=_is_wood(options.wall_film.pattern_id),
+    )
+    JOBS[job_id].setdefault("notices", []).append(
+        "AI 시공 사진에 벽면 색이 충분히 입혀지지 않아, 벽면을 직접 다시 칠했어요."
     )
     return corrected_path
 

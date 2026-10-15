@@ -81,6 +81,16 @@ _TEXTURE_KEEP = 0.28
 # 우드 필름은 결 자체가 자재의 무늬라 조금 더 남겨 자연스럽게 만든다.
 _TEXTURE_KEEP_WOOD = 0.45
 
+# [물감처럼 보이는 문제 — "시트지가 아니라 그냥 칠한 것 같다"]
+# 위 _TEXTURE_KEEP은 "원본 사진에 있던" 무늬를 얼마나 남길지를 정한다. 그런데
+# 가공 전 합판(MDF)처럼 원본 표면 자체가 거의 매끈해 잔무늬가 애초에 없으면,
+# 28%를 남겨도 "거의 없음의 28%"라 결과가 색만 칠해진 평면처럼 보인다 — 실제
+# 시트지는 밑면이 무엇이든 그 필름 자체의 미세한 표면 질감(무광 시트 특유의
+# 아주 고운 올록볼록함)을 갖고 있으므로, 원본에 무늬가 있었는지와 무관하게
+# 이 질감을 새로 "입혀" 넣는다. 나뭇결(_wood_grain_layer)과 달리 결 방향이
+# 없는 아주 고운 입자라 어떤 자재색에도 자연스럽다.
+_FILM_MICROTEXTURE_AMPLITUDE = 1.6
+
 
 def _recolor_pixels(
     base: Image.Image, mask: Image.Image, color_hex: str, wood_grain: bool, grain_horizontal: bool = True
@@ -118,6 +128,10 @@ def _recolor_pixels(
 
     if wood_grain:
         new_l = new_l + _wood_grain_layer(base.size, grain_horizontal) * _GRAIN_AMPLITUDE
+    # 우드/비우드 가리지 않고 항상 얹는다 — 원본 표면이 매끈해 잔무늬가 거의
+    # 없던 경우(가공 전 MDF 등)에 특히 효과가 커서, 그런 사진일수록 "물감 칠"
+    # 느낌이 강했던 문제를 직접 겨냥한다.
+    new_l = new_l + _film_microtexture_layer(base.size) * _FILM_MICROTEXTURE_AMPLITUDE
 
     out = lab.copy()
     out[..., 0] = np.clip(new_l, 0, 255)
@@ -150,6 +164,26 @@ def _wood_grain_layer(size: tuple[int, int], horizontal: bool = True) -> np.ndar
     stretched = noise_img.resize(gen_size, Image.BICUBIC).filter(ImageFilter.GaussianBlur(0.6))
     if not horizontal:
         stretched = stretched.transpose(Image.ROTATE_90)
+
+    arr = np.asarray(stretched, dtype=np.float32)
+    spread = float(arr.std()) or 1.0
+    return (arr - arr.mean()) / spread
+
+
+def _film_microtexture_layer(size: tuple[int, int]) -> np.ndarray:
+    """무광 시트지 특유의 결 없는 고운 입자감을 절차적으로 만든다 (-1~1 정규화).
+
+    나뭇결(_wood_grain_layer)과 달리 방향성이 없어야 한다 — 가로/세로 둘 다
+    같은 비율로 축소한 노이즈를 확대하는 방식으로, 특정 방향으로 줄무늬가
+    생기지 않는 자잘한 올록볼록함을 만든다. 시드를 고정해 같은 사진을 다시
+    처리해도 같은 결과가 나온다."""
+    width, height = size
+    rng = np.random.default_rng(20260217)
+    # 분모가 크면(촘촘한 입자) 저해상도 노이즈가 더 가늘게 확대돼 입자가 작아진다.
+    coarse = rng.standard_normal((max(4, height // 14), max(4, width // 14))).astype(np.float32)
+
+    noise_img = Image.fromarray(((coarse * 40) + 128).clip(0, 255).astype(np.uint8), mode="L")
+    stretched = noise_img.resize(size, Image.BICUBIC).filter(ImageFilter.GaussianBlur(1.1))
 
     arr = np.asarray(stretched, dtype=np.float32)
     spread = float(arr.std()) or 1.0
