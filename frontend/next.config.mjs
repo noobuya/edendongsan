@@ -16,10 +16,19 @@ const distDir = isDevServer ? ".next" : isCapacitorBuild ? ".next-capacitor" : "
 
 const withPWA = withPWAInit({
   dest: "public",
-  // Capacitor WebView 안에서는 서비스워커가 API 서버 주소(ngrok 등)가 바뀔 때마다
-  // 오래된 캐시를 붙들고 있을 위험이 크고, 애초에 네이티브 앱 셸이라 PWA 오프라인
-  // 캐싱이 필요 없다 — Capacitor 빌드에서는 꺼둔다.
-  disable: process.env.NODE_ENV === "development" || isCapacitorBuild,
+  // [항상 끈다 — 2026-10-16 수정]
+  // "화면이 깜빡이고 처음으로 돌아간다"는 신고의 원인이 바로 이 줄이었다.
+  // 예전엔 Capacitor(APK) 빌드에서만 껐는데, 그러면 일반 웹 배포(이 서버가
+  // 실제로 쓰는 빌드)에서는 next-pwa가 register:true로 서비스워커를 자동
+  // 등록한다. 그런데 components/ServiceWorkerCleanup.tsx는 "이 앱은 서비스
+  // 워커를 어디서도 등록하지 않는다"는 전제로, 등록된 걸 발견하면 즉시
+  // 해제하고 캐시를 지운 뒤 location.reload()를 부른다 — 그 리로드 직후
+  // next-pwa가 또 등록하고, 청소 코드가 또 발견해 또 리로드하는 식으로
+  // 서로 무한히 되받아쳤다. 매 리로드가 "깜빡임"으로, 리액트 상태가 통째로
+  // 날아가는 것이 "처음(1단계)으로 돌아간다"로 보였다. ServiceWorkerCleanup의
+  // 전제(서비스워커가 전혀 없어야 한다)에 실제 설정을 맞춘다 — Capacitor
+  // 빌드뿐 아니라 일반 웹 빌드에서도 끈다.
+  disable: true,
   register: true,
   workboxOptions: {
     disableDevLogs: true,
