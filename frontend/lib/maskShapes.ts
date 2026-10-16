@@ -56,7 +56,23 @@ export interface EllipseShape {
   rotation: number;
 }
 
-export type MaskShape = PolygonShape | EllipseShape;
+/** 손가락으로 "칠해서" 표시한 영역 — 갤럭시 AI 사진편집의 지우개 영역 지정과 같은
+ *  방식. 테두리를 한 번에 매끈하게 그어야 하는 다각형/손그림과 달리, 여러 번
+ *  나눠 칠해도(strokes가 여러 개) 전부 합쳐져 한 영역이 된다 — 한 번에 덜 칠한
+ *  부분은 그 위에 다시 칠하면 그대로 더해진다. radiusPx(사진 원본 픽셀 기준
+ *  붓 반지름)는 이 영역을 그리기 시작했을 때의 화면 배율로 한 번 고정한다. */
+export interface BrushShape {
+  id: number;
+  kind: "brush";
+  strokes: Pt[][];
+  radiusPx: number;
+}
+
+export type MaskShape = PolygonShape | EllipseShape | BrushShape;
+
+/** 화면에서 항상 같은 굵기로 보이는 붓 반지름(CSS px). 호출부에서 unit을 곱해
+ *  사진 원본 픽셀/캔버스 표시 배율로 환산한다. */
+export const BRUSH_RADIUS_SCREEN_PX = 16;
 
 /** 면이 되려면 최소 세 점은 있어야 한다. 위쪽 한계는 없다 —
  *  'ㄱ'자·'ㄷ'자 싱크대는 모서리가 6~10개라 네 점으로는 딸 수가 없다. */
@@ -113,8 +129,14 @@ export function isPolygon(shape: MaskShape): shape is PolygonShape {
   return shape.kind === "polygon";
 }
 
-/** 도형 하나를 현재 캔버스 경로에 얹는다(채우기는 호출한 쪽에서). */
-function tracePath(ctx: CanvasRenderingContext2D, shape: MaskShape): void {
+export function isBrush(shape: MaskShape): shape is BrushShape {
+  return shape.kind === "brush";
+}
+
+/** 도형 하나를 현재 캔버스 경로에 얹는다(채우기는 호출한 쪽에서). 붓 영역은
+ *  닫힌 경로 하나로 표현할 수 없으므로(선분 다발) 여기서 다루지 않는다 —
+ *  rasterizeMask가 따로 stroke()로 굽는다. */
+function tracePath(ctx: CanvasRenderingContext2D, shape: PolygonShape | EllipseShape): void {
   ctx.beginPath();
   if (isPolygon(shape)) {
     shape.points.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
@@ -122,6 +144,27 @@ function tracePath(ctx: CanvasRenderingContext2D, shape: MaskShape): void {
     return;
   }
   ctx.ellipse(shape.x, shape.y, shape.radiusX, shape.radiusY, (shape.rotation * Math.PI) / 180, 0, Math.PI * 2);
+}
+
+/** 붓 영역 하나를 캔버스에 칠한다 — 획마다 굵은 선(+양 끝 둥글게)으로 긋고,
+ *  점이 하나뿐인 획(톡 찍기)은 원으로 채운다. 여러 획을 그대로 겹쳐 칠해도
+ *  전부 불투명 흰색이라 자연히 합쳐진다(따로 합집합 계산이 필요 없다). */
+function paintBrush(ctx: CanvasRenderingContext2D, shape: BrushShape): void {
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.lineWidth = shape.radiusPx * 2;
+  for (const stroke of shape.strokes) {
+    if (stroke.length === 0) continue;
+    if (stroke.length === 1) {
+      ctx.beginPath();
+      ctx.arc(stroke[0].x, stroke[0].y, shape.radiusPx, 0, Math.PI * 2);
+      ctx.fill();
+      continue;
+    }
+    ctx.beginPath();
+    stroke.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+    ctx.stroke();
+  }
 }
 
 export interface SegmentHit {
@@ -167,6 +210,18 @@ export function boundsOf(shape: MaskShape): { left: number; top: number; right: 
     const ys = shape.points.map((p) => p.y);
     return { left: Math.min(...xs), top: Math.min(...ys), right: Math.max(...xs), bottom: Math.max(...ys) };
   }
+  if (isBrush(shape)) {
+    const pts = shape.strokes.flat();
+    const xs = pts.map((p) => p.x);
+    const ys = pts.map((p) => p.y);
+    const r = shape.radiusPx;
+    return {
+      left: Math.min(...xs) - r,
+      top: Math.min(...ys) - r,
+      right: Math.max(...xs) + r,
+      bottom: Math.max(...ys) + r,
+    };
+  }
   return {
     left: shape.x - shape.radiusX,
     top: shape.y - shape.radiusY,
@@ -177,12 +232,22 @@ export function boundsOf(shape: MaskShape): { left: number; top: number; right: 
 
 /** 도형 한 개의 중심 — 라벨을 띄울 자리를 잡는 데 쓴다. */
 export function shapeCenter(shape: MaskShape): Pt {
-  if (!isPolygon(shape)) return { x: shape.x, y: shape.y };
-  const n = shape.points.length || 1;
-  return {
-    x: shape.points.reduce((s, p) => s + p.x, 0) / n,
-    y: shape.points.reduce((s, p) => s + p.y, 0) / n,
-  };
+  if (isPolygon(shape)) {
+    const n = shape.points.length || 1;
+    return {
+      x: shape.points.reduce((s, p) => s + p.x, 0) / n,
+      y: shape.points.reduce((s, p) => s + p.y, 0) / n,
+    };
+  }
+  if (isBrush(shape)) {
+    const pts = shape.strokes.flat();
+    const n = pts.length || 1;
+    return {
+      x: pts.reduce((s, p) => s + p.x, 0) / n,
+      y: pts.reduce((s, p) => s + p.y, 0) / n,
+    };
+  }
+  return { x: shape.x, y: shape.y };
 }
 
 export interface RasterizedMask {
@@ -210,8 +275,13 @@ export function rasterizeMask(shapes: MaskShape[], width: number, height: number
   ctx.fillStyle = "#000000";
   ctx.fillRect(0, 0, width, height);
   ctx.fillStyle = "#ffffff";
+  ctx.strokeStyle = "#ffffff";
   for (const shape of shapes) {
     if (isPolygon(shape) && shape.points.length < MIN_POLYGON_POINTS) continue;
+    if (isBrush(shape)) {
+      paintBrush(ctx, shape);
+      continue;
+    }
     tracePath(ctx, shape);
     ctx.fill();
   }

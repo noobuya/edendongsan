@@ -17,6 +17,7 @@ import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
 import type { MappedRegion } from "@/types";
 import { REGION_COLORS } from "@/lib/workItems";
 import {
+  BRUSH_RADIUS_SCREEN_PX,
   CLOSE_SNAP_SCREEN_PX,
   DRAW_LAYER_CLASS,
   MIN_POLYGON_POINTS,
@@ -84,6 +85,10 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
   const [tool, setTool] = useState<Tool>("polygon");
   const [shapes, setShapes] = useState<MaskShape[]>([]);
   const [draftPoints, setDraftPoints] = useState<Pt[]>([]);
+  // 손그림(붓) 도구로 지금 칠하고 있는 영역 — 손을 뗄 때마다 한 획씩 쌓인다.
+  // 아직 하나의 BrushShape로 확정되지 않은 상태라 shapes와 별도로 들고 있다가,
+  // finishBrush에서 한 번에 묶는다.
+  const [brushStrokes, setBrushStrokes] = useState<Pt[][]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [viewScale, setViewScale] = useState(1);
 
@@ -164,6 +169,9 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
     setTool(next);
     setSelectedId(null);
     if (next !== "polygon") setDraftPoints([]);
+    // 다른 도구로 바꾸면 아직 확정 안 한 붓질은 버린다 — 손그림으로 돌아오면
+    // 늘 새로 시작한다(어중간하게 칠하다 만 영역이 남아 헷갈리지 않도록).
+    if (next !== "freehand") setBrushStrokes([]);
     // 그리려는 참이면 사진을 넓게 쓴다.
     if (next !== "select") onDrawFocus?.(true);
   }
@@ -199,19 +207,28 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
     onDrawFocus?.(false);
   }, [draftPoints, onDrawFocus]);
 
-  /** 손으로 쓸어 그린 경로를 그대로 다각형 도형으로 확정한다. closeDraft와 같은
-   *  마무리 동작(선택 상태로 전환 + 자재 패널 열기)을 쓴다 — 손으로 그리는 것도
-   *  "구역 하나를 한 번에 정의"하는 동작이라 다각형을 다 그렸을 때와 성격이 같다. */
-  const handleFreehandComplete = useCallback(
-    (points: Pt[]) => {
-      const shape: MaskShape = { id: shapeIdRef.current++, kind: "polygon", points };
-      setShapes((prev) => [...prev, shape]);
-      setSelectedId(shape.id);
-      setTool("select");
-      onDrawFocus?.(false);
-    },
-    [onDrawFocus]
-  );
+  /** 손을 뗄 때마다 올라오는 붓질 한 획을 쌓아 둔다. 바로 도형으로 확정하지
+   *  않는다 — 덜 칠한 부분이 있으면 그 위에 또 그어 더할 수 있어야 하므로,
+   *  확정은 사용자가 [영역 확정]을 누른 순간(finishBrush)에만 한다. */
+  const handleBrushStrokeComplete = useCallback((stroke: Pt[]) => {
+    setBrushStrokes((prev) => [...prev, stroke]);
+  }, []);
+
+  /** 지금까지 칠한 획들을 하나의 붓 영역 도형으로 묶는다. closeDraft와 같은
+   *  마무리 동작(선택 상태로 전환 + 자재 패널 열기)을 쓴다 — 칠하는 것도
+   *  "구역 하나를 한 번에 정의"하는 동작이라 다각형을 다 그렸을 때와 성격이 같다.
+   *  반지름은 지금 화면 배율 기준으로 한 번 고정한다 — 사진 원본 픽셀로 저장해야
+   *  나중에 확대 배율이 달라져도(폰을 접었다 펴도) 칠한 굵기가 그대로 보인다. */
+  const finishBrush = useCallback(() => {
+    if (brushStrokes.length === 0) return;
+    const radiusPx = BRUSH_RADIUS_SCREEN_PX / (displayScale * viewScale || 1);
+    const shape: MaskShape = { id: shapeIdRef.current++, kind: "brush", strokes: brushStrokes, radiusPx };
+    setShapes((prev) => [...prev, shape]);
+    setBrushStrokes([]);
+    setSelectedId(shape.id);
+    setTool("select");
+    onDrawFocus?.(false);
+  }, [brushStrokes, displayScale, viewScale, onDrawFocus]);
 
   function handleStageTap(point: Pt) {
     if (tool === "polygon") {
@@ -255,6 +272,10 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
   }
 
   function undo() {
+    if (brushStrokes.length > 0) {
+      setBrushStrokes((prev) => prev.slice(0, -1));
+      return;
+    }
     if (draftPoints.length > 0) {
       setDraftPoints((prev) => prev.slice(0, -1));
       return;
@@ -267,6 +288,7 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
   const clearShape = useCallback(() => {
     setShapes([]);
     setDraftPoints([]);
+    setBrushStrokes([]);
     setSelectedId(null);
     setTool("polygon");
   }, []);
@@ -281,7 +303,8 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
   }));
 
   const canClose = draftPoints.length >= MIN_POLYGON_POINTS;
-  const hasAnything = shapes.length > 0 || draftPoints.length > 0;
+  const canFinishBrush = tool === "freehand" && brushStrokes.length > 0;
+  const hasAnything = shapes.length > 0 || draftPoints.length > 0 || brushStrokes.length > 0;
   const selectedShape = shapes.find((s) => s.id === selectedId) ?? null;
 
   return (
@@ -358,7 +381,8 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
                         onStageTap={handleStageTap}
                         onShapeChange={updateShape}
                         onCloseDraft={closeDraft}
-                        onFreehandComplete={handleFreehandComplete}
+                        brushStrokes={brushStrokes}
+                        onBrushStrokeComplete={handleBrushStrokeComplete}
                       />
                     </div>
                   )}
@@ -440,7 +464,7 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
                       icon={<MousePointer2 className="h-4 w-4" />} label="편집" />
 
           <span className="mx-1 min-w-0 flex-1 truncate text-center text-[11px] font-medium text-indigo-600">
-            {hintFor(tool, draftPoints.length, shapes.length)}
+            {hintFor(tool, draftPoints.length, shapes.length, brushStrokes.length)}
           </span>
 
           {canClose && (
@@ -451,6 +475,16 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
             >
               <Check className="h-3.5 w-3.5" />
               도형 닫기
+            </button>
+          )}
+          {canFinishBrush && (
+            <button
+              type="button"
+              onClick={finishBrush}
+              className="flex shrink-0 items-center gap-1.5 rounded-full bg-indigo-600 px-3.5 py-2 text-[12px] font-semibold text-white shadow-[0_6px_20px_rgba(79,70,229,0.4)] transition-transform active:scale-95"
+            >
+              <Check className="h-3.5 w-3.5" />
+              영역 확정
             </button>
           )}
           {hasAnything && (
@@ -498,13 +532,16 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
 export default ManualMaskStage;
 
 /** 안내문은 짧게 — 도구 막대 가운데 한 줄에 들어가야 한다. */
-function hintFor(tool: Tool, draftCount: number, shapeCount: number): string {
+function hintFor(tool: Tool, draftCount: number, shapeCount: number, brushStrokeCount: number): string {
   if (tool === "polygon") {
     if (draftCount === 0) return "모서리를 차례로 탭하세요";
     if (draftCount < MIN_POLYGON_POINTS) return `${draftCount}점 · 계속 탭하세요`;
     return `${draftCount}점 · 시작점을 눌러 닫기`;
   }
-  if (tool === "freehand") return "손가락으로 테두리를 따라 그으세요";
+  if (tool === "freehand") {
+    if (brushStrokeCount === 0) return "손가락으로 칠해서 표시하세요";
+    return "덜 칠한 곳은 다시 칠해서 더하세요 · 다 됐으면 확정";
+  }
   if (tool === "ellipse") return "조명 자리를 탭하세요";
   if (shapeCount === 0) return "도구를 고르세요";
   return "도형을 탭해 수정·삭제";

@@ -4,10 +4,12 @@ import { Fragment, useEffect, useMemo, useRef } from "react";
 import type Konva from "konva";
 import { Circle, Ellipse, Image as KonvaImage, Layer, Line, Stage, Transformer } from "react-konva";
 import {
+  BRUSH_RADIUS_SCREEN_PX,
   DRAW_LAYER_CLASS,
   MIN_POLYGON_POINTS,
   createHatchPattern,
   getClosestLineSegment,
+  isBrush,
   isPolygon,
   simplifyFreehandPath,
   type MaskShape,
@@ -69,9 +71,13 @@ interface Props {
   onShapeChange: (shape: MaskShape) => void;
   /** 시작점을 다시 눌러 다각형을 닫을 때 */
   onCloseDraft: () => void;
-  /** 손가락으로 쓸어 그린 경로(사진 원본 픽셀)가 손을 뗀 순간 올라온다.
-   *  점이 너무 적으면(실수로 살짝 스친 경우) 아예 안 불린다. */
-  onFreehandComplete: (points: Pt[]) => void;
+  /** 지금 칠하고 있는 영역에서, 이미 손을 뗀 이전 획들(사진 원본 픽셀). 다음 획을
+   *  더 그으면 여기 쌓인 것 위에 더해져 보여야 하므로 그대로 넘겨받아 같이 그린다. */
+  brushStrokes: Pt[][];
+  /** 붓으로 한 획을 긋고 손을 뗀 순간 올라온다 — 그 한 획만. 점이 너무 적으면
+   *  (실수로 살짝 스친 경우) 아예 안 불린다. 여러 획을 모아 한 영역으로 확정하는
+   *  것은 ManualMaskStage의 몫이다(획마다 다시 칠할 수 있어야 하므로 여기서 닫지 않는다). */
+  onBrushStrokeComplete: (stroke: Pt[]) => void;
 }
 
 /** 도형을 만들고 다듬는 벡터 편집 레이어 (react-konva).
@@ -99,7 +105,8 @@ export default function ShapeCanvas({
   onStageTap,
   onShapeChange,
   onCloseDraft,
-  onFreehandComplete,
+  brushStrokes,
+  onBrushStrokeComplete,
 }: Props) {
   const stageRef = useRef<Konva.Stage>(null);
   const trRef = useRef<Konva.Transformer>(null);
@@ -107,7 +114,10 @@ export default function ShapeCanvas({
   // 두 손가락(확대) 중에 찍히는 탭을 무시하기 위한 표시. 확대하다 엉뚱한 꼭짓점이
   // 찍히면 현장에서 다시 지워야 해서 성가시다.
   const multiTouchRef = useRef(false);
-  /* 손가락으로 쓸어 그리는 중인 경로.
+  /* 지금 긋고 있는 "한 획"의 경로(사진 원본 픽셀). 이미 그은 획들은 brushStrokes로
+   * 부모가 들고 있다가 그대로 다시 내려준다 — 덜 칠한 부분을 다시 그으면 그 위에
+   * 더해지는 것도 그래서 가능하다(갤럭시 AI 사진편집의 "지울 영역 칠하기"와 같은
+   * 방식으로 바꿔 달라는 요청).
    *
    *  [왜 React state가 아니라 ref로 들고 있는가 — "손꼭지점을 따라 늘어나는 것처럼
    *   보인다" 신고의 원인]
@@ -117,19 +127,19 @@ export default function ShapeCanvas({
    *  안 느껴질 정도로 빨라도, 현장에서 쓰는 중저가 안드로이드 기기에서는 이 리렌더가
    *  밀려서 브라우저가 중간 touchmove 샘플들을 건너뛰고 듬성듬성 전달한다 — 그 결과
    *  손가락을 매끄럽게 움직여도 선은 몇 개의 점을 직선으로 이은 것처럼 뚝뚝 끊겨
-   *  보인다(다각형 도구로 꼭짓점을 하나씩 찍어 나가는 것과 눈으로 구분이 안 된다).
+   *  보인다.
    *
    *  고친 방식: 그리는 동안의 점은 ref 배열에만 쌓고, 미리보기 선은 Konva 노드를
    *  직접 찾아 points()를 명령형으로 갱신한 뒤 batchDraw()만 부른다 — 리액트
    *  리렌더를 한 번도 거치지 않으므로 touchmove가 아무리 빨리 와도 선이 밀리지
-   *  않는다. 손을 뗀 순간에만 이 배열을 정리해서 onFreehandComplete로 한 번
+   *  않는다. 손을 뗀 순간에만 이 배열을 정리해서 onBrushStrokeComplete로 한 획만
    *  올린다(그때는 리렌더가 한 번 일어나도 괜찮다 — 이미 다 그린 뒤니까). */
-  const freehandPathRef = useRef<Pt[]>([]);
-  const freehandLineRef = useRef<Konva.Line>(null);
-  const freehandDrawingRef = useRef(false);
+  const brushPathRef = useRef<Pt[]>([]);
+  const brushLiveLineRef = useRef<Konva.Line>(null);
+  const brushDrawingRef = useRef(false);
 
-  function setFreehandLinePoints(points: Pt[]) {
-    const line = freehandLineRef.current;
+  function setBrushLivePoints(points: Pt[]) {
+    const line = brushLiveLineRef.current;
     if (!line) return;
     line.points(points.flatMap((p) => [p.x, p.y]));
     line.getLayer()?.batchDraw();
@@ -210,13 +220,13 @@ export default function ShapeCanvas({
     const touches = (e.evt as TouchEvent).touches;
     if (touches && touches.length > 1) {
       multiTouchRef.current = true;
-      // 손으로 그리던 중에 두 번째 손가락이 닿으면(확대하려는 의도) 지금까지
-      // 그린 경로는 버린다 — 어중간한 선이 도형으로 확정되면 지우고 다시
-      // 그려야 해서 번거롭다.
-      if (freehandDrawingRef.current) {
-        freehandDrawingRef.current = false;
-        freehandPathRef.current = [];
-        setFreehandLinePoints([]);
+      // 붓으로 칠하던 중에 두 번째 손가락이 닿으면(확대하려는 의도) 지금 긋고
+      // 있던 한 획만 버린다 — 이미 손을 뗐던 이전 획들(brushStrokes)은 그대로
+      // 남아 있으니 다시 칠하면 된다.
+      if (brushDrawingRef.current) {
+        brushDrawingRef.current = false;
+        brushPathRef.current = [];
+        setBrushLivePoints([]);
       }
       return;
     }
@@ -224,41 +234,39 @@ export default function ShapeCanvas({
     const stage = stageRef.current;
     const pos = stage?.getPointerPosition();
     if (!stage || !pos) return;
-    freehandDrawingRef.current = true;
+    brushDrawingRef.current = true;
     const start = { x: pos.x / displayScale, y: pos.y / displayScale };
-    freehandPathRef.current = [start];
-    setFreehandLinePoints(freehandPathRef.current);
+    brushPathRef.current = [start];
+    setBrushLivePoints(brushPathRef.current);
   }
 
-  /** 손가락이 움직이는 동안 쓸어 그린 경로에 점을 더한다. 최소 간격보다
-   *  가까우면 건너뛴다(simplifyFreehandPath와 같은 기준, 그리는 중에는 매번
-   *  배열 전체를 다시 훑을 필요 없이 마지막 점과만 비교하면 된다). ref만 바꾸고
-   *  Konva 노드를 직접 갱신한다 — setState를 안 거치므로 리렌더가 없다(위
-   *  freehandPathRef 주석 참고). */
-  function handleFreehandMove() {
-    if (tool !== "freehand" || !freehandDrawingRef.current || multiTouchRef.current) return;
+  /** 손가락이 움직이는 동안 지금 긋는 획에 점을 더한다. 최소 간격보다 가까우면
+   *  건너뛴다(simplifyFreehandPath와 같은 기준, 그리는 중에는 매번 배열 전체를
+   *  다시 훑을 필요 없이 마지막 점과만 비교하면 된다). ref만 바꾸고 Konva 노드를
+   *  직접 갱신한다 — setState를 안 거치므로 리렌더가 없다(위 brushPathRef 주석 참고). */
+  function handleBrushMove() {
+    if (tool !== "freehand" || !brushDrawingRef.current || multiTouchRef.current) return;
     const stage = stageRef.current;
     const pos = stage?.getPointerPosition();
     if (!stage || !pos) return;
     const next = { x: pos.x / displayScale, y: pos.y / displayScale };
-    const path = freehandPathRef.current;
+    const path = brushPathRef.current;
     const last = path[path.length - 1];
     if (last && Math.hypot(next.x - last.x, next.y - last.y) < FREEHAND_MIN_DIST_PX * unit) return;
     path.push(next);
-    setFreehandLinePoints(path);
+    setBrushLivePoints(path);
   }
 
-  /** 손을 뗀 순간 지금까지 그린 경로를 확정한다. 더 단순화(simplifyFreehandPath)해
-   *  한 번 더 거르는 이유: move 중 필터는 "마지막 점"하고만 비교해 손이 떨리며
-   *  살짝 되돌아왔다 다시 나가는 지그재그를 다 통과시킬 수 있다 — 최종 결과는
-   *  전체 경로 기준으로 한 번 더 정리해 매끈하게 남긴다. */
-  function handleFreehandUp() {
-    if (tool !== "freehand" || !freehandDrawingRef.current) return;
-    freehandDrawingRef.current = false;
-    const simplified = simplifyFreehandPath(freehandPathRef.current, FREEHAND_MIN_DIST_PX * unit);
-    freehandPathRef.current = [];
-    setFreehandLinePoints([]);
-    if (simplified.length >= MIN_POLYGON_POINTS) onFreehandComplete(simplified);
+  /** 손을 뗀 순간 지금 그은 한 획을 확정해 부모로 올린다. 톡 찍기(점 하나)도
+   *  유효한 획으로 본다 — 작은 모서리를 콕 찍어 더하는 용도로 쓸 수 있어야
+   *  한다. 다각형처럼 "면이 되려면 세 점 이상"이라는 제약이 없다. */
+  function handleBrushUp() {
+    if (tool !== "freehand" || !brushDrawingRef.current) return;
+    brushDrawingRef.current = false;
+    const simplified = simplifyFreehandPath(brushPathRef.current, FREEHAND_MIN_DIST_PX * unit);
+    brushPathRef.current = [];
+    setBrushLivePoints([]);
+    if (simplified.length >= 1) onBrushStrokeComplete(simplified);
   }
 
   /** [왜 onClick/onTap이 아니라 onPointerClick인가]
@@ -288,8 +296,8 @@ export default function ShapeCanvas({
       height={displayHeight}
       onPointerDown={handleStagePointer}
       onTouchStart={handleStagePointer}
-      onPointerMove={handleFreehandMove}
-      onPointerUp={handleFreehandUp}
+      onPointerMove={handleBrushMove}
+      onPointerUp={handleBrushUp}
       onPointerClick={handleTap}
       style={{ touchAction: "none", cursor: tool === "select" ? "default" : "crosshair" }}
     >
@@ -312,17 +320,40 @@ export default function ShapeCanvas({
       <Layer scaleX={displayScale} scaleY={displayScale} listening={false}>
         {/* 이미 자재까지 정해진 영역 — 읽기 전용으로 색만 깔아둔다 */}
         {committed.map((layer, li) =>
-          layer.shapes.map((shape) =>
-            isPolygon(shape) ? (
-              <Line
-                key={`c${li}-${shape.id}`}
-                points={shape.points.flatMap((p) => [p.x, p.y])}
-                closed
-                fill={layer.fill}
-                stroke={layer.stroke}
-                strokeWidth={2 * unit}
-              />
-            ) : (
+          layer.shapes.map((shape) => {
+            if (isPolygon(shape)) {
+              return (
+                <Line
+                  key={`c${li}-${shape.id}`}
+                  points={shape.points.flatMap((p) => [p.x, p.y])}
+                  closed
+                  fill={layer.fill}
+                  stroke={layer.stroke}
+                  strokeWidth={2 * unit}
+                />
+              );
+            }
+            if (isBrush(shape)) {
+              return (
+                <Fragment key={`c${li}-${shape.id}`}>
+                  {shape.strokes.map((stroke, si) =>
+                    stroke.length === 1 ? (
+                      <Circle key={si} x={stroke[0].x} y={stroke[0].y} radius={shape.radiusPx} fill={layer.fill} />
+                    ) : (
+                      <Line
+                        key={si}
+                        points={stroke.flatMap((p) => [p.x, p.y])}
+                        stroke={layer.fill}
+                        strokeWidth={shape.radiusPx * 2}
+                        lineCap="round"
+                        lineJoin="round"
+                      />
+                    )
+                  )}
+                </Fragment>
+              );
+            }
+            return (
               <Ellipse
                 key={`c${li}-${shape.id}`}
                 x={shape.x}
@@ -334,8 +365,8 @@ export default function ShapeCanvas({
                 stroke={layer.stroke}
                 strokeWidth={2 * unit}
               />
-            )
-          )
+            );
+          })
         )}
       </Layer>
 
@@ -403,6 +434,38 @@ export default function ShapeCanvas({
                     onMouseEnter={() => setCursor("crosshair")}
                     onMouseLeave={() => setCursor("")}
                   />
+                )}
+              </Fragment>
+            );
+          }
+
+          if (isBrush(shape)) {
+            // 붓 영역은 다각형처럼 꼭짓점을 끌어 고치는 기능이 없다 — 통째로
+            // 선택해 삭제하거나, 손그림 도구로 다시 칠해 더하는 것만 지원한다.
+            // 탭으로 선택할 수 있도록 각 획에 common의 포인터 핸들러를 그대로 건다.
+            return (
+              <Fragment key={shape.id}>
+                {shape.strokes.map((stroke, si) =>
+                  stroke.length === 1 ? (
+                    <Circle
+                      key={si}
+                      x={stroke[0].x}
+                      y={stroke[0].y}
+                      radius={shape.radiusPx}
+                      fill={common.fill}
+                      onPointerClick={common.onPointerClick}
+                    />
+                  ) : (
+                    <Line
+                      key={si}
+                      points={stroke.flatMap((p) => [p.x, p.y])}
+                      stroke={common.fill}
+                      strokeWidth={shape.radiusPx * 2}
+                      lineCap="round"
+                      lineJoin="round"
+                      onPointerClick={common.onPointerClick}
+                    />
+                  )
                 )}
               </Fragment>
             );
@@ -522,26 +585,50 @@ export default function ShapeCanvas({
           </>
         )}
 
-        {/* 손으로 쓸어 그리는 중인 경로 — 손을 떼기 전까지 실시간으로 자란다.
-            첫 점으로 되돌아가 닫은 채로(closed) 그려서, 다 그리기 전에도
-            "지금까지 그은 선 안쪽"이 빗금으로 채워진 모습을 바로 보여준다.
-            points를 React prop으로 선언하지 않는다 — 선언하면 이 컴포넌트가
-            다른 이유로(확대/축소 등) 리렌더될 때마다 react-konva가 그 선언값으로
-            덮어써 버려, 그리던 중간에 경로가 리셋돼 버린다. handleFreehandMove/Up이
-            ref로 직접 points()를 불러 채우고, React 리렌더는 전혀 거치지 않는다
-            (위 freehandPathRef 주석 참고). */}
-        <Line
-          ref={freehandLineRef}
-          closed
-          fillPatternImage={hatchPatternSelected}
-          fillPatternRepeat="repeat"
-          fillPatternScale={{ x: unit, y: unit }}
-          stroke="#4f46e5"
-          strokeWidth={2.5 * unit}
-          lineCap="round"
-          lineJoin="round"
-          listening={false}
-        />
+        {/* 붓으로 칠한 영역 — 테두리를 그려 닫는 다각형과 달리, 칠한 자리 자체가
+            곧 선택 영역이다(갤럭시 AI 사진편집의 "지울 영역 칠하기"와 같은 방식).
+            이미 손을 뗀 획들(brushStrokes, 부모가 들고 있다가 그대로 내려줌)을
+            먼저 그리고, 지금 긋는 중인 한 획을 그 위에 겹쳐 그린다 — 덜 칠한
+            부분을 다시 그으면 기존 칠과 합쳐져 보이는 이유다. */}
+        {tool === "freehand" && (
+          <>
+            {brushStrokes.map((stroke, i) =>
+              stroke.length === 1 ? (
+                <Circle
+                  key={`done-${i}`}
+                  x={stroke[0].x}
+                  y={stroke[0].y}
+                  radius={BRUSH_RADIUS_SCREEN_PX * unit}
+                  fill="rgba(79, 70, 229, 0.38)"
+                  listening={false}
+                />
+              ) : (
+                <Line
+                  key={`done-${i}`}
+                  points={stroke.flatMap((p) => [p.x, p.y])}
+                  stroke="rgba(79, 70, 229, 0.38)"
+                  strokeWidth={BRUSH_RADIUS_SCREEN_PX * 2 * unit}
+                  lineCap="round"
+                  lineJoin="round"
+                  listening={false}
+                />
+              )
+            )}
+            {/* 지금 긋는 중인 한 획. points를 React prop으로 선언하지 않는다 —
+                선언하면 이 컴포넌트가 다른 이유로(확대/축소 등) 리렌더될 때마다
+                react-konva가 그 선언값으로 덮어써 버려, 긋던 중간에 선이 리셋돼
+                버린다. handleBrushMove/Up이 ref로 직접 points()를 불러 채우고,
+                React 리렌더는 전혀 거치지 않는다(위 brushPathRef 주석 참고). */}
+            <Line
+              ref={brushLiveLineRef}
+              stroke="rgba(79, 70, 229, 0.55)"
+              strokeWidth={BRUSH_RADIUS_SCREEN_PX * 2 * unit}
+              lineCap="round"
+              lineJoin="round"
+              listening={false}
+            />
+          </>
+        )}
 
         {/* 타원 전용 4방향 핸들. 모서리(대각선) 핸들을 빼서 손가락으로도 가로/세로를
             따로 늘릴 수 있게 하고, 천장 원근에 맞추도록 회전은 열어둔다. */}
