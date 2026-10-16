@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.database import Base, engine, migrate_recruiting_db
-from app.routers import admin, admin_automation, automation, blog, community, finance, jobs, journal, pricing, portfolio, proposals, push, quotes, recruiting, upload, warranty, weather
+from app.routers import admin, admin_automation, automation, blog, community, finance, jobs, journal, manual_mask, pricing, portfolio, proposals, push, quotes, recruiting, upload, warranty, weather
 
 settings = get_settings()
 app = FastAPI(title="AI 시공 견적/렌더링 API")
@@ -37,6 +37,7 @@ for _public_dir in ("uploads", "results"):
     (_storage_root / _public_dir).mkdir(parents=True, exist_ok=True)
     app.mount(f"/static/{_public_dir}", StaticFiles(directory=_storage_root / _public_dir), name=f"static_{_public_dir}")
 app.include_router(upload.router)
+app.include_router(manual_mask.router)
 app.include_router(jobs.router)
 app.include_router(quotes.router)
 app.include_router(blog.router)

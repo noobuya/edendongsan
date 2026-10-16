@@ -23,6 +23,7 @@ import type {
   WorkPhoto,
   WorkPhotoStage,
 } from "@/types";
+import type { Pt } from "@/lib/maskShapes";
 
 // APK(Capacitor)로 실행될 때는 기기에게 "localhost"가 곧 기기 자신이라 백엔드에
 // 닿지 않는다 — .env(.local)의 NEXT_PUBLIC_API_URL로 ngrok 등 외부에서 접근 가능한
@@ -290,6 +291,33 @@ export async function requestInpaint(
     body: JSON.stringify({ region_id: regionId, pattern_id: patternId, grain_horizontal: grainHorizontal }),
   });
   if (!res.ok) throw new Error(await extractErrorMessage(res, "AI 편집 요청에 실패했습니다."));
+}
+
+/** 손그림 화면에서 "꾹 눌러 AI가 물체를 찾아준다"를 쓰기 전에 사진 한 장으로
+ *  연다. 이 호출만으로는 AI(SAM)가 돌지 않는다 — 실제로 한 번이라도 꾹 눌러야
+ *  (segmentPoint) 비용이 든다. 그릴 사진이 바뀔 때마다(새 사진 촬영 등) 다시
+ *  열어야 한다. */
+export async function createMaskSession(photo: Blob): Promise<string> {
+  const form = new FormData();
+  form.append("photo", photo, "photo.jpg");
+  const res = await apiFetch(`${API_BASE}/api/manual-mask/session`, { method: "POST", body: form });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "AI 물체 인식 준비에 실패했습니다."));
+  const data = await res.json();
+  return data.session_id as string;
+}
+
+/** 꾹 누른 자리(사진 원본 픽셀 좌표)의 물체 윤곽을 AI에게 받아온다. 같은
+ *  세션의 두 번째 호출부터는 서버가 캐시된 후보로 즉시 답해 비용이 들지
+ *  않는다(manual_mask.py 주석 참고). */
+export async function segmentPoint(sessionId: string, point: Pt): Promise<Pt[]> {
+  const res = await apiFetch(`${API_BASE}/api/manual-mask/session/${sessionId}/point`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(point),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "이 자리에서 물체를 찾지 못했어요."));
+  const data = await res.json();
+  return data.points as Pt[];
 }
 
 /** 현장에서 고객이 그린 서명을 저장한다. 다른 현장 기록처럼 인증이 필요 없다

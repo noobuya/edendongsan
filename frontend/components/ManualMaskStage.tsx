@@ -7,6 +7,7 @@ import {
   ChevronUp,
   Circle as CircleIcon,
   LassoSelect,
+  Loader2,
   Maximize2,
   MousePointer2,
   Square,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
 import type { MappedRegion } from "@/types";
+import { createMaskSession, segmentPoint } from "@/lib/api";
 import { REGION_COLORS } from "@/lib/workItems";
 import {
   BRUSH_RADIUS_SCREEN_PX,
@@ -89,6 +91,11 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
   // 아직 하나의 BrushShape로 확정되지 않은 상태라 shapes와 별도로 들고 있다가,
   // finishBrush에서 한 번에 묶는다.
   const [brushStrokes, setBrushStrokes] = useState<Pt[][]>([]);
+  // 꾹 눌러 AI에게 물체 윤곽을 물어보는 동안(1~3초) true — 그동안 화면에
+  // 로딩 표시를 띄운다.
+  const [segmentingPoint, setSegmentingPoint] = useState(false);
+  // AI 인식 실패/준비중 안내를 잠깐 띄웠다가 스스로 사라지게 한다.
+  const [aiHint, setAiHint] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [viewScale, setViewScale] = useState(1);
 
@@ -105,6 +112,29 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
     img.src = photoUrl;
     return () => {
       img.onload = null;
+    };
+  }, [photoUrl]);
+
+  /** [꾹 눌러 AI가 물체를 찾아주는 기능 준비]
+   *  사진이 바뀔 때마다 백그라운드로 마스킹 세션을 열어 둔다. 이 호출 자체는
+   *  AI(SAM)를 부르지 않으므로 비용이 없다 — 실제로 한 번이라도 꾹 눌러야
+   *  (segmentPoint) 그때 처음 AI가 돈다. 실패해도(네트워크 등) 조용히 넘어간다
+   *  — 이 기능이 없어도 손그림 자체는 그대로 쓸 수 있어야 한다. */
+  const [maskSessionId, setMaskSessionId] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setMaskSessionId(null);
+    fetch(photoUrl)
+      .then((r) => r.blob())
+      .then((blob) => createMaskSession(blob))
+      .then((id) => {
+        if (!cancelled) setMaskSessionId(id);
+      })
+      .catch(() => {
+        /* 조용히 포기 — 아래 handleLongPress가 세션이 없으면 안내만 띄운다 */
+      });
+    return () => {
+      cancelled = true;
     };
   }, [photoUrl]);
 
@@ -213,6 +243,33 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
   const handleBrushStrokeComplete = useCallback((stroke: Pt[]) => {
     setBrushStrokes((prev) => [...prev, stroke]);
   }, []);
+
+  /** 물체를 꾹 누르면 AI(SAM)가 찾아준 윤곽을 한 획으로 더한다 — 손으로 그은
+   *  획과 똑같이 brushStrokes에 쌓이므로, 기존에 손으로 그린 영역과 자연히
+   *  겹쳐 보인다(합쳐진 것처럼). 되돌리기도 손그림 획과 똑같이 마지막 한
+   *  획(=이 AI 결과)만 지운다. */
+  const handleLongPress = useCallback(
+    (point: Pt) => {
+      if (!maskSessionId) {
+        setAiHint("AI 물체 인식을 준비하는 중이에요. 잠시 후 다시 눌러주세요.");
+        window.setTimeout(() => setAiHint(null), 2500);
+        return;
+      }
+      if (segmentingPoint) return;
+      setSegmentingPoint(true);
+      setAiHint(null);
+      segmentPoint(maskSessionId, point)
+        .then((points) => {
+          if (points.length >= 3) setBrushStrokes((prev) => [...prev, points]);
+        })
+        .catch((err: unknown) => {
+          setAiHint(err instanceof Error ? err.message : "이 자리에서 물체를 찾지 못했어요.");
+          window.setTimeout(() => setAiHint(null), 2500);
+        })
+        .finally(() => setSegmentingPoint(false));
+    },
+    [maskSessionId, segmentingPoint]
+  );
 
   /** 지금까지 칠한 획들을 하나의 붓 영역 도형으로 묶는다. closeDraft와 같은
    *  마무리 동작(선택 상태로 전환 + 자재 패널 열기)을 쓴다 — 칠하는 것도
@@ -383,7 +440,23 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
                         onCloseDraft={closeDraft}
                         brushStrokes={brushStrokes}
                         onBrushStrokeComplete={handleBrushStrokeComplete}
+                        onLongPress={handleLongPress}
                       />
+                    </div>
+                  )}
+
+                  {/* AI 물체 인식 로딩 — 꾹 누르고 있다가 손을 뗀 뒤 1~3초 정도
+                      사진 가운데에 뜬다. 어디를 눌렀는지와 무관하게 늘 같은
+                      자리에 둔다 — 그래야 손가락에 가려지지 않고 보인다. */}
+                  {segmentingPoint && (
+                    <div className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-full bg-slate-900/80 px-4 py-2.5 text-[12.5px] font-semibold text-white shadow-lg">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      AI가 물체를 찾는 중...
+                    </div>
+                  )}
+                  {aiHint && !segmentingPoint && (
+                    <div className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-full bg-slate-900/80 px-4 py-2.5 text-center text-[12.5px] font-semibold text-white shadow-lg">
+                      {aiHint}
                     </div>
                   )}
 
@@ -539,8 +612,8 @@ function hintFor(tool: Tool, draftCount: number, shapeCount: number, brushStroke
     return `${draftCount}점 · 시작점을 눌러 닫기`;
   }
   if (tool === "freehand") {
-    if (brushStrokeCount === 0) return "손가락으로 칠해서 표시하세요";
-    return "덜 칠한 곳은 다시 칠해서 더하세요 · 다 됐으면 확정";
+    if (brushStrokeCount === 0) return "테두리를 따라 그리거나, 물체를 꾹 눌러보세요";
+    return "덜 잡힌 곳은 다시 긋거나 꾹 눌러 더하세요 · 다 됐으면 확정";
   }
   if (tool === "ellipse") return "조명 자리를 탭하세요";
   if (shapeCount === 0) return "도구를 고르세요";

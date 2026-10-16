@@ -40,6 +40,11 @@ const TR_BORDER_PX = 1;
 /** 손가락으로 쓸어 그릴 때 점을 찍는 최소 간격(화면 기준 px). 너무 촘촘하면
  *  점이 수백 개씩 쌓이고, 너무 성기면 곡선이 각져 보인다. */
 const FREEHAND_MIN_DIST_PX = 6;
+/** 꾹 누르기로 인정하는 시간(ms). 너무 짧으면 그리려고 댄 손가락이 잠깐 멈칫한
+ *  것도 꾹 누르기로 오인하고, 너무 길면 기다리는 느낌이 든다. */
+const LONG_PRESS_MS = 550;
+/** 이보다 많이 움직이면(화면 기준 px) "그리려는 것"으로 보고 꾹 누르기를 취소한다. */
+const LONG_PRESS_MOVE_CANCEL_PX = 10;
 /** 빗금 무늬의 선 색 — 선택 여부와 같은 인디고 계열로 맞춘다. */
 const HATCH_STROKE = "rgba(79, 70, 229, 0.55)";
 const HATCH_STROKE_SELECTED = "rgba(79, 70, 229, 0.8)";
@@ -81,6 +86,11 @@ interface Props {
    *  (실수로 살짝 스친 경우) 아예 안 불린다. 여러 획을 모아 한 영역으로 확정하는
    *  것은 ManualMaskStage의 몫이다(획마다 다시 칠할 수 있어야 하므로 여기서 닫지 않는다). */
   onBrushStrokeComplete: (stroke: Pt[]) => void;
+  /** 손그림 도구에서 한자리를 손가락을 떼지 않고 일정 시간(LONG_PRESS_MS) 누르고
+   *  있으면 올라온다(사진 원본 픽셀). 그동안 손가락이 LONG_PRESS_MOVE_CANCEL_PX
+   *  이상 움직이면 "그리려는 것"으로 보고 취소된다 — 눌러서 시작하는 보통의
+   *  손그림 획과는 그래서 구분된다. */
+  onLongPress: (point: Pt) => void;
 }
 
 /** 도형을 만들고 다듬는 벡터 편집 레이어 (react-konva).
@@ -110,6 +120,7 @@ export default function ShapeCanvas({
   onCloseDraft,
   brushStrokes,
   onBrushStrokeComplete,
+  onLongPress,
 }: Props) {
   const stageRef = useRef<Konva.Stage>(null);
   const trRef = useRef<Konva.Transformer>(null);
@@ -155,6 +166,26 @@ export default function ShapeCanvas({
   const brushPathRef = useRef<Pt[]>([]);
   const brushLiveLineRef = useRef<Konva.Line>(null);
   const brushDrawingRef = useRef(false);
+
+  /* [물체를 꾹 눌러 AI가 찾아주는 기능]
+   *  손을 뗀 순간까지 기다리지 않고, 누른 채로 LONG_PRESS_MS가 지나면 그 자리를
+   *  "꾹 눌렀다"로 본다. 그동안 손가락이 LONG_PRESS_MOVE_CANCEL_PX 넘게 움직이면
+   *  (그리려는 의도로 보고) 타이머를 취소한다 — 그래야 보통의 손그림 획 시작과
+   *  구분된다. 타이머가 실제로 울리면 지금까지 모은 한 점짜리 브러시 경로는
+   *  버리고(의미 없는 점 하나였을 뿐) onLongPress만 부른다. */
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressStartScreenRef = useRef<Pt | null>(null);
+  const longPressFiredRef = useRef(false);
+
+  function cancelLongPressTimer() {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    longPressStartScreenRef.current = null;
+  }
+
+  useEffect(() => cancelLongPressTimer, []);
 
   function setBrushLivePoints(points: Pt[]) {
     const line = brushLiveLineRef.current;
@@ -247,6 +278,7 @@ export default function ShapeCanvas({
     const touches = (e.evt as TouchEvent).touches;
     if (touches && touches.length > 1) {
       multiTouchRef.current = true;
+      cancelLongPressTimer();
       // 붓으로 칠하던 중에 두 번째 손가락이 닿으면(확대하려는 의도) 지금 긋고
       // 있던 한 획만 버린다 — 이미 손을 뗐던 이전 획들(brushStrokes)은 그대로
       // 남아 있으니 다시 칠하면 된다.
@@ -262,21 +294,41 @@ export default function ShapeCanvas({
     const pos = stage?.getPointerPosition();
     if (!stage || !pos) return;
     brushDrawingRef.current = true;
+    longPressFiredRef.current = false;
     const start = snapIfPossible({ x: pos.x / displayScale, y: pos.y / displayScale });
     brushPathRef.current = [start];
     setBrushLivePoints(brushPathRef.current);
+
+    // 꾹 누르기 타이머 시작 — 화면 기준 원래 손가락 좌표(스냅 전)로 움직임을 잰다.
+    longPressStartScreenRef.current = { x: pos.x, y: pos.y };
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTimerRef.current = null;
+      if (!brushDrawingRef.current || multiTouchRef.current) return;
+      longPressFiredRef.current = true;
+      brushDrawingRef.current = false;
+      brushPathRef.current = [];
+      setBrushLivePoints([]);
+      onLongPress(start);
+    }, LONG_PRESS_MS);
   }
 
   /** 손가락이 움직이는 동안 지금 긋는 획에 점을 더한다 — 자석(snapIfPossible)으로
    *  사진의 실제 가장자리에 당겨 붙인 뒤, 최소 간격보다 가까우면 건너뛴다
    *  (simplifyFreehandPath와 같은 기준, 그리는 중에는 매번 배열 전체를 다시 훑을
    *  필요 없이 마지막 점과만 비교하면 된다). ref만 바꾸고 Konva 노드를 직접
-   *  갱신한다 — setState를 안 거치므로 리렌더가 없다(위 brushPathRef 주석 참고). */
+   *  갱신한다 — setState를 안 거치므로 리렌더가 없다(위 brushPathRef 주석 참고).
+   *  이 움직임이 충분히 크면 "그리려는 것"으로 보고 꾹 누르기 타이머를 취소한다. */
   function handleBrushMove() {
     if (tool !== "freehand" || !brushDrawingRef.current || multiTouchRef.current) return;
     const stage = stageRef.current;
     const pos = stage?.getPointerPosition();
     if (!stage || !pos) return;
+
+    if (longPressStartScreenRef.current) {
+      const moved = Math.hypot(pos.x - longPressStartScreenRef.current.x, pos.y - longPressStartScreenRef.current.y);
+      if (moved > LONG_PRESS_MOVE_CANCEL_PX) cancelLongPressTimer();
+    }
+
     const next = snapIfPossible({ x: pos.x / displayScale, y: pos.y / displayScale });
     const path = brushPathRef.current;
     const last = path[path.length - 1];
@@ -287,8 +339,12 @@ export default function ShapeCanvas({
 
   /** 손을 뗀 순간 지금 그은 한 획을 확정해 부모로 올린다. 톡 찍기(점 하나)도
    *  유효한 획으로 본다 — 작은 모서리를 콕 찍어 더하는 용도로 쓸 수 있어야
-   *  한다. 다각형처럼 "면이 되려면 세 점 이상"이라는 제약이 없다. */
+   *  한다. 다각형처럼 "면이 되려면 세 점 이상"이라는 제약이 없다. 꾹 누르기가
+   *  이미 발동했으면(longPressFiredRef) brushDrawingRef가 false로 꺼져 있어
+   *  이 함수는 조용히 아무 일도 하지 않는다 — 한 번의 터치가 획과 꾹 누르기
+   *  둘 다로 처리되는 일은 없다. */
   function handleBrushUp() {
+    cancelLongPressTimer();
     if (tool !== "freehand" || !brushDrawingRef.current) return;
     brushDrawingRef.current = false;
     const simplified = simplifyFreehandPath(brushPathRef.current, FREEHAND_MIN_DIST_PX * unit);
