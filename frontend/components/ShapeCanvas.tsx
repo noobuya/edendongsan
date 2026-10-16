@@ -7,11 +7,14 @@ import {
   BRUSH_RADIUS_SCREEN_PX,
   DRAW_LAYER_CLASS,
   MIN_POLYGON_POINTS,
+  computeEdgeMap,
   createHatchPattern,
   getClosestLineSegment,
   isBrush,
   isPolygon,
   simplifyFreehandPath,
+  snapToEdge,
+  type EdgeMap,
   type MaskShape,
   type PolygonShape,
   type Pt,
@@ -114,6 +117,21 @@ export default function ShapeCanvas({
   // 두 손가락(확대) 중에 찍히는 탭을 무시하기 위한 표시. 확대하다 엉뚱한 꼭짓점이
   // 찍히면 현장에서 다시 지워야 해서 성가시다.
   const multiTouchRef = useRef(false);
+
+  /* [자석 올가미] 사진의 가장자리 세기 지도 — 사진이 바뀔 때 한 번만 계산해 둔다.
+   *  매 touchmove마다 새로 계산하면(사진 전체를 훑어야 해서) 느리다. 계산 자체는
+   *  수십~백여 ms 걸릴 수 있어 useEffect에서 비동기로(다음 틱에) 돌린다 — 사진이
+   *  막 바뀐 순간 메인 스레드를 막아 화면이 멈춘 것처럼 보이는 걸 피한다. */
+  const edgeMapRef = useRef<EdgeMap | null>(null);
+  useEffect(() => {
+    edgeMapRef.current = null;
+    if (!photo || naturalWidth <= 0 || naturalHeight <= 0) return;
+    const id = window.setTimeout(() => {
+      edgeMapRef.current = computeEdgeMap(photo, naturalWidth, naturalHeight);
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [photo, naturalWidth, naturalHeight]);
+
   /* 지금 긋고 있는 "한 획"의 경로(사진 원본 픽셀). 이미 그은 획들은 brushStrokes로
    * 부모가 들고 있다가 그대로 다시 내려준다 — 덜 칠한 부분을 다시 그으면 그 위에
    * 더해지는 것도 그래서 가능하다(갤럭시 AI 사진편집의 "지울 영역 칠하기"와 같은
@@ -216,6 +234,15 @@ export default function ShapeCanvas({
     tr.getLayer()?.batchDraw();
   }, [selectedId, shapes, tool]);
 
+  /** 가장자리 지도가 준비돼 있으면 그 위로 점을 당겨 붙인다. 아직 계산 중이면
+   *  (사진을 막 불러온 직후) 손가락 위치를 그대로 쓴다 — 자석 효과만 빠지고
+   *  그리기 자체는 끊기지 않는다. */
+  function snapIfPossible(pt: Pt): Pt {
+    const map = edgeMapRef.current;
+    if (!map) return pt;
+    return snapToEdge(map, pt, Math.min(naturalWidth, naturalHeight));
+  }
+
   function handleStagePointer(e: Konva.KonvaEventObject<PointerEvent | TouchEvent>) {
     const touches = (e.evt as TouchEvent).touches;
     if (touches && touches.length > 1) {
@@ -235,21 +262,22 @@ export default function ShapeCanvas({
     const pos = stage?.getPointerPosition();
     if (!stage || !pos) return;
     brushDrawingRef.current = true;
-    const start = { x: pos.x / displayScale, y: pos.y / displayScale };
+    const start = snapIfPossible({ x: pos.x / displayScale, y: pos.y / displayScale });
     brushPathRef.current = [start];
     setBrushLivePoints(brushPathRef.current);
   }
 
-  /** 손가락이 움직이는 동안 지금 긋는 획에 점을 더한다. 최소 간격보다 가까우면
-   *  건너뛴다(simplifyFreehandPath와 같은 기준, 그리는 중에는 매번 배열 전체를
-   *  다시 훑을 필요 없이 마지막 점과만 비교하면 된다). ref만 바꾸고 Konva 노드를
-   *  직접 갱신한다 — setState를 안 거치므로 리렌더가 없다(위 brushPathRef 주석 참고). */
+  /** 손가락이 움직이는 동안 지금 긋는 획에 점을 더한다 — 자석(snapIfPossible)으로
+   *  사진의 실제 가장자리에 당겨 붙인 뒤, 최소 간격보다 가까우면 건너뛴다
+   *  (simplifyFreehandPath와 같은 기준, 그리는 중에는 매번 배열 전체를 다시 훑을
+   *  필요 없이 마지막 점과만 비교하면 된다). ref만 바꾸고 Konva 노드를 직접
+   *  갱신한다 — setState를 안 거치므로 리렌더가 없다(위 brushPathRef 주석 참고). */
   function handleBrushMove() {
     if (tool !== "freehand" || !brushDrawingRef.current || multiTouchRef.current) return;
     const stage = stageRef.current;
     const pos = stage?.getPointerPosition();
     if (!stage || !pos) return;
-    const next = { x: pos.x / displayScale, y: pos.y / displayScale };
+    const next = snapIfPossible({ x: pos.x / displayScale, y: pos.y / displayScale });
     const path = brushPathRef.current;
     const last = path[path.length - 1];
     if (last && Math.hypot(next.x - last.x, next.y - last.y) < FREEHAND_MIN_DIST_PX * unit) return;
@@ -337,16 +365,16 @@ export default function ShapeCanvas({
               return (
                 <Fragment key={`c${li}-${shape.id}`}>
                   {shape.strokes.map((stroke, si) =>
-                    stroke.length === 1 ? (
+                    stroke.length < 3 ? (
                       <Circle key={si} x={stroke[0].x} y={stroke[0].y} radius={shape.radiusPx} fill={layer.fill} />
                     ) : (
                       <Line
                         key={si}
                         points={stroke.flatMap((p) => [p.x, p.y])}
-                        stroke={layer.fill}
-                        strokeWidth={shape.radiusPx * 2}
-                        lineCap="round"
-                        lineJoin="round"
+                        closed
+                        fill={layer.fill}
+                        stroke={layer.stroke}
+                        strokeWidth={2 * unit}
                       />
                     )
                   )}
@@ -440,13 +468,14 @@ export default function ShapeCanvas({
           }
 
           if (isBrush(shape)) {
-            // 붓 영역은 다각형처럼 꼭짓점을 끌어 고치는 기능이 없다 — 통째로
-            // 선택해 삭제하거나, 손그림 도구로 다시 칠해 더하는 것만 지원한다.
-            // 탭으로 선택할 수 있도록 각 획에 common의 포인터 핸들러를 그대로 건다.
+            // 붓(자석 올가미) 영역은 다각형처럼 꼭짓점을 끌어 고치는 기능이 없다 —
+            // 통째로 선택해 삭제하거나, 손그림 도구로 다시 칠해 더하는 것만
+            // 지원한다. 탭으로 선택할 수 있도록 각 획에 common의 포인터 핸들러를
+            // 그대로 건다. 선택된 획은 같은 빗금이라도 더 진한 쪽으로 바뀐다.
             return (
               <Fragment key={shape.id}>
                 {shape.strokes.map((stroke, si) =>
-                  stroke.length === 1 ? (
+                  stroke.length < 3 ? (
                     <Circle
                       key={si}
                       x={stroke[0].x}
@@ -459,10 +488,12 @@ export default function ShapeCanvas({
                     <Line
                       key={si}
                       points={stroke.flatMap((p) => [p.x, p.y])}
-                      stroke={common.fill}
-                      strokeWidth={shape.radiusPx * 2}
-                      lineCap="round"
-                      lineJoin="round"
+                      closed
+                      fillPatternImage={selected ? hatchPatternSelected : hatchPattern}
+                      fillPatternRepeat="repeat"
+                      fillPatternScale={{ x: unit, y: unit }}
+                      stroke={common.stroke}
+                      strokeWidth={common.strokeWidth}
                       onPointerClick={common.onPointerClick}
                     />
                   )
@@ -585,29 +616,36 @@ export default function ShapeCanvas({
           </>
         )}
 
-        {/* 붓으로 칠한 영역 — 테두리를 그려 닫는 다각형과 달리, 칠한 자리 자체가
-            곧 선택 영역이다(갤럭시 AI 사진편집의 "지울 영역 칠하기"와 같은 방식).
-            이미 손을 뗀 획들(brushStrokes, 부모가 들고 있다가 그대로 내려줌)을
-            먼저 그리고, 지금 긋는 중인 한 획을 그 위에 겹쳐 그린다 — 덜 칠한
-            부분을 다시 그으면 기존 칠과 합쳐져 보이는 이유다. */}
+        {/* [자석 올가미] 손가락이 지나는 자리를 사진의 실제 가장자리에 당겨 붙여
+            그린다(snapIfPossible). 테두리는 점선(물체를 "따라 그린" 느낌), 안쪽은
+            기존 다각형과 같은 빗금으로 채운다. 이미 손을 뗀 획들(brushStrokes,
+            부모가 들고 있다가 그대로 내려줌)을 먼저 그리고, 지금 긋는 중인 한 획을
+            그 위에 겹쳐 그린다 — 덜 잡힌 부분을 다시 그으면(또는 AI가 꾹 눌러
+            찾아준 윤곽을 더하면) 기존 영역과 겹쳐 보여 하나로 합쳐진 것처럼 보이는
+            이유다(실제 기하 합집합 계산은 하지 않는다). */}
         {tool === "freehand" && (
           <>
             {brushStrokes.map((stroke, i) =>
-              stroke.length === 1 ? (
+              stroke.length < 3 ? (
                 <Circle
                   key={`done-${i}`}
                   x={stroke[0].x}
                   y={stroke[0].y}
                   radius={BRUSH_RADIUS_SCREEN_PX * unit}
-                  fill="rgba(79, 70, 229, 0.38)"
+                  fill="rgba(79, 70, 229, 0.3)"
                   listening={false}
                 />
               ) : (
                 <Line
                   key={`done-${i}`}
                   points={stroke.flatMap((p) => [p.x, p.y])}
-                  stroke="rgba(79, 70, 229, 0.38)"
-                  strokeWidth={BRUSH_RADIUS_SCREEN_PX * 2 * unit}
+                  closed
+                  fillPatternImage={hatchPatternSelected}
+                  fillPatternRepeat="repeat"
+                  fillPatternScale={{ x: unit, y: unit }}
+                  stroke="#4f46e5"
+                  strokeWidth={2 * unit}
+                  dash={[7 * unit, 5 * unit]}
                   lineCap="round"
                   lineJoin="round"
                   listening={false}
@@ -621,8 +659,13 @@ export default function ShapeCanvas({
                 React 리렌더는 전혀 거치지 않는다(위 brushPathRef 주석 참고). */}
             <Line
               ref={brushLiveLineRef}
-              stroke="rgba(79, 70, 229, 0.55)"
-              strokeWidth={BRUSH_RADIUS_SCREEN_PX * 2 * unit}
+              closed
+              fillPatternImage={hatchPatternSelected}
+              fillPatternRepeat="repeat"
+              fillPatternScale={{ x: unit, y: unit }}
+              stroke="#4f46e5"
+              strokeWidth={2.5 * unit}
+              dash={[7 * unit, 5 * unit]}
               lineCap="round"
               lineJoin="round"
               listening={false}

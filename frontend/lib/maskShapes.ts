@@ -56,11 +56,13 @@ export interface EllipseShape {
   rotation: number;
 }
 
-/** 손가락으로 "칠해서" 표시한 영역 — 갤럭시 AI 사진편집의 지우개 영역 지정과 같은
- *  방식. 테두리를 한 번에 매끈하게 그어야 하는 다각형/손그림과 달리, 여러 번
- *  나눠 칠해도(strokes가 여러 개) 전부 합쳐져 한 영역이 된다 — 한 번에 덜 칠한
- *  부분은 그 위에 다시 칠하면 그대로 더해진다. radiusPx(사진 원본 픽셀 기준
- *  붓 반지름)는 이 영역을 그리기 시작했을 때의 화면 배율로 한 번 고정한다. */
+/** 손으로(또는 AI가) 표시한 영역 — 갤럭시 AI 사진편집의 "자석 올가미"와 같은 방식.
+ *  한 획(stroke)은 손가락을 따라가되 사진의 실제 가장자리에 달라붙어(자석처럼)
+ *  그어지고, 손을 떼면 닫힌 윤곽으로 채워진다. 한 번에 다 못 잡았으면 덜 잡힌
+ *  부분을 다시 긋거나(strokes가 여러 개) 물체를 꾹 눌러 AI가 찾아준 윤곽을
+ *  더하면(합집합) 기존 영역과 겹쳐 그려져 하나로 합쳐진 것처럼 보인다 — 실제
+ *  기하 합집합 계산 없이, 반투명 채우기를 겹쳐 그리는 것만으로 같은 효과를 낸다.
+ *  radiusPx는 점 하나짜리(콕 찍은) 획을 작은 원으로 채울 때만 쓰는 반지름이다. */
 export interface BrushShape {
   id: number;
   kind: "brush";
@@ -70,9 +72,101 @@ export interface BrushShape {
 
 export type MaskShape = PolygonShape | EllipseShape | BrushShape;
 
-/** 화면에서 항상 같은 굵기로 보이는 붓 반지름(CSS px). 호출부에서 unit을 곱해
- *  사진 원본 픽셀/캔버스 표시 배율로 환산한다. */
+/** 점 하나짜리 획(콕 찍기)을 채울 때 쓰는 반지름(화면 기준 px). 호출부에서
+ *  unit을 곱해 사진 원본 픽셀/캔버스 표시 배율로 환산한다. */
 export const BRUSH_RADIUS_SCREEN_PX = 16;
+
+/** [자석(가장자리 스냅) 올가미]
+ *  손가락이 지나는 자리 근처에서 사진의 실제 가장자리(색이 확 바뀌는 자리)를
+ *  찾아 그 위로 선을 당겨 붙인다 — 손이 삐뚤어도 선은 문짝 테두리에 달라붙는다.
+ *
+ *  매 touchmove마다 사진 전체에서 가장자리를 다시 찾으면 느리므로, 사진을 불러올
+ *  때 가장자리 세기 지도(흑백, 밝을수록 가장자리)를 한 번만 만들어 둔다. 원본
+ *  해상도 그대로 쓰면 지도가 너무 커 느려지므로 긴 변을 EDGE_MAP_MAX_DIM으로
+ *  줄여서 계산하고, 좌표 변환은 호출부에서 scale로 되돌린다. */
+const EDGE_MAP_MAX_DIM = 900;
+/** 가장자리를 찾는 반경(사진 원본 픽셀 기준) — 사진 짧은 변의 비율로 잡아
+ *  해상도가 달라도 "손가락 한 마디 정도" 느낌을 유지한다. */
+const EDGE_SNAP_RADIUS_FRACTION = 0.018;
+const EDGE_SNAP_RADIUS_MIN_PX = 10;
+const EDGE_SNAP_RADIUS_MAX_PX = 44;
+/** 이보다 약한 가장자리는 "가장자리가 아니다"로 보고 원래 손가락 자리를 그대로 쓴다
+ *  — 텅 빈 벽처럼 특징이 없는 자리에서 엉뚱한 잡음 픽셀로 선이 튀는 것을 막는다. */
+const EDGE_SNAP_MIN_STRENGTH = 40;
+
+export interface EdgeMap {
+  data: Uint8ClampedArray;
+  width: number;
+  height: number;
+  /** edgeMapPx = naturalPx * scale */
+  scale: number;
+}
+
+/** 소벨(Sobel) 연산으로 사진의 가장자리 세기 지도를 만든다. 그레이스케일로
+ *  바꾼 뒤 가로/세로 밝기 변화량을 합쳐 "여기가 경계다"를 점수로 남긴다. */
+export function computeEdgeMap(img: HTMLImageElement, naturalW: number, naturalH: number): EdgeMap | null {
+  const scale = Math.min(1, EDGE_MAP_MAX_DIM / Math.max(naturalW, naturalH));
+  const w = Math.max(1, Math.round(naturalW * scale));
+  const h = Math.max(1, Math.round(naturalH * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+  ctx.drawImage(img, 0, 0, w, h);
+  const { data: rgba } = ctx.getImageData(0, 0, w, h);
+
+  const gray = new Float32Array(w * h);
+  for (let i = 0, p = 0; i < rgba.length; i += 4, p++) {
+    gray[p] = 0.299 * rgba[i] + 0.587 * rgba[i + 1] + 0.114 * rgba[i + 2];
+  }
+
+  const edge = new Uint8ClampedArray(w * h);
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      const gx =
+        gray[i - w - 1] - gray[i - w + 1] + 2 * gray[i - 1] - 2 * gray[i + 1] + gray[i + w - 1] - gray[i + w + 1];
+      const gy =
+        gray[i - w - 1] + 2 * gray[i - w] + gray[i - w + 1] - gray[i + w - 1] - 2 * gray[i + w] - gray[i + w + 1];
+      edge[i] = Math.min(255, Math.sqrt(gx * gx + gy * gy));
+    }
+  }
+  return { data: edge, width: w, height: h, scale };
+}
+
+/** naturalPt 근처에서 가장 강한 가장자리를 찾아 그 자리로 당긴다. 강한 가장자리가
+ *  없으면(평평한 벽 등) 원래 점을 그대로 돌려준다. */
+export function snapToEdge(map: EdgeMap, naturalPt: Pt, naturalShortSide: number): Pt {
+  const { data, width, height, scale } = map;
+  const radiusNatural = Math.max(
+    EDGE_SNAP_RADIUS_MIN_PX,
+    Math.min(EDGE_SNAP_RADIUS_MAX_PX, naturalShortSide * EDGE_SNAP_RADIUS_FRACTION)
+  );
+  const r = Math.max(1, Math.round(radiusNatural * scale));
+  const cx = Math.round(naturalPt.x * scale);
+  const cy = Math.round(naturalPt.y * scale);
+  let bestX = cx;
+  let bestY = cy;
+  let bestVal = -1;
+  for (let dy = -r; dy <= r; dy++) {
+    const y = cy + dy;
+    if (y < 0 || y >= height) continue;
+    const rowLimit = Math.floor(Math.sqrt(Math.max(0, r * r - dy * dy)));
+    for (let dx = -rowLimit; dx <= rowLimit; dx++) {
+      const x = cx + dx;
+      if (x < 0 || x >= width) continue;
+      const v = data[y * width + x];
+      if (v > bestVal) {
+        bestVal = v;
+        bestX = x;
+        bestY = y;
+      }
+    }
+  }
+  if (bestVal < EDGE_SNAP_MIN_STRENGTH) return naturalPt;
+  return { x: bestX / scale, y: bestY / scale };
+}
 
 /** 면이 되려면 최소 세 점은 있어야 한다. 위쪽 한계는 없다 —
  *  'ㄱ'자·'ㄷ'자 싱크대는 모서리가 6~10개라 네 점으로는 딸 수가 없다. */
@@ -146,16 +240,15 @@ function tracePath(ctx: CanvasRenderingContext2D, shape: PolygonShape | EllipseS
   ctx.ellipse(shape.x, shape.y, shape.radiusX, shape.radiusY, (shape.rotation * Math.PI) / 180, 0, Math.PI * 2);
 }
 
-/** 붓 영역 하나를 캔버스에 칠한다 — 획마다 굵은 선(+양 끝 둥글게)으로 긋고,
- *  점이 하나뿐인 획(톡 찍기)은 원으로 채운다. 여러 획을 그대로 겹쳐 칠해도
- *  전부 불투명 흰색이라 자연히 합쳐진다(따로 합집합 계산이 필요 없다). */
+/** 붓(자석 올가미) 영역 하나를 캔버스에 칠한다 — 획마다 첫 점과 끝 점을 이어
+ *  닫힌 윤곽으로 보고 그 안쪽을 채운다(AI가 찾아준 물체 윤곽도 같은 방식으로
+ *  들어온다). 점이 하나뿐이거나 둘뿐인 획(톡 찍기)은 닫아도 면이 안 생기므로
+ *  작은 원으로 대신 채운다. 여러 획을 그대로 겹쳐 칠해도 전부 불투명 흰색이라
+ *  자연히 합쳐진다(따로 합집합 계산이 필요 없다). */
 function paintBrush(ctx: CanvasRenderingContext2D, shape: BrushShape): void {
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  ctx.lineWidth = shape.radiusPx * 2;
   for (const stroke of shape.strokes) {
     if (stroke.length === 0) continue;
-    if (stroke.length === 1) {
+    if (stroke.length < 3) {
       ctx.beginPath();
       ctx.arc(stroke[0].x, stroke[0].y, shape.radiusPx, 0, Math.PI * 2);
       ctx.fill();
@@ -163,7 +256,8 @@ function paintBrush(ctx: CanvasRenderingContext2D, shape: BrushShape): void {
     }
     ctx.beginPath();
     stroke.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
-    ctx.stroke();
+    ctx.closePath();
+    ctx.fill();
   }
 }
 
