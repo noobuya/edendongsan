@@ -731,17 +731,22 @@ export default function ShapeCanvas({
                 />
               )
             )}
-            {/* 지금 긋는 중인 한 획. points를 React prop으로 선언하지 않는다 —
-                선언하면 이 컴포넌트가 다른 이유로(확대/축소 등) 리렌더될 때마다
-                react-konva가 그 선언값으로 덮어써 버려, 긋던 중간에 선이 리셋돼
-                버린다. handleBrushMove/Up이 ref로 직접 points()를 불러 채우고,
-                React 리렌더는 전혀 거치지 않는다(위 brushPathRef 주석 참고). */}
+            {/* 지금 긋는 중인 한 획 — 손을 떼기 전까지는 닫지도, 채우지도 않는다.
+                [왜 — "그리는 중에 면이 생겨서 선을 제대로 못 긋는다" 신고]
+                전에는 이 선도 미리 닫아(closed) 안쪽을 빗금으로 채웠다. 그런데
+                아직 다 긋지도 않은 중간 지점에서 끝점과 시작점을 억지로 이은 삼각형
+                비슷한 면이 사진 위에 계속 떴다 겹쳐, 지금 어디를 따라가고 있는지
+                가려서 손으로 정확히 긋기가 어려웠다. 이제 긋는 동안에는 열린
+                점선(닫지 않은 Line)으로만 손가락을 따라가고, 손을 뗀 순간(한 획이
+                brushStrokes로 넘어가 "done" 목록으로 바뀌는 순간) 비로소 닫혀서
+                면으로 채워진다 — 위 brushStrokes.map 쪽이 그 완성된 모습이다.
+                points를 React prop으로 선언하지 않는 이유는 그대로다: 선언하면
+                이 컴포넌트가 다른 이유로(확대/축소 등) 리렌더될 때마다 react-konva가
+                그 선언값으로 덮어써 버려, 긋던 중간에 선이 리셋돼 버린다.
+                handleBrushMove/Up이 ref로 직접 points()를 불러 채우고, React
+                리렌더는 전혀 거치지 않는다(위 brushPathRef 주석 참고). */}
             <Line
               ref={brushLiveLineRef}
-              closed
-              fillPatternImage={hatchPatternSelected}
-              fillPatternRepeat="repeat"
-              fillPatternScale={{ x: unit, y: unit }}
               stroke="#4f46e5"
               strokeWidth={2.5 * unit}
               dash={[7 * unit, 5 * unit]}
