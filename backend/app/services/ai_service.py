@@ -738,10 +738,23 @@ def _run_inpaint(
 
 def _hard_mask(mask: Image.Image, size: tuple[int, int]) -> Image.Image:
     """가장자리가 흐린 마스크는 "반쯤 시공된" 띠를 만들어 색 번짐처럼 보인다.
-    임계값으로 잘라 흰색(시공)/검정(보존) 두 값만 남긴다."""
+    임계값으로 잘라 흰색(시공)/검정(보존) 두 값만 남긴다.
+
+    [손으로 그린 경계를 살짝 넓힌다 — "표시한 만큼만 시공됐다" 신고]
+    render_region을 부르는 곳은 전부(수동 영역 지정, 결과 화면 클릭 재시공)
+    사람이 손가락으로 그린 다각형·타원·손그림 마스크다. 손으로 문짝 테두리를
+    따라 그려도 실제 경계와 1~2mm씩 어긋나기 마련인데, 마스크를 있는 그대로만
+    칠하면 그 어긋난 틈에 원본 색이 가는 테두리로 남아 "일부만 칠해진" 것처럼
+    보인다 — 실제로 문짝/문틀만 도형으로 잡았는데 가장자리가 안 칠해져 보인다는
+    신고의 원인이다. 손 떨림 수준의 아주 작은 폭만 바깥으로 넓혀 그 테두리를
+    없앤다. 과거 문제(엉뚱한 곳까지 색이 번진 것)는 AI가 지시문을 스스로 넓게
+    해석해 마스크 밖까지 다시 그린 것이었지만, 이건 그것과 달리 고정된 몇
+    픽셀만 넓히는 거라 다른 물체로 번질 만큼 커지지 않는다. """
     if mask.size != size:
         mask = mask.resize(size, Image.NEAREST)
-    return mask.point(lambda v: 255 if v > 127 else 0, mode="L")
+    hard = mask.point(lambda v: 255 if v > 127 else 0, mode="L")
+    radius_px = max(4, min(18, round(min(size) * 0.012)))
+    return hard.filter(ImageFilter.MaxFilter(radius_px * 2 + 1))
 
 
 def _fit_for_model(base: Image.Image, mask: Image.Image):

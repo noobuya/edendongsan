@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef } from "react";
 import type Konva from "konva";
 import { Circle, Ellipse, Image as KonvaImage, Layer, Line, Stage, Transformer } from "react-konva";
 import {
@@ -107,11 +107,33 @@ export default function ShapeCanvas({
   // 두 손가락(확대) 중에 찍히는 탭을 무시하기 위한 표시. 확대하다 엉뚱한 꼭짓점이
   // 찍히면 현장에서 다시 지워야 해서 성가시다.
   const multiTouchRef = useRef(false);
-  // 손가락으로 쓸어 그리는 중인 경로 — 손을 떼기 전까지는 로컬 state로만 들고
-  // 있다가(매 touchmove마다 부모까지 올리면 리렌더가 너무 잦다) 뗀 순간에만
-  // onFreehandComplete로 한 번에 넘긴다.
-  const [freehandPoints, setFreehandPoints] = useState<Pt[]>([]);
+  /* 손가락으로 쓸어 그리는 중인 경로.
+   *
+   *  [왜 React state가 아니라 ref로 들고 있는가 — "손꼭지점을 따라 늘어나는 것처럼
+   *   보인다" 신고의 원인]
+   *  처음엔 이 경로를 useState로 들고 있었다. touchmove는 1초에 수십 번 쏟아지는데,
+   *  매번 setState를 부르면 그때마다 ShapeCanvas 전체가 리렌더되고(이미 그려둔
+   *  다각형·빗금 패턴까지 포함) Konva가 캔버스를 통째로 다시 그린다. 개발 PC에서는
+   *  안 느껴질 정도로 빨라도, 현장에서 쓰는 중저가 안드로이드 기기에서는 이 리렌더가
+   *  밀려서 브라우저가 중간 touchmove 샘플들을 건너뛰고 듬성듬성 전달한다 — 그 결과
+   *  손가락을 매끄럽게 움직여도 선은 몇 개의 점을 직선으로 이은 것처럼 뚝뚝 끊겨
+   *  보인다(다각형 도구로 꼭짓점을 하나씩 찍어 나가는 것과 눈으로 구분이 안 된다).
+   *
+   *  고친 방식: 그리는 동안의 점은 ref 배열에만 쌓고, 미리보기 선은 Konva 노드를
+   *  직접 찾아 points()를 명령형으로 갱신한 뒤 batchDraw()만 부른다 — 리액트
+   *  리렌더를 한 번도 거치지 않으므로 touchmove가 아무리 빨리 와도 선이 밀리지
+   *  않는다. 손을 뗀 순간에만 이 배열을 정리해서 onFreehandComplete로 한 번
+   *  올린다(그때는 리렌더가 한 번 일어나도 괜찮다 — 이미 다 그린 뒤니까). */
+  const freehandPathRef = useRef<Pt[]>([]);
+  const freehandLineRef = useRef<Konva.Line>(null);
   const freehandDrawingRef = useRef(false);
+
+  function setFreehandLinePoints(points: Pt[]) {
+    const line = freehandLineRef.current;
+    if (!line) return;
+    line.points(points.flatMap((p) => [p.x, p.y]));
+    line.getLayer()?.batchDraw();
+  }
   // 빗금 타일은 한 번만 만들어 두고 계속 재사용한다(Canvas 생성 비용을 매
   // 렌더마다 치르지 않도록) — 색만 다른 두 장(기본/선택됨).
   // Konva는 fillPatternImage로 HTMLCanvasElement도 실제로 받아들이지만(런타임
@@ -193,7 +215,8 @@ export default function ShapeCanvas({
       // 그려야 해서 번거롭다.
       if (freehandDrawingRef.current) {
         freehandDrawingRef.current = false;
-        setFreehandPoints([]);
+        freehandPathRef.current = [];
+        setFreehandLinePoints([]);
       }
       return;
     }
@@ -202,23 +225,27 @@ export default function ShapeCanvas({
     const pos = stage?.getPointerPosition();
     if (!stage || !pos) return;
     freehandDrawingRef.current = true;
-    setFreehandPoints([{ x: pos.x / displayScale, y: pos.y / displayScale }]);
+    const start = { x: pos.x / displayScale, y: pos.y / displayScale };
+    freehandPathRef.current = [start];
+    setFreehandLinePoints(freehandPathRef.current);
   }
 
   /** 손가락이 움직이는 동안 쓸어 그린 경로에 점을 더한다. 최소 간격보다
    *  가까우면 건너뛴다(simplifyFreehandPath와 같은 기준, 그리는 중에는 매번
-   *  배열 전체를 다시 훑을 필요 없이 마지막 점과만 비교하면 된다). */
+   *  배열 전체를 다시 훑을 필요 없이 마지막 점과만 비교하면 된다). ref만 바꾸고
+   *  Konva 노드를 직접 갱신한다 — setState를 안 거치므로 리렌더가 없다(위
+   *  freehandPathRef 주석 참고). */
   function handleFreehandMove() {
     if (tool !== "freehand" || !freehandDrawingRef.current || multiTouchRef.current) return;
     const stage = stageRef.current;
     const pos = stage?.getPointerPosition();
     if (!stage || !pos) return;
     const next = { x: pos.x / displayScale, y: pos.y / displayScale };
-    setFreehandPoints((prev) => {
-      const last = prev[prev.length - 1];
-      if (last && Math.hypot(next.x - last.x, next.y - last.y) < FREEHAND_MIN_DIST_PX * unit) return prev;
-      return [...prev, next];
-    });
+    const path = freehandPathRef.current;
+    const last = path[path.length - 1];
+    if (last && Math.hypot(next.x - last.x, next.y - last.y) < FREEHAND_MIN_DIST_PX * unit) return;
+    path.push(next);
+    setFreehandLinePoints(path);
   }
 
   /** 손을 뗀 순간 지금까지 그린 경로를 확정한다. 더 단순화(simplifyFreehandPath)해
@@ -228,11 +255,10 @@ export default function ShapeCanvas({
   function handleFreehandUp() {
     if (tool !== "freehand" || !freehandDrawingRef.current) return;
     freehandDrawingRef.current = false;
-    setFreehandPoints((prev) => {
-      const simplified = simplifyFreehandPath(prev, FREEHAND_MIN_DIST_PX * unit);
-      if (simplified.length >= MIN_POLYGON_POINTS) onFreehandComplete(simplified);
-      return [];
-    });
+    const simplified = simplifyFreehandPath(freehandPathRef.current, FREEHAND_MIN_DIST_PX * unit);
+    freehandPathRef.current = [];
+    setFreehandLinePoints([]);
+    if (simplified.length >= MIN_POLYGON_POINTS) onFreehandComplete(simplified);
   }
 
   /** [왜 onClick/onTap이 아니라 onPointerClick인가]
@@ -498,21 +524,24 @@ export default function ShapeCanvas({
 
         {/* 손으로 쓸어 그리는 중인 경로 — 손을 떼기 전까지 실시간으로 자란다.
             첫 점으로 되돌아가 닫은 채로(closed) 그려서, 다 그리기 전에도
-            "지금까지 그은 선 안쪽"이 빗금으로 채워진 모습을 바로 보여준다. */}
-        {freehandPoints.length > 0 && (
-          <Line
-            points={freehandPoints.flatMap((p) => [p.x, p.y])}
-            closed
-            fillPatternImage={hatchPatternSelected}
-            fillPatternRepeat="repeat"
-            fillPatternScale={{ x: unit, y: unit }}
-            stroke="#4f46e5"
-            strokeWidth={2.5 * unit}
-            lineCap="round"
-            lineJoin="round"
-            listening={false}
-          />
-        )}
+            "지금까지 그은 선 안쪽"이 빗금으로 채워진 모습을 바로 보여준다.
+            points를 React prop으로 선언하지 않는다 — 선언하면 이 컴포넌트가
+            다른 이유로(확대/축소 등) 리렌더될 때마다 react-konva가 그 선언값으로
+            덮어써 버려, 그리던 중간에 경로가 리셋돼 버린다. handleFreehandMove/Up이
+            ref로 직접 points()를 불러 채우고, React 리렌더는 전혀 거치지 않는다
+            (위 freehandPathRef 주석 참고). */}
+        <Line
+          ref={freehandLineRef}
+          closed
+          fillPatternImage={hatchPatternSelected}
+          fillPatternRepeat="repeat"
+          fillPatternScale={{ x: unit, y: unit }}
+          stroke="#4f46e5"
+          strokeWidth={2.5 * unit}
+          lineCap="round"
+          lineJoin="round"
+          listening={false}
+        />
 
         {/* 타원 전용 4방향 핸들. 모서리(대각선) 핸들을 빼서 손가락으로도 가로/세로를
             따로 늘릴 수 있게 하고, 천장 원근에 맞추도록 회전은 열어둔다. */}
