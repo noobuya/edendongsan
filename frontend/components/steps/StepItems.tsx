@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronRight, Plus, X } from "lucide-react";
 import type { JobOptionsState, WorkItemId } from "@/types";
 import ItemPickerSheet from "@/components/ItemPickerSheet";
@@ -14,6 +14,12 @@ interface Props {
   onOptionsChange: (options: JobOptionsState) => void;
   /** 사장님 기기 여부. 아니면 일러스트 종목은 목록에도 선택지에도 나오지 않는다. */
   isOwner: boolean;
+  /** 부모(page.tsx)가 "이 항목의 치수 입력 시트를 바로 열어달라"고 요청할 때 쓴다 —
+   *  도형에 자재를 지정하면 뜨는 확인 카드의 [치수 입력] 버튼이 이걸 채운다.
+   *  한 번 열고 나면 onOpenItemHandled로 부모 쪽 값을 비워, 같은 값을 다시
+   *  내려받아도 또 열리지 않게 한다(1회성 명령 패턴). */
+  openItem?: WorkItemId | null;
+  onOpenItemHandled?: () => void;
 }
 
 /** 2단계 — 시공 항목 세팅. 고른 항목만 카드로 쌓이고, 상세 입력은 시트에서 한다. */
@@ -23,9 +29,18 @@ export default function StepItems({
   options,
   onOptionsChange,
   isOwner,
+  openItem,
+  onOpenItemHandled,
 }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<WorkItemId | null>(null);
+
+  useEffect(() => {
+    if (!openItem) return;
+    setEditingItem(openItem);
+    onOpenItemHandled?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openItem]);
 
   const groups = visibleWorkGroups(isOwner);
   const ordered = ALL_WORK_ITEMS.filter(

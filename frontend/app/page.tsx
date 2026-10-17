@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowLeft, ArrowRight, Bot, Briefcase, Calculator, FolderOpen, Images, Loader2, Newspaper, Ruler, Sparkles, Users } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, Bot, Briefcase, Calculator, CheckCircle2, FolderOpen, Images, Loader2, Newspaper, Ruler, Sparkles, Users } from "lucide-react";
 import BusinessBadge from "@/components/BusinessBanner";
 import CanvasStage from "@/components/CanvasStage";
 import FeatureIntroDialog from "@/components/FeatureIntroDialog";
@@ -25,7 +25,7 @@ import {
 import { registerForPush } from "@/lib/pushRegistration";
 import { clearOwnerToken, readOwnerToken, saveOwnerToken } from "@/lib/ownerToken";
 import { useAndroidBack } from "@/lib/useAndroidBack";
-import { DEFAULT_OPTIONS, DEFAULT_WORK_ITEMS, taskTypeOf } from "@/lib/workItems";
+import { DEFAULT_OPTIONS, DEFAULT_WORK_ITEMS, WORK_ITEM_META, taskTypeOf } from "@/lib/workItems";
 import type { JobOptionsState, JobStatusResponse, MappedRegion, RenderMode, WorkItemId } from "@/types";
 
 const POLL_INTERVAL_MS = 2000;
@@ -72,6 +72,15 @@ export default function HomePage() {
   // (object_creation, 원본 없이 새로 그림) 그대로 렌더링돼 똑같이 동작한다 —
   // 바뀌는 건 "어디에"를 AI가 추정하지 않고 사람이 짚는다는 것뿐이다.
   const [renderMode, setRenderMode] = useState<RenderMode>("manual");
+  // 도형에 자재를 지정하면 "시공 항목"에도 자동으로 올라간다는 걸 알려주는
+  // 확인 카드 — 조용히 목록 뒤로 숨어버리면 추가된 줄도 몰랐을 것이다.
+  // [바로 치수 입력으로 넘기는 이유] "추가됐어요"만 알리고 끝내면 결국
+  // 아래로 스크롤해 같은 항목을 다시 찾아 눌러야 해서 번거로움이 반만
+  // 줄어든다 — 카드의 버튼을 누르면 그 항목의 치수 입력 시트가 바로 열리게
+  // 해서, 도형을 그리고 자재를 고른 바로 그 자리에서 치수까지 한 흐름으로
+  // 끝낼 수 있게 했다.
+  const [regionAddedPrompt, setRegionAddedPrompt] = useState<{ category: WorkItemId; label: string } | null>(null);
+  const [openItemRequest, setOpenItemRequest] = useState<WorkItemId | null>(null);
   const [autoDescription, setAutoDescription] = useState("");
   const [mappedRegions, setMappedRegions] = useState<MappedRegion[]>([]);
   const [hasShape, setHasShape] = useState(false);
@@ -135,6 +144,18 @@ export default function HomePage() {
     ) => {
       const shape = maskStageRef.current?.extractShape();
       if (!shape) return;
+      // 도형에 자재를 지정하는 순간 "시공 항목"에도 자동으로 올려 둔다 — 전에는
+      // 도형을 그려 자재까지 골라도 견적 계산용 "시공 항목"에는 전혀 반영이
+      // 안 돼서, 아래로 내려가 같은 항목을 +버튼으로 또 찾아 추가해야 했다
+      // ("사진 찍고 시공 지정도 하고 시공 항목도 또 해야 하는 번거로움" 문의).
+      // 숫자(가로·세로)까지는 사진만으로 알 수 없어 자동으로 못 채우지만,
+      // 처음 추가되는 항목이면 확인 카드로 알리고, 그 자리에서 바로 치수
+      // 입력 시트를 열 수 있게 한다(아래 regionAddedPrompt).
+      const isNewItem = !selectedItems.includes(category);
+      if (isNewItem) {
+        setSelectedItems((prev) => [...prev, category]);
+        setRegionAddedPrompt({ category, label: WORK_ITEM_META[category].label });
+      }
       setMappedRegions((prev) => [
         ...prev,
         {
@@ -162,7 +183,7 @@ export default function HomePage() {
       ]);
       maskStageRef.current?.clearShape();
     },
-    []
+    [selectedItems]
   );
 
   // "한 번 더 누르면 종료" 안내 (useAndroidBack이 쏘는 이벤트)
@@ -174,6 +195,13 @@ export default function HomePage() {
     window.addEventListener("app:exit-hint", onHint);
     return () => window.removeEventListener("app:exit-hint", onHint);
   }, []);
+
+  // "OO 항목 추가됨" 확인 카드는 손대지 않으면 스스로 사라진다.
+  useEffect(() => {
+    if (!regionAddedPrompt) return;
+    const id = window.setTimeout(() => setRegionAddedPrompt(null), 5000);
+    return () => window.clearTimeout(id);
+  }, [regionAddedPrompt]);
 
   // 수동 마스킹은 화면 전체를 사진에 내준다.
   const masking = step === 2 && renderMode === "manual" && !!previewUrl;
@@ -567,6 +595,44 @@ export default function HomePage() {
         </div>
       )}
 
+      {/* 도형에 자재를 지정하면 "시공 항목"에도 자동으로 올라갔다는 확인 카드 —
+          버튼을 누르면 그 항목의 치수 입력 시트가 바로 열린다. 그리는 중(패널이
+          접혀 사진이 화면 전체를 덮은 상태)에도 보여야 하므로 masking 여부와
+          무관하게 최상단에 둔다. */}
+      {regionAddedPrompt && (
+        <div className="pointer-events-none absolute inset-x-5 top-24 z-50 flex justify-center foldLandscape:inset-x-auto foldLandscape:right-7 foldLandscape:top-24 foldLandscape:w-[22rem] foldLandscape:justify-end">
+          {/* 가로 한 줄에 아이콘·글자·버튼을 다 욱여넣으면 좁은 화면에서 라벨이
+              "...추가..."처럼 잘려 보였다 — 내용(아이콘+두 줄 글)과 동작(버튼)을
+              위아래로 나눠 각자 숨 쉴 공간을 준다. */}
+          <div className="pointer-events-auto w-full max-w-sm rounded-2xl border border-white/60 bg-white/95 p-4 shadow-[0_16px_44px_rgba(15,23,42,0.22)] backdrop-blur-xl animate-[step-in_0.3s_ease-out]">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+                <CheckCircle2 className="h-5 w-5" />
+              </span>
+              <div className="min-w-0 flex-1 pt-0.5">
+                <p className="text-[14px] font-bold leading-snug tracking-tight text-slate-900">
+                  {regionAddedPrompt.label} 항목이 추가됐어요
+                </p>
+                <p className="mt-1 text-[12px] font-light leading-relaxed text-slate-500">
+                  견적에 반영하려면 치수를 입력하세요
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setOpenItemRequest(regionAddedPrompt.category);
+                setRegionAddedPrompt(null);
+              }}
+              className="mt-3 flex h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-indigo-600 text-[13px] font-semibold text-white shadow-[0_6px_18px_rgba(79,70,229,0.35)] transition-transform active:scale-[0.98]"
+            >
+              치수 입력하기
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 서버에 못 닿을 때만 조용히 알려준다 — 정상일 때는 아무것도 띄우지 않는다. */}
       {serverOnline === false && (
         // 알림일 뿐이므로 탭을 가로채면 안 된다 — 이 알약이 그 아래 탭 버튼을 막고 있었다.
@@ -691,6 +757,8 @@ export default function HomePage() {
                     options={options}
                     onOptionsChange={setOptions}
                     isOwner={!!ownerToken}
+                    openItem={openItemRequest}
+                    onOpenItemHandled={() => setOpenItemRequest(null)}
                   />
                 </div>
               </div>
