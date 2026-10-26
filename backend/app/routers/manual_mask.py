@@ -76,12 +76,11 @@ class PointRequest(BaseModel):
     y: float
 
 
-@router.post("/session/{session_id}/point")
-async def segment_point(session_id: str, body: PointRequest):
-    session = _SESSIONS.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="마스킹 세션이 만료됐어요. 사진을 다시 불러와 주세요.")
-
+def _ensure_masks(session: dict) -> list[np.ndarray]:
+    """세션의 SAM 후보 마스크를 돌려준다. 아직 안 구했으면(이 세션에서 처음 쓰는
+    AI 호출이면) 이번에 딱 한 번 Replicate를 불러 채운다 — segment_point와
+    snap_to_object이 같은 캐시를 공유해, 둘 중 어느 쪽을 먼저 써도 그 다음부터는
+    비용이 들지 않는다."""
     settings = get_settings()
     if not settings.replicate_api_token:
         raise HTTPException(status_code=503, detail="AI 객체 인식 기능이 이 서버에 설정되어 있지 않습니다.")
@@ -98,7 +97,16 @@ async def segment_point(session_id: str, body: PointRequest):
                 arrays.append(arr)
         session["masks"] = arrays
 
-    masks = session["masks"]
+    return session["masks"]
+
+
+@router.post("/session/{session_id}/point")
+async def segment_point(session_id: str, body: PointRequest):
+    session = _SESSIONS.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="마스킹 세션이 만료됐어요. 사진을 다시 불러와 주세요.")
+
+    masks = _ensure_masks(session)
     if not masks:
         raise HTTPException(status_code=404, detail="이 사진에서는 물체를 찾지 못했어요.")
 
@@ -129,6 +137,107 @@ async def segment_point(session_id: str, body: PointRequest):
     scale_x = session["width"] / w
     scale_y = session["height"] / h
     return {"points": [{"x": x * scale_x, "y": y * scale_y} for x, y in polygon]}
+
+
+# [판정 기준 — "손그림을 그려도 AI가 자주 못 찾는다" 신고로 완화함 (2026-10-25)]
+# 처음엔 "사용자가 물체 면적의 60% 이상을 직접 덮었을 때만"로 좁게 잡았는데,
+# 이 기능의 목적 자체가 "대충·일부만 그려도 채워달라"이므로 실제로는 거의 늘
+# 60%에 못 미쳐 대부분 실패했다. 이제 두 기준 중 하나만 넘으면 같은 물체로 본다.
+#   coverage(= 겹친 면적 / 후보 면적)   — 후보를 얼마나 "많이" 덮었는지
+#   containment(= 겹친 면적 / 사용자가 그린 면적) — 사용자가 그린 부분이 그
+#                                                후보 "안에" 얼마나 깔끔히
+#                                                들어가 있는지
+# 작은 후보(문짝 한 짝 등)는 coverage 기준으로, 사용자가 큰 물체의 한쪽 구석만
+# 대충 그린 경우는 containment 기준으로 잡힌다 — 그려진 부분이 거의 전부 그
+# 물체 안에만 있으면(containment 높음) 다른 물건과는 안 겹친 깨끗한 신호이므로
+# coverage는 아주 낮아도(그려진 양이 적어도) 인정한다.
+SNAP_MIN_COVERAGE = 0.4
+SNAP_MIN_CONTAINMENT = 0.7
+SNAP_LENIENT_MIN_COVERAGE = 0.08
+# 후보가 사진 전체의 이 비율보다 크면(벽 전체·방 전체급) 아무리 겹침 비율이 높아도
+# 건너뛴다 — 작게 칠한 손그림이 우연히 배경급 후보와 많이 겹쳐도 방 전체가
+# 끌려오는 사고를 막는다. 상/하부장을 가까이서 찍은 사진은 문짝 하나가 화면의
+# 절반 가까이 차지할 수 있어 기존 0.5보다 조금 더 여유를 뒀다.
+SNAP_MAX_CANDIDATE_AREA_RATIO = 0.65
+
+
+@router.post("/session/{session_id}/snap")
+async def snap_to_object(session_id: str, mask: UploadFile = File(...)):
+    """손그림(올가미)으로 채운 영역을 SAM 후보 물체 전체 윤곽으로 넓혀 돌려준다.
+
+    [왜 필요한가 — "사물에서 잘린 부분은 시공이 안 된다" 신고]
+    손그림 도구는 손가락이 지나간 자리를 그대로 닫아 채우는 올가미라, 사진 테두리에
+    걸려 물체 일부가 화면 밖으로 나가 있거나 다른 물건에 가려 손으로 테두리를 끝까지
+    두르지 못하면 그 부분은 색이 입혀지지 않는다. 이 엔드포인트는 사용자가 이미 칠한
+    영역과 SAM이 찾아둔 물체 후보들을 겹쳐 보고, 어느 후보가 "같은 물체"라고 볼 만큼
+    (coverage 또는 containment 기준, 아래 상수 참고) 겹치면 그 물체의 SAM 윤곽
+    전체(손이 못 닿은 부분까지)를 사용자가 칠한 영역과 합쳐 하나의 다각형으로
+    돌려준다. 기준을 넘는 후보가 여럿이면 가장 작은(=가장 구체적인) 것을 쓴다 —
+    상하부장 전체를 아우르는 큰 후보보다 문짝 한 짝짜리 후보가 있으면 그걸 우선한다.
+    기준을 넘는 후보가 하나도 없으면 None을 돌려줘 호출부가 원래 손그림만 그대로
+    쓰게 한다 — AI가 실패하거나 세션이 없어도 손그림 자체는 늘 그대로 쓸 수 있어야
+    한다."""
+    session = _SESSIONS.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="마스킹 세션이 만료됐어요. 사진을 다시 불러와 주세요.")
+
+    raw = await mask.read()
+    try:
+        with Image.open(io.BytesIO(raw)) as img:
+            # 프론트가 사진 원본 해상도(session width x height)로 구워 보낸다 —
+            # segment_point의 SAM 격자 해상도와 달리 여기는 변환 없이 그대로 쓴다.
+            user_mask = np.array(img.convert("L")) > 127
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+        raise HTTPException(status_code=422, detail="손그림 마스크를 읽을 수 없습니다.") from exc
+
+    masks = _ensure_masks(session)
+    if not masks:
+        print("[manual_mask] snap: 이 세션에 SAM 후보가 하나도 없음")
+        return {"points": None}
+
+    uh, uw = user_mask.shape
+    user_area = int(user_mask.sum())
+    if user_area == 0:
+        return {"points": None}
+
+    best: np.ndarray | None = None
+    best_area: int | None = None
+    best_score = (0.0, 0.0)  # 로그용 — 기준을 못 넘었을 때 "얼마나 모자랐는지" 보려고
+    for arr in masks:
+        h, w = arr.shape
+        candidate_area = int(arr.sum())
+        if candidate_area == 0 or candidate_area / (h * w) > SNAP_MAX_CANDIDATE_AREA_RATIO:
+            continue
+        resized_user = cv2.resize(user_mask.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST) > 0
+        inter = int((resized_user & arr).sum())
+        if inter == 0:
+            continue
+        coverage = inter / candidate_area
+        containment = inter / (user_area * (w * h) / (uw * uh))  # 사용자 면적도 후보 해상도 기준으로 환산
+        passes = coverage >= SNAP_MIN_COVERAGE or (
+            containment >= SNAP_MIN_CONTAINMENT and coverage >= SNAP_LENIENT_MIN_COVERAGE
+        )
+        if coverage > best_score[0]:
+            best_score = (coverage, containment)
+        if not passes:
+            continue
+        # 기준을 넘는 후보가 여럿이면 가장 작은(가장 구체적인) 것을 쓴다.
+        if best_area is None or candidate_area < best_area:
+            best, best_area = arr, candidate_area
+
+    if best is None:
+        print(f"[manual_mask] snap: 기준 미달 — 최선 coverage={best_score[0]:.2f}, containment={best_score[1]:.2f}")
+        return {"points": None}
+
+    h, w = best.shape
+    resized_candidate = cv2.resize(best.astype(np.uint8), (uw, uh), interpolation=cv2.INTER_NEAREST) > 0
+    combined = user_mask | resized_candidate
+
+    polygon = _mask_to_polygon(combined.astype(np.uint8))
+    if polygon is None:
+        return {"points": None}
+    # user_mask와 같은 해상도(session 원본 사진 크기)에서 뽑았으므로 추가 변환이 없다.
+    return {"points": [{"x": x, "y": y} for x, y in polygon]}
 
 
 def _mask_to_polygon(mask: np.ndarray, max_points: int = 60) -> list[tuple[float, float]] | None:

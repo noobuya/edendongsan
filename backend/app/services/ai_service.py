@@ -293,6 +293,8 @@ def render_region(
             instruction = build_instruction(option_id, category, design, door_material, _perspective_hint(mask))
             edit_images = [edit_source]
 
+        fallback_hex = _average_hex_color(reference_image) if reference_image is not None else None
+
         try:
             edited = _run_edit(edit_images, instruction)
         except Exception as exc:  # noqa: BLE001 - 외부 AI 실패는 아래 폴백으로 받는다
@@ -302,11 +304,9 @@ def render_region(
             # 딥 네이비를 지정했는데 결과 사진이 그대로였다). 고른 자재에 색이 있으면
             # 원본의 명암을 살린 채 색만 갈아끼우는 결정적 리컬러(네트워크 호출 없음)로
             # 대신한다. 문구·그림을 넣는 요청은 리컬러로 못 만드니 원래 오류를 올린다.
-            # 견본 사진 기반이면 카탈로그 색이 없으니, 견본 사진에서 평균색을 직접
-            # 뽑아 그 색으로 대신한다(정확한 질감까지는 아니어도 "색이 안 바뀌는"
-            # 최악의 상황은 피한다).
-            fallback_hex = _average_hex_color(reference_image) if reference_image is not None else None
-            recolored = None if design else _recolor(image_path, mask_path, option_id, fallback_hex)
+            # 견본 사진 기반이면 카탈로그 색 대신 그 사진 자체의 질감을 입힌다
+            # (_recolor에 swatch_image를 넘기면 recolor_surface_with_swatch로 간다).
+            recolored = None if design else _recolor(image_path, mask_path, option_id, fallback_hex, reference_image)
             if recolored is None:
                 raise
             print(f"[ai_service] AI 편집 실패({type(exc).__name__}: {exc}) -> 간이 리컬러로 대체: {option_id or fallback_hex}")
@@ -318,6 +318,31 @@ def render_region(
             rendered.paste(edited, (crop_box[0], crop_box[1]))
         else:
             rendered = edited
+
+        # [견본 사진을 찍어 올려도 결과가 그대로인 사고 — 실측 원인과 수정]
+        # 위 예외 폴백은 편집 모델이 "실패"를 던질 때만 걸린다. 그런데 이 모델은
+        # 예외 없이 "성공"을 반환하면서도 지시를 그냥 무시하고 원본과 거의 같은
+        # 사진을 내놓는 경우가 있다(사장님 신고: 필름 견본 사진을 찍어 올려
+        # 적용했는데 결과 시공 사진의 색이 바뀌지 않았다). 자동 모드의 전체 장면
+        # 생성(pipeline._ensure_film_applied/_ensure_wall_film_applied)에는 이미
+        # 같은 문제에 대한 검증이 있었지만, 이 수동 영역 경로(render_region)에는
+        # 빠져 있었다 — 바로 그 경로가 견본 사진 기능을 쓰는 유일한 경로다.
+        # 그래서 여기서도 같은 방식으로 "마스크 안이 실제로 목표 색 쪽으로
+        # 움직였는지"를 LAB 거리로 재서, 거의 안 움직였으면 같은 리컬러로 강제
+        # 보정한다. 문구·그림 요청(design)은 리컬러로 그릴 수 없으니 검사하지
+        # 않고 AI 결과를 그대로 받는다 — _recolor도 design이 있으면 항상 None을
+        # 돌려줘 이 분기와 일관된다.
+        if not design and fallback_hex is not None:
+            delta = _color_delta_in_mask(rendered, mask, fallback_hex)
+            if delta is not None and delta > SWATCH_MATCH_MAX_DELTA:
+                recolored = _recolor(image_path, mask_path, option_id, fallback_hex, reference_image)
+                if recolored is not None:
+                    print(
+                        f"[ai_service] AI 편집 결과가 목표 색과 {delta:.0f} 차이(기준 {SWATCH_MATCH_MAX_DELTA}) "
+                        f"-> 리컬러로 보정: {fallback_hex}"
+                    )
+                    return _paste_back(base, recolored, mask)
+
         if keep_structure:
             # [중요] 이 surface_change 경로(_run_edit, OpenAI 경유 편집)가 실제 표면
             # 변경의 기본 경로다 — 아래 _run_inpaint+keep_structure 블록(object_creation
@@ -354,33 +379,43 @@ def render_region(
 
 
 def _recolor(
-    image_path: str, mask_path: str, option_id: str, fallback_hex: str | None = None
+    image_path: str,
+    mask_path: str,
+    option_id: str,
+    fallback_hex: str | None = None,
+    swatch_image: Image.Image | None = None,
 ) -> Image.Image | None:
-    """고른 자재의 색으로 마스크 영역을 다시 칠한다.
+    """고른 자재로 마스크 영역을 다시 칠한다.
 
-    option_id가 카탈로그에 없어도(실제 견본 사진 기반이라 색상 id 자체가 없는
-    경우) fallback_hex가 있으면 그 색으로 대신한다 — _average_hex_color로 뽑은
-    견본 사진의 평균색이 여기로 들어온다. 둘 다 없으면 None."""
+    swatch_image가 있으면(견본 사진을 찍어 올린 경우) 단색 대신 그 사진의 실제
+    질감(색 얼룩·나뭇결·패브릭 등)을 거울 타일링으로 입힌다
+    (rendering.recolor_surface_with_swatch) — 평균색 하나로 맞추는 것보다 훨씬
+    현실감 있다. 카탈로그 색상 칩만 골랐을 때(swatch_image 없음)는 기존처럼
+    단색 리컬러(recolor_surface)를 쓴다 — option_id가 카탈로그에 없어도 fallback_hex
+    (_average_hex_color로 뽑은 견본 평균색)가 있으면 그 색으로 대신한다. 둘 다
+    없으면 None."""
     from app.catalog import PATTERNS  # 순환 import 방지를 위해 지연 로드
-    from app.services.rendering import recolor_surface
+    from app.services.rendering import recolor_surface, recolor_surface_with_swatch
 
-    pattern = PATTERNS.get(option_id)
-    color_hex = pattern["color_hex"] if pattern else fallback_hex
-    if color_hex is None:
-        return None
     out_path = f"{os.path.splitext(image_path)[0]}_recolor_{uuid.uuid4().hex[:8]}.png"
-    recolor_surface(
-        image_path,
-        mask_path,
-        color_hex,
-        out_path,
-        # 예전엔 option_id에 "wood"라는 글자가 들어있는지로만 판단했다("oak-wood").
-        # 현대보닥(BODAQ) 코드(예: "bodaq-w015")는 그 글자가 없어 이 방식으로는
-        # 나뭇결 처리가 빠진다 — PATTERNS에 명시적으로 적어 둔 wood_grain을 먼저 보고,
-        # 없으면(기존 항목들) 그동안 쓰던 글자 포함 여부로 물러선다. 견본 사진
-        # 기반(패턴 없음)은 나뭇결 여부를 알 길이 없으니 일반 색상으로 둔다.
-        wood_grain=pattern.get("wood_grain", "wood" in option_id) if pattern else False,
-    )
+    if swatch_image is not None:
+        recolor_surface_with_swatch(image_path, mask_path, swatch_image, out_path)
+    else:
+        pattern = PATTERNS.get(option_id)
+        color_hex = pattern["color_hex"] if pattern else fallback_hex
+        if color_hex is None:
+            return None
+        recolor_surface(
+            image_path,
+            mask_path,
+            color_hex,
+            out_path,
+            # 예전엔 option_id에 "wood"라는 글자가 들어있는지로만 판단했다("oak-wood").
+            # 현대보닥(BODAQ) 코드(예: "bodaq-w015")는 그 글자가 없어 이 방식으로는
+            # 나뭇결 처리가 빠진다 — PATTERNS에 명시적으로 적어 둔 wood_grain을 먼저 보고,
+            # 없으면(기존 항목들) 그동안 쓰던 글자 포함 여부로 물러선다.
+            wood_grain=pattern.get("wood_grain", "wood" in option_id) if pattern else False,
+        )
     result = Image.open(out_path).convert("RGB")
     try:
         os.remove(out_path)  # 결과는 메모리로 옮겼으니 중간 파일은 남기지 않는다.
@@ -396,6 +431,31 @@ def _average_hex_color(image: Image.Image) -> str:
     small = image.convert("RGB").resize((32, 32), Image.BILINEAR)
     r, g, b = (int(c) for c in np.asarray(small, dtype=np.float32).mean(axis=(0, 1)))
     return f"#{r:02x}{g:02x}{b:02x}"
+
+
+# 견본 사진 기반 편집 결과의 마스크 안 평균 색이 견본 평균 색에서 이 거리(LAB) 이내면
+# "실제로 그 자재가 입혀졌다"고 본다. pipeline.FILM_MATCH_MAX_DELTA(자동 모드의 같은
+# 판정, 실측: 리컬러 결과 약 8, 색을 못 바꾼 원본 약 100)와 같은 값을 그대로 쓴다 —
+# 거리 계산 방식(LAB)이 같고, "AI가 지시를 무시했는지"를 가르는 기준이라는 목적도
+# 같다. 다만 여기는 전체 장면이 아니라 크롭된 조각이라 실측 전 추정값이다.
+SWATCH_MATCH_MAX_DELTA = 30.0
+
+
+def _color_delta_in_mask(image: Image.Image, mask: Image.Image, color_hex: str) -> float | None:
+    """마스크 안 평균 색이 목표 색에서 LAB 공간으로 얼마나 떨어져 있는지.
+
+    rendering.film_color_delta와 같은 계산(같은 판정 기준을 쓰려면 같은 거리
+    정의여야 한다)이지만, render_region은 아직 디스크에 쓰기 전의 결과(메모리 속
+    PIL 이미지)를 검사해야 해서 파일 경로를 받는 그 함수를 그대로 쓸 수 없다."""
+    sel = np.asarray(mask.convert("L")) > 127
+    if not sel.any():
+        return None
+    from app.services.rendering import _hex_to_rgb  # 순환 import 방지를 위해 지연 로드
+
+    lab = cv2.cvtColor(np.asarray(image.convert("RGB")), cv2.COLOR_RGB2LAB).astype(np.float32)
+    mean = lab[sel].mean(axis=0)
+    target = cv2.cvtColor(np.uint8([[_hex_to_rgb(color_hex)]]), cv2.COLOR_RGB2LAB).reshape(3).astype(np.float32)
+    return float(np.linalg.norm(mean - target))
 
 
 def material_label(option_id: str, fallback: str) -> str:

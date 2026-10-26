@@ -41,6 +41,9 @@ export interface PanelItem {
 
 export interface FilmOptions {
   patternId: string;
+  /** 실제 필름 견본을 찍은 사진(data URL). 있으면 색상 칩 대신 이 사진으로
+   *  AI가 자재를 맞춘다 — MaterialPicker(수동 영역 지정)와 같은 방식이다. */
+  swatchImageDataUrl?: string;
   unitPricePerM: number; // 원/m — 표준 장폭 1.22m 원단 기준
   needsPrimer: boolean;
   upperCabinets: PanelItem[];
@@ -56,6 +59,8 @@ export interface FilmOptions {
 
 export interface SashOptions {
   patternId: string;
+  /** FilmOptions.swatchImageDataUrl과 같은 뜻. */
+  swatchImageDataUrl?: string;
   unitPricePerM: number;
   needsPrimer: boolean;
   frames: PanelItem[];
@@ -74,6 +79,8 @@ export interface FireDoorItem {
  *  따로 나와야 고객에게 설명할 수 있어 별도 종목으로 둔다. */
 export interface DoorFrameOptions {
   patternId: string;
+  /** FilmOptions.swatchImageDataUrl과 같은 뜻. */
+  swatchImageDataUrl?: string;
   unitPricePerM: number;
   needsPrimer: boolean;
   doors: PanelItem[];
@@ -88,6 +95,8 @@ export interface DoorFrameOptions {
 /** 벽면 시트지. 벽지 위 시공이면 면처리가 거의 필수라 기본으로 켜 둔다. */
 export interface WallFilmOptions {
   patternId: string;
+  /** FilmOptions.swatchImageDataUrl과 같은 뜻. */
+  swatchImageDataUrl?: string;
   unitPricePerM: number;
   needsPrimer: boolean;
   walls: PanelItem[];
@@ -96,6 +105,8 @@ export interface WallFilmOptions {
 
 export interface WardrobeOptions {
   patternId: string;
+  /** FilmOptions.swatchImageDataUrl과 같은 뜻. */
+  swatchImageDataUrl?: string;
   unitPricePerM: number;
   needsPrimer: boolean;
   doors: PanelItem[];
@@ -153,6 +164,8 @@ export interface SinkOptions {
  *  가로×세로로 면적을 재는 film/wardrobe와 달리 가구 종류별 "개수"로만 받는다. */
 export interface FurnitureOptions {
   patternId: string;
+  /** FilmOptions.swatchImageDataUrl과 같은 뜻. */
+  swatchImageDataUrl?: string;
   needsPrimer: boolean;
   chairs: number;
   desks: number;

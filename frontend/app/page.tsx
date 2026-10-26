@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowLeft, ArrowRight, Bot, Briefcase, Calculator, CheckCircle2, FolderOpen, Images, Loader2, Newspaper, Ruler, Sparkles, Users } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, Bot, Briefcase, Calculator, FolderOpen, Images, Loader2, Newspaper, Ruler, Sparkles, Users } from "lucide-react";
 import BusinessBadge from "@/components/BusinessBanner";
 import CanvasStage from "@/components/CanvasStage";
 import FeatureIntroDialog from "@/components/FeatureIntroDialog";
@@ -25,7 +25,7 @@ import {
 import { registerForPush } from "@/lib/pushRegistration";
 import { clearOwnerToken, readOwnerToken, saveOwnerToken } from "@/lib/ownerToken";
 import { useAndroidBack } from "@/lib/useAndroidBack";
-import { DEFAULT_OPTIONS, DEFAULT_WORK_ITEMS, WORK_ITEM_META, taskTypeOf } from "@/lib/workItems";
+import { DEFAULT_OPTIONS, DEFAULT_WORK_ITEMS, taskTypeOf } from "@/lib/workItems";
 import type { JobOptionsState, JobStatusResponse, MappedRegion, RenderMode, WorkItemId } from "@/types";
 
 const POLL_INTERVAL_MS = 2000;
@@ -48,6 +48,19 @@ const STALL_MESSAGE =
   "서버가 응답하지 않아 중단했습니다. 잠시 후 '불러오기'에서 같은 견적을 다시 열어보세요.";
 
 type Step = 1 | 2 | 3;
+
+// 손그림(MaterialPicker)에서 고른 색상/견본 사진을 "시공 항목"(StepItems)의 컬러
+// 칸에도 그대로 옮겨 적을 수 있는 항목들 — lib/workItems.ts의 MATERIAL_OPTIONS와
+// JobOptionsState의 patternId가 완전히 같은 카탈로그 id 체계를 쓰고,
+// swatchImageDataUrl 필드도 가진 항목만 여기 둔다. (옷장도 수동 모드 렌더링은
+// 처음부터 지원했는데 StepItems 쪽 폼에 견본 사진 UI가 없어 "장롱/옷장을 고르면
+// 견본 사진 찍는 화면이 없다"는 신고가 있었다 — WardrobeForm에 추가하며 여기도 같이 넣었다.)
+const FILM_FAMILY_SYNC_ITEMS = ["film", "door_frame", "wall_film", "sash", "furniture", "wardrobe"] as const;
+type FilmFamilySyncItem = (typeof FILM_FAMILY_SYNC_ITEMS)[number];
+
+function isFilmFamilySyncItem(category: WorkItemId): category is FilmFamilySyncItem {
+  return (FILM_FAMILY_SYNC_ITEMS as readonly string[]).includes(category);
+}
 
 export default function HomePage() {
   const router = useRouter();
@@ -72,14 +85,12 @@ export default function HomePage() {
   // (object_creation, 원본 없이 새로 그림) 그대로 렌더링돼 똑같이 동작한다 —
   // 바뀌는 건 "어디에"를 AI가 추정하지 않고 사람이 짚는다는 것뿐이다.
   const [renderMode, setRenderMode] = useState<RenderMode>("manual");
-  // 도형에 자재를 지정하면 "시공 항목"에도 자동으로 올라간다는 걸 알려주는
-  // 확인 카드 — 조용히 목록 뒤로 숨어버리면 추가된 줄도 몰랐을 것이다.
-  // [바로 치수 입력으로 넘기는 이유] "추가됐어요"만 알리고 끝내면 결국
-  // 아래로 스크롤해 같은 항목을 다시 찾아 눌러야 해서 번거로움이 반만
-  // 줄어든다 — 카드의 버튼을 누르면 그 항목의 치수 입력 시트가 바로 열리게
-  // 해서, 도형을 그리고 자재를 고른 바로 그 자리에서 치수까지 한 흐름으로
-  // 끝낼 수 있게 했다.
-  const [regionAddedPrompt, setRegionAddedPrompt] = useState<{ category: WorkItemId; label: string } | null>(null);
+  // [도형 -> 자재 고르기 -> 치수 입력을 한 흐름으로]
+  // "적용하기"를 누른 그 자리에서 바로 치수 입력 시트를 연다(commitRegion) —
+  // 전에는 "추가됐어요" 확인 카드를 띄우고 그 카드의 버튼을 또 눌러야 들어갈
+  // 수 있어서, 도형 그리기 -> 자재 고르기 -> (카드 확인) -> (카드 버튼 클릭) ->
+  // 치수 입력으로 단계가 하나 더 많았다("이중으로 또 선택해야 하는 번거로움"
+  // 문의). 이제 카드 없이 곧장 다음 시트가 열린다.
   const [openItemRequest, setOpenItemRequest] = useState<WorkItemId | null>(null);
   const [autoDescription, setAutoDescription] = useState("");
   const [mappedRegions, setMappedRegions] = useState<MappedRegion[]>([]);
@@ -148,14 +159,24 @@ export default function HomePage() {
       // 도형을 그려 자재까지 골라도 견적 계산용 "시공 항목"에는 전혀 반영이
       // 안 돼서, 아래로 내려가 같은 항목을 +버튼으로 또 찾아 추가해야 했다
       // ("사진 찍고 시공 지정도 하고 시공 항목도 또 해야 하는 번거로움" 문의).
-      // 숫자(가로·세로)까지는 사진만으로 알 수 없어 자동으로 못 채우지만,
-      // 처음 추가되는 항목이면 확인 카드로 알리고, 그 자리에서 바로 치수
-      // 입력 시트를 열 수 있게 한다(아래 regionAddedPrompt).
       const isNewItem = !selectedItems.includes(category);
-      if (isNewItem) {
-        setSelectedItems((prev) => [...prev, category]);
-        setRegionAddedPrompt({ category, label: WORK_ITEM_META[category].label });
+      if (isNewItem) setSelectedItems((prev) => [...prev, category]);
+
+      // [여기서 고른 색상/견본 사진을 "시공 항목"의 컬러 칸에도 그대로 반영
+      //  — "이중으로 또 컬러를 골라야 하는 번거로움" 문의]
+      // 카탈로그 색상 id 체계가 완전히 같은 "필름 계열" 항목(FILM_FAMILY_SYNC_ITEMS
+      // — lib/workItems.ts의 MATERIAL_OPTIONS와 JobOptionsState의 patternId가
+      // 같은 id를 쓴다)은 여기서 고른 값을 options에도 옮겨 적는다. 아래에서
+      // 치수 입력 시트가 열렸을 때 컬러/패턴 칸이 이미 채워져 있어 다시 고를
+      // 필요가 없다 — 색상 칩이 아니라 견본 사진을 찍었으면 그 사진이 그대로
+      // 넘어가(swatchImageDataUrl), FilmForm 등도 색상 칩 없이 그 사진만 보여준다.
+      if (isFilmFamilySyncItem(category)) {
+        setOptions((prev) => ({
+          ...prev,
+          [category]: { ...prev[category], patternId: option, swatchImageDataUrl },
+        }));
       }
+
       setMappedRegions((prev) => [
         ...prev,
         {
@@ -182,6 +203,17 @@ export default function HomePage() {
         },
       ]);
       maskStageRef.current?.clearShape();
+
+      // [클릭 한 번으로 바로 치수 입력까지 이어지게 — "또다시 시공 항목을
+      //  골라야 된다" 신고]
+      // isNewItem일 때만 열면, 사용자가 전에 같은 항목을 추가한 적이 있을 때
+      // (또는 한 번 닫았다가 다시 그릴 때) 자동으로 안 열려서 결국 "시공 항목"
+      // 목록까지 스스로 내려가 그 카드를 직접 찾아 눌러야 했다 — 이게 바로
+      // "중복으로 또 선택해야 한다"로 느껴진 지점이다. isNewItem과 무관하게
+      // 매번 곧바로 치수 입력 시트를 열어, 손으로 그 항목을 다시 찾아 들어갈
+      // 일이 전혀 없게 한다. 색상/견본 사진은 위에서 이미 옮겨 적었으니 이
+      // 시트에서는 치수만 확인·조정하고 [입력 완료]를 누르면 끝난다.
+      setOpenItemRequest(category);
     },
     [selectedItems]
   );
@@ -195,13 +227,6 @@ export default function HomePage() {
     window.addEventListener("app:exit-hint", onHint);
     return () => window.removeEventListener("app:exit-hint", onHint);
   }, []);
-
-  // "OO 항목 추가됨" 확인 카드는 손대지 않으면 스스로 사라진다.
-  useEffect(() => {
-    if (!regionAddedPrompt) return;
-    const id = window.setTimeout(() => setRegionAddedPrompt(null), 5000);
-    return () => window.clearTimeout(id);
-  }, [regionAddedPrompt]);
 
   // 수동 마스킹은 화면 전체를 사진에 내준다.
   const masking = step === 2 && renderMode === "manual" && !!previewUrl;
@@ -592,44 +617,6 @@ export default function HomePage() {
       {exitHint && (
         <div className="glass-pill pointer-events-none absolute bottom-24 left-1/2 z-40 -translate-x-1/2 whitespace-nowrap px-4 py-2.5 text-[12px] font-semibold text-slate-700">
           한 번 더 누르면 앱이 종료됩니다
-        </div>
-      )}
-
-      {/* 도형에 자재를 지정하면 "시공 항목"에도 자동으로 올라갔다는 확인 카드 —
-          버튼을 누르면 그 항목의 치수 입력 시트가 바로 열린다. 그리는 중(패널이
-          접혀 사진이 화면 전체를 덮은 상태)에도 보여야 하므로 masking 여부와
-          무관하게 최상단에 둔다. */}
-      {regionAddedPrompt && (
-        <div className="pointer-events-none absolute inset-x-5 top-24 z-50 flex justify-center foldLandscape:inset-x-auto foldLandscape:right-7 foldLandscape:top-24 foldLandscape:w-[22rem] foldLandscape:justify-end">
-          {/* 가로 한 줄에 아이콘·글자·버튼을 다 욱여넣으면 좁은 화면에서 라벨이
-              "...추가..."처럼 잘려 보였다 — 내용(아이콘+두 줄 글)과 동작(버튼)을
-              위아래로 나눠 각자 숨 쉴 공간을 준다. */}
-          <div className="pointer-events-auto w-full max-w-sm rounded-2xl border border-white/60 bg-white/95 p-4 shadow-[0_16px_44px_rgba(15,23,42,0.22)] backdrop-blur-xl animate-[step-in_0.3s_ease-out]">
-            <div className="flex items-start gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
-                <CheckCircle2 className="h-5 w-5" />
-              </span>
-              <div className="min-w-0 flex-1 pt-0.5">
-                <p className="text-[14px] font-bold leading-snug tracking-tight text-slate-900">
-                  {regionAddedPrompt.label} 항목이 추가됐어요
-                </p>
-                <p className="mt-1 text-[12px] font-light leading-relaxed text-slate-500">
-                  견적에 반영하려면 치수를 입력하세요
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setOpenItemRequest(regionAddedPrompt.category);
-                setRegionAddedPrompt(null);
-              }}
-              className="mt-3 flex h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-indigo-600 text-[13px] font-semibold text-white shadow-[0_6px_18px_rgba(79,70,229,0.35)] transition-transform active:scale-[0.98]"
-            >
-              치수 입력하기
-              <ArrowRight className="h-4 w-4" />
-            </button>
-          </div>
         </div>
       )}
 

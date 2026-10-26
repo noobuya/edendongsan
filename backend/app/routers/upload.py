@@ -31,6 +31,15 @@ async def create_job(
     # 실제 필름 견본을 찍은 사진들(있는 구역만). region.swatch_index가 이 목록의
     # 몇 번째 파일인지 가리킨다 — masks와 같은 "인덱스로 참조" 방식.
     swatches: list[UploadFile] = File(default=[]),
+    # 시공 항목(StepItems) 화면의 "컬러/패턴" 칸에서 찍어 올린 실제 필름 견본 사진.
+    # 카테고리마다 최대 한 장이라(위 swatches와 달리 영역이 여러 개가 아님) 인덱스
+    # 방식 대신 카테고리 이름이 곧 필드 이름이다. 없는 항목은 그냥 안 보낸다.
+    swatch_film: UploadFile | None = File(default=None),
+    swatch_door_frame: UploadFile | None = File(default=None),
+    swatch_wall_film: UploadFile | None = File(default=None),
+    swatch_sash: UploadFile | None = File(default=None),
+    swatch_furniture: UploadFile | None = File(default=None),
+    swatch_wardrobe: UploadFile | None = File(default=None),
     x_admin_token: str | None = Header(default=None),
 ):
     try:
@@ -127,6 +136,21 @@ async def create_job(
             }
         )
 
+    item_swatch_paths: dict[str, str] = {}
+    for category, upload in (
+        ("film", swatch_film),
+        ("door_frame", swatch_door_frame),
+        ("wall_film", swatch_wall_film),
+        ("sash", swatch_sash),
+        ("furniture", swatch_furniture),
+        ("wardrobe", swatch_wardrobe),
+    ):
+        if upload is None:
+            continue
+        raw = await upload.read()
+        if raw:
+            item_swatch_paths[category] = _save_swatch(raw, job_id, f"item_{category}")
+
     JOBS[job_id] = {"status": "queued", "customer_name": request.customer_name}
     background_tasks.add_task(
         run_pipeline,
@@ -140,6 +164,7 @@ async def create_job(
         request.render_mode,
         request.auto_description,
         manual_regions,
+        item_swatch_paths,
     )
     return JobCreateResponse(job_id=job_id, status="queued")
 

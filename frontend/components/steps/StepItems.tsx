@@ -34,6 +34,15 @@ export default function StepItems({
 }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<WorkItemId | null>(null);
+  // [항목 추가 -> 완료 -> 다시 들어가기 번거로움 해소]
+  // 예전에는 "항목 추가" 시트에서 켜고 완료를 누르면 시트가 그냥 닫히기만 해서,
+  // 색상/규격을 넣으려면 목록에서 그 카드를 다시 한 번 눌러 들어가야 했다.
+  // 이제 "항목 추가" 시트가 열려 있는 동안 새로 켠 항목들을 이 큐에 쌓아 두고,
+  // 완료를 누르는 순간 바로 첫 항목의 색상/규격 시트를 연다. 그 시트에서
+  // [입력 완료]를 누르면 큐에 남은 다음 항목을 이어서 연다 — 여러 개를 한 번에
+  // 추가해도 전부 끝날 때까지 "추가 -> 입력" 흐름이 끊기지 않는다. 피커가
+  // 닫혀 있을 때(목록 카드의 X 버튼 등)의 토글은 큐에 들어가지 않는다.
+  const [pendingDetailQueue, setPendingDetailQueue] = useState<WorkItemId[]>([]);
 
   useEffect(() => {
     if (!openItem) return;
@@ -47,12 +56,35 @@ export default function StepItems({
     (id) => selectedItems.includes(id) && groups.some((g) => g.children.includes(id))
   );
 
+  function openPicker() {
+    setPendingDetailQueue([]);
+    setPickerOpen(true);
+  }
+
   function toggleItem(item: WorkItemId) {
+    const alreadySelected = selectedItems.includes(item);
     onSelectedItemsChange(
-      selectedItems.includes(item)
-        ? selectedItems.filter((i) => i !== item)
-        : [...selectedItems, item]
+      alreadySelected ? selectedItems.filter((i) => i !== item) : [...selectedItems, item]
     );
+    if (!pickerOpen) return;
+    setPendingDetailQueue((prev) =>
+      alreadySelected ? prev.filter((i) => i !== item) : [...prev, item]
+    );
+  }
+
+  function closePickerAndOpenDetails() {
+    setPickerOpen(false);
+    setEditingItem(pendingDetailQueue[0] ?? null);
+    setPendingDetailQueue((prev) => prev.slice(1));
+  }
+
+  function closeDetailsAndAdvance() {
+    if (pendingDetailQueue.length > 0) {
+      setEditingItem(pendingDetailQueue[0]);
+      setPendingDetailQueue((prev) => prev.slice(1));
+    } else {
+      setEditingItem(null);
+    }
   }
 
   return (
@@ -79,7 +111,7 @@ export default function StepItems({
           </div>
           <button
             type="button"
-            onClick={() => setPickerOpen(true)}
+            onClick={openPicker}
             className="h-12 rounded-full bg-indigo-600 px-7 text-[15px] font-semibold text-white shadow-[0_8px_30px_rgba(79,70,229,0.4)] transition-transform active:scale-[0.98]"
           >
             항목 추가하기
@@ -151,7 +183,7 @@ export default function StepItems({
       {ordered.length > 0 && (
         <button
           type="button"
-          onClick={() => setPickerOpen(true)}
+          onClick={openPicker}
           aria-label="시공 항목 추가"
           className="fixed bottom-32 right-8 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600 text-white shadow-[0_10px_40px_rgba(79,70,229,0.5)] transition-transform active:scale-90 foldLandscape:bottom-28 foldLandscape:right-12"
         >
@@ -163,14 +195,14 @@ export default function StepItems({
         open={pickerOpen}
         selected={selectedItems}
         onToggle={toggleItem}
-        onClose={() => setPickerOpen(false)}
+        onClose={closePickerAndOpenDetails}
         isOwner={isOwner}
       />
       <ItemOptionsSheet
         item={editingItem}
         options={options}
         onChange={onOptionsChange}
-        onClose={() => setEditingItem(null)}
+        onClose={closeDetailsAndAdvance}
       />
     </div>
   );

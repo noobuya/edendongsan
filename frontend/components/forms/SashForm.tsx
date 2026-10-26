@@ -4,6 +4,7 @@ import type { SashOptions } from "@/types";
 import { FormSection, NumberField, ToggleRow } from "@/components/ui/FormControls";
 import PanelArrayField from "@/components/ui/PanelArrayField";
 import SwatchPicker from "@/components/ui/SwatchPicker";
+import SwatchPhotoField from "@/components/ui/SwatchPhotoField";
 import { ALL_PATTERN_SWATCHES } from "@/lib/patternSwatches";
 
 interface Props {
@@ -15,11 +16,24 @@ export default function SashForm({ value, onChange }: Props) {
   return (
     <div className="space-y-5">
       <FormSection title="컬러/패턴">
-        <SwatchPicker
-          swatches={ALL_PATTERN_SWATCHES}
-          selectedId={value.patternId}
-          onSelect={(patternId) => onChange({ ...value, patternId })}
+        <SwatchPhotoField
+          value={value.swatchImageDataUrl}
+          onChange={(swatchImageDataUrl) => onChange({ ...value, swatchImageDataUrl })}
         />
+        {/* 견본 사진이 있으면 색상 칩을 아예 숨긴다 — 흐리게만 남겨두면 "이것도
+            골라야 하나" 헷갈려했다. 적용되는 건 사진이라 더 고를 게 없다. */}
+        {!value.swatchImageDataUrl && (
+          <div className="mt-3">
+            <span className="mb-2 block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              또는 색상 칩에서 고르기
+            </span>
+            <SwatchPicker
+              swatches={ALL_PATTERN_SWATCHES}
+              selectedId={value.patternId}
+              onSelect={(patternId) => onChange({ ...value, patternId })}
+            />
+          </div>
+        )}
       </FormSection>
 
       <NumberField

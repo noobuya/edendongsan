@@ -140,6 +140,136 @@ def _recolor_pixels(
     return Image.fromarray(out.astype(np.uint8), mode="LAB").convert("RGB")
 
 
+def recolor_surface_with_swatch(
+    base_image_path: str,
+    mask_path: str,
+    swatch_image: Image.Image,
+    output_path: str,
+) -> str:
+    """recolor_surface와 같은 목적(마스크 영역을 "실제 시공된 것처럼" 다시 칠한다)
+    이지만, 목표를 단색 하나가 아니라 실제로 찍어 올린 필름 견본 사진에서 그대로
+    가져온다.
+
+    [왜 단색 리컬러만으론 "질감이 없다"는 인상을 주는가]
+    recolor_surface는 색(a/b)을 목표 색 하나로 통일한다 — 민무늬 매트 색상에는
+    맞지만, 나뭇결·마블링·패브릭처럼 자체에 무늬가 있는 실제 견본을 찍어 올렸을
+    때는 "찍어 올린 사진과 다르게 민무늬로 칠해졌다"는 인상을 준다. 이 함수는
+    견본 사진 자체를 거울 타일링(_mirror_tile)으로 이어 붙여 색(a/b)뿐 아니라
+    밝기(L)의 고주파(무늬·결)까지 그대로 가져온다 — 원본 표면의 저주파 명암
+    (문짝 굴곡·조명 그라데이션)은 그대로 살려 "그 질감의 필름을 입혀 다시 찍은
+    사진"처럼 보이게 한다.
+
+    원근(기울어진 면) 보정은 하지 않는다 — 평평하게 입히는 수준의 근사다. 기울어진
+    면은 AI 참고 이미지 편집 경로(ai_service.build_reference_instruction)가
+    우선이고, 이 함수는 그 경로가 실패하거나 지시를 무시했을 때만 쓰는 결정적
+    폴백이다(네트워크 호출이 없어 항상 즉시 성공한다)."""
+    base = Image.open(base_image_path).convert("RGB")
+    mask = Image.open(mask_path).convert("L")
+    if mask.size != base.size:
+        mask = mask.resize(base.size, Image.NEAREST)
+
+    recolored = _recolor_pixels_with_texture(base, mask, swatch_image.convert("RGB"))
+
+    # 경계를 살짝 흐려 합성 자국이 칼로 오린 듯 보이지 않게 한다.
+    feather = max(1.0, base.width * 0.0025)
+    soft_mask = mask.filter(ImageFilter.GaussianBlur(feather))
+
+    Image.composite(recolored, base, soft_mask).save(output_path)
+    return output_path
+
+
+# 견본 사진 타일 한 칸을 마스크 바운딩 박스의 짧은 변 대비 이 비율로 잡는다 —
+# 문짝 하나에 무늬가 2~4번쯤 반복돼야 "민무늬로 칠한 것"도 "조각 사진을 확대해
+# 늘인 것"도 아닌, 실제 필름을 재단해 붙인 느낌이 난다.
+_SWATCH_TILE_RATIO = 0.3
+_SWATCH_TILE_MIN_PX = 90
+_SWATCH_TILE_MAX_PX = 360
+# 견본 사진 고유의 무늬(결·얼룩)를 얼마나 살릴지 — recolor_surface의 _TEXTURE_KEEP과
+# 같은 역할이지만, 여기서는 "합성한 질감"이 아니라 실제 사진의 무늬라 그만큼
+# 눌러 가릴 이유가 없어 훨씬 많이(대부분) 살린다.
+_SWATCH_TEXTURE_KEEP = 0.8
+
+
+def _mirror_tile(tile: Image.Image, size: tuple[int, int]) -> np.ndarray:
+    """정사각 tile을 2x2 거울 블록으로 묶어 이어 붙여 size=(width, height)를 채운
+    RGB 배열을 돌려준다. 그냥 반복하면 타일 경계가 격자처럼 뚜렷이 드러나는데,
+    상/하/좌우를 번갈아 뒤집으면(거울 타일링) 경계에서 무늬가 자연스럽게 이어진다."""
+    tile_arr = np.asarray(tile, dtype=np.uint8)
+    flip_h = np.asarray(tile.transpose(Image.FLIP_LEFT_RIGHT), dtype=np.uint8)
+    flip_v = np.asarray(tile.transpose(Image.FLIP_TOP_BOTTOM), dtype=np.uint8)
+    flip_hv = np.asarray(tile.transpose(Image.ROTATE_180), dtype=np.uint8)
+    block = np.concatenate(
+        [np.concatenate([tile_arr, flip_h], axis=1), np.concatenate([flip_v, flip_hv], axis=1)], axis=0
+    )
+    bh, bw = block.shape[:2]
+    reps_y = -(-size[1] // bh)  # 올림 나눗셈 — size를 다 덮을 때까지 반복
+    reps_x = -(-size[0] // bw)
+    tiled = np.tile(block, (reps_y, reps_x, 1))
+    return tiled[: size[1], : size[0]]
+
+
+def _recolor_pixels_with_texture(base: Image.Image, mask: Image.Image, swatch: Image.Image) -> Image.Image:
+    sel = np.asarray(mask, dtype=np.float32) > 127
+    if not sel.any():
+        return base
+
+    bbox = mask.getbbox()
+    if bbox is None:
+        return base
+    bw, bh = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    tile_px = int(np.clip(min(bw, bh) * _SWATCH_TILE_RATIO, _SWATCH_TILE_MIN_PX, _SWATCH_TILE_MAX_PX))
+
+    # 견본 사진을 정사각형으로 중앙 크롭한다 — 그대로 리사이즈하면(가로세로 비율이
+    # 안 맞으면) 무늬가 뒤틀려 늘어난 것처럼 보인다.
+    sw, sh = swatch.size
+    side = min(sw, sh)
+    left, top = (sw - side) // 2, (sh - side) // 2
+    tile_img = swatch.crop((left, top, left + side, top + side)).resize((tile_px, tile_px), Image.LANCZOS)
+    tiled = Image.fromarray(_mirror_tile(tile_img, base.size), mode="RGB")
+
+    base_lab = np.asarray(base.convert("LAB"), dtype=np.float32)
+    tile_lab = np.asarray(tiled.convert("LAB"), dtype=np.float32)
+    base_l = base_lab[..., 0]
+    tile_l = tile_lab[..., 0]
+
+    # 원본의 저주파(문짝 굴곡·조명 그라데이션)는 "모양"만 가져오고, 밝기 레벨은
+    # 견본 사진 자체의 평균 밝기로 맞춘다 — 그래야 어두운 자재 사진이 원래 문짝의
+    # 밝은 평균값에 끌려가 밝아지는 왜곡 없이, 찍어 올린 그 밝기로 보인다.
+    blur_radius = max(2.0, min(base.size) * 0.01)
+    base_low = np.asarray(
+        Image.fromarray(np.clip(base_l, 0, 255).astype(np.uint8), mode="L").filter(
+            ImageFilter.GaussianBlur(blur_radius)
+        ),
+        dtype=np.float32,
+    )
+    tile_low = np.asarray(
+        Image.fromarray(np.clip(tile_l, 0, 255).astype(np.uint8), mode="L").filter(
+            ImageFilter.GaussianBlur(blur_radius)
+        ),
+        dtype=np.float32,
+    )
+    tile_detail = tile_l - tile_low  # 견본 사진 고유의 무늬·결(고주파)만 남긴다
+
+    base_mean_low = float(base_low[sel].mean())
+    tile_mean_low = float(tile_low[sel].mean())
+    std_low = float(base_low[sel].std()) or 1.0
+    gain = min(_SHADING_GAIN, _TARGET_SHADING_SPREAD / std_low)
+
+    # 원본 굴곡의 "모양"(평균에서 얼마나 떨어져 있는지) + 견본 사진의 "밝기 레벨".
+    new_l = tile_mean_low + (base_low - base_mean_low) * gain
+    # 그 위에 견본 사진 고유의 무늬를 더한다 — 이게 없으면 결국 단색 리컬러와 같다.
+    new_l = new_l + tile_detail * _SWATCH_TEXTURE_KEEP
+    # 원본의 강한 반사(스포트 하이라이트)는 색을 입혀도 살아있어야 자연스럽다.
+    excess = np.clip(base_l - (base_mean_low + _HIGHLIGHT_THRESHOLD_SIGMA * std_low), 0, None)
+    new_l = new_l + excess * _HIGHLIGHT_GAIN
+
+    out = base_lab.copy()
+    out[..., 0] = np.clip(new_l, 0, 255)
+    out[..., 1] = tile_lab[..., 1]
+    out[..., 2] = tile_lab[..., 2]
+    return Image.fromarray(out.astype(np.uint8), mode="LAB").convert("RGB")
+
+
 def _hex_to_rgb(color_hex: str) -> tuple[int, int, int]:
     h = color_hex.lstrip("#")
     return tuple(int(h[i : i + 2], 16) for i in (0, 2, 4))  # type: ignore[return-value]

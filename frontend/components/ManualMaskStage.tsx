@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
 import type { MappedRegion } from "@/types";
-import { createMaskSession, segmentPoint } from "@/lib/api";
+import { createMaskSession, segmentPoint, snapBrushToObjects } from "@/lib/api";
 import { REGION_COLORS } from "@/lib/workItems";
 import {
   BRUSH_RADIUS_SCREEN_PX,
@@ -244,10 +244,20 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
     setBrushStrokes((prev) => [...prev, stroke]);
   }, []);
 
-  /** 물체를 꾹 누르면 AI(SAM)가 찾아준 윤곽을 한 획으로 더한다 — 손으로 그은
-   *  획과 똑같이 brushStrokes에 쌓이므로, 기존에 손으로 그린 영역과 자연히
-   *  겹쳐 보인다(합쳐진 것처럼). 되돌리기도 손그림 획과 똑같이 마지막 한
-   *  획(=이 AI 결과)만 지운다. */
+  /** 꾹 누르면 AI가 더 정확한 물체 윤곽을 한 획으로 더한다 — 손으로 그은 획과
+   *  똑같이 brushStrokes에 쌓이므로, 기존에 손으로 그린 영역과 자연히 겹쳐
+   *  보인다(합쳐진 것처럼). 되돌리기도 손그림 획과 똑같이 마지막 한 획(=이 AI
+   *  결과)만 지운다.
+   *
+   *  [손그림을 먼저 그려두고 꾹 눌러 다듬는 방식 — "사물에서 잘린 부분은 시공이
+   *  안 된다" 신고에 대한 두 번째 대응]
+   *  이미 손그림(아직 확정 안 한 brushStrokes)을 그려 둔 상태라면, 점 하나가
+   *  아니라 그 손그림 전체 영역을 AI에게 넘겨 "이 자리의 물체를 더 정확하게"
+   *  찾아달라고 요청한다(manual_mask.snap_to_object) — 대략 짚어둔 범위를
+   *  참고하므로, 사진 테두리에 잘린 부분이나 가려진 모서리처럼 손으로 다
+   *  두르지 못한 곳까지 실제 물체 윤곽대로 정확히 그려 돌려준다. 아직 아무것도
+   *  안 그린 첫 시도라면(brushStrokes가 비어 있음) 꾹 누른 점 하나로 물체를
+   *  찾는 기존 방식(segmentPoint)으로 시작한다. */
   const handleLongPress = useCallback(
     (point: Pt) => {
       if (!maskSessionId) {
@@ -256,6 +266,31 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
         return;
       }
       if (segmentingPoint) return;
+
+      if (brushStrokes.length > 0 && natural) {
+        const radiusPx = BRUSH_RADIUS_SCREEN_PX / (displayScale * viewScale || 1);
+        const baked = rasterizeMask([{ id: -1, kind: "brush", strokes: brushStrokes, radiusPx }], natural.w, natural.h);
+        if (baked) {
+          setSegmentingPoint(true);
+          setAiHint(null);
+          snapBrushToObjects(maskSessionId, baked.maskDataUrl)
+            .then((points) => {
+              if (points && points.length >= 3) {
+                setBrushStrokes((prev) => [...prev, points]);
+              } else {
+                setAiHint("이 영역에서 물체 테두리를 더 정확히 찾지 못했어요. 그린 그대로 쓰거나 더 채워서 다시 눌러보세요.");
+                window.setTimeout(() => setAiHint(null), 2500);
+              }
+            })
+            .catch((err: unknown) => {
+              setAiHint(err instanceof Error ? err.message : "물체 테두리를 다듬지 못했어요.");
+              window.setTimeout(() => setAiHint(null), 2500);
+            })
+            .finally(() => setSegmentingPoint(false));
+          return;
+        }
+      }
+
       setSegmentingPoint(true);
       setAiHint(null);
       segmentPoint(maskSessionId, point)
@@ -268,7 +303,7 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
         })
         .finally(() => setSegmentingPoint(false));
     },
-    [maskSessionId, segmentingPoint]
+    [maskSessionId, segmentingPoint, brushStrokes, natural, displayScale, viewScale]
   );
 
   /** 지금까지 칠한 획들을 하나의 붓 영역 도형으로 묶는다. closeDraft와 같은
@@ -613,7 +648,7 @@ function hintFor(tool: Tool, draftCount: number, shapeCount: number, brushStroke
   }
   if (tool === "freehand") {
     if (brushStrokeCount === 0) return "테두리를 따라 그리거나, 물체를 꾹 눌러보세요";
-    return "덜 잡힌 곳은 다시 긋거나 꾹 눌러 더하세요 · 다 됐으면 확정";
+    return "꾹 누르면 AI가 더 정확하게 다듬어요 · 다 됐으면 확정";
   }
   if (tool === "ellipse") return "조명 자리를 탭하세요";
   if (shapeCount === 0) return "도구를 고르세요";

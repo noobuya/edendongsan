@@ -249,6 +249,20 @@ export async function createJob(
       form.append("swatches", dataUrlToBlob(region.swatchImageDataUrl), `swatch_${index}.jpg`);
     }
   }
+  // 시공 항목(StepItems) 화면의 "컬러/패턴" 칸에서 찍어 올린 견본 사진 — 카테고리당
+  // 최대 한 장이라 위 manualRegions의 인덱스 방식과 달리 고정된 필드 이름으로 보낸다
+  // (backend/app/routers/upload.py의 swatch_film 등과 이름을 맞춰야 한다).
+  const itemSwatches: [string, string | undefined][] = [
+    ["swatch_film", options.film.swatchImageDataUrl],
+    ["swatch_door_frame", options.door_frame.swatchImageDataUrl],
+    ["swatch_wall_film", options.wall_film.swatchImageDataUrl],
+    ["swatch_sash", options.sash.swatchImageDataUrl],
+    ["swatch_furniture", options.furniture.swatchImageDataUrl],
+    ["swatch_wardrobe", options.wardrobe.swatchImageDataUrl],
+  ];
+  for (const [field, dataUrl] of itemSwatches) {
+    if (dataUrl) form.append(field, dataUrlToBlob(dataUrl), `${field}.jpg`);
+  }
 
   const res = await apiFetch(`${API_BASE}/api/jobs`, {
     method: "POST",
@@ -318,6 +332,23 @@ export async function segmentPoint(sessionId: string, point: Pt): Promise<Pt[]> 
   if (!res.ok) throw new Error(await extractErrorMessage(res, "이 자리에서 물체를 찾지 못했어요."));
   const data = await res.json();
   return data.points as Pt[];
+}
+
+/** 손그림(올가미)으로 막 채운 영역이 사진 테두리나 다른 물건에 가려 물체의
+ *  일부만 덮었을 때, 이미 "충분히" 덮은 물체가 있으면 그 물체 전체 윤곽까지
+ *  넓혀 돌려받는다(손이 못 닿은 부분도 포함). 겹치는 물체가 기준을 못
+ *  넘으면 null — 호출부는 원래 손그림 그대로 쓰면 된다. maskDataUrl은
+ *  사진 원본 해상도로 구운 흑백 PNG(흰색 = 손으로 채운 자리)여야 한다. */
+export async function snapBrushToObjects(sessionId: string, maskDataUrl: string): Promise<Pt[] | null> {
+  const form = new FormData();
+  form.append("mask", dataUrlToBlob(maskDataUrl), "mask.png");
+  const res = await apiFetch(`${API_BASE}/api/manual-mask/session/${sessionId}/snap`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) return null; // AI 보정은 "있으면 좋은" 기능 — 실패해도 손그림 자체는 그대로 쓴다.
+  const data = await res.json();
+  return (data.points as Pt[] | null) ?? null;
 }
 
 /** 현장에서 고객이 그린 서명을 저장한다. 다른 현장 기록처럼 인증이 필요 없다

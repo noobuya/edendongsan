@@ -10,6 +10,9 @@
 | 메인 백엔드 (FastAPI) | `backend/` | 8000 | 분할·인페인팅·렌더링·견적 계산·블로그 |
 | 견적 계산기 프로토타입 (Flask) | `estimator_app/` | 5050 | 필름 리폼 세트 카드, 평수별 견적 슬라이더, 스텔스 마진 패널. **AI 기능 없음, 처음부터 별개 앱.** |
 
+**⚠️ 2026-10-25부로 운영 방식이 바뀌었다 — 아래 "운영 서버가 멈춰 있던 사고" 섹션을 반드시 먼저 읽을 것.**
+이 문서 윗부분(1~9차 등)은 Windows PC에서 `npm run dev`/`uvicorn --reload`로 띄우는 "라이브 리로드" 방식을 전제로 쓰여 있다. 지금은 이 리눅스 서버에서 **systemd가 프론트(`eden-frontend.service`, `next start` 프로덕션 빌드)와 백엔드(`eden-backend.service`, `--reload` 없음)를 상시 운영**한다. 즉 **코드를 고치는 것만으로는 반영되지 않는다** — 프론트는 `npm run build` 후 재시작, 백엔드는 재시작까지 해야 실제로 반영된다. 자세한 내용과 확인 방법은 아래 해당 섹션 참고.
+
 ## 이번 세션에서 한 일
 
 ### estimator_app (Flask, 5050)
@@ -624,3 +627,76 @@
 6. (`e629c1b`) "그리는 중에 면이 생겨서 선을 제대로 못 긋는다" 피드백으로, 긋는 중인 선은 닫지도(closed) 채우지도 않고 열린 점선으로만 손가락을 따라가게 하고, 손을 뗀 순간(완성된 획이 되는 순간)에만 닫혀서 빗금으로 채워지도록 수정.
 - **검증 방식:** 전부 헤드리스 Chrome + CDP `Input.dispatchTouchEvent`(실제 손가락 터치 이벤트 재현, 마우스 클릭이 아님)로 재현·확인. SAM 호출은 비용이 드므로 `page.route()`로 `/api/manual-mask/*` 응답을 가짜로 채워 프론트 로직만 검증했고, 백엔드 쪽(점이 포함된 가장 작은 마스크 선택 + 윤곽선 추출 + 캐시로 재호출 안 함)은 `TestClient`로 SAM 호출을 mock해 별도 검증함. **실기기(삼성 WebView) 최종 확인은 못 함** — 사용자가 이어서 테스트 중.
 - **알아 둘 점:** 자석 올가미 임계값(스냅 반경 10~44px, 최소 가장자리 세기 40)과 꾹 누르기 타이밍(750ms, 취소 6px)은 모두 추정치로 튜닝한 값이다. 실기기에서 "자석이 안 붙는다"거나 "여전히 그리기가 끊긴다"는 신고가 다시 오면 이 숫자들부터 의심할 것.
+
+## 견본 사진 질감 적용, 시공 흐름 간소화, 손그림 AI 다듬기, 그리고 운영 서버가 멈춰 있던 사고 (2026-10-24~26)
+
+**⚠️ 가장 중요: 아래 모든 수정은 git에 커밋되지 않은 상태다(working tree에만 있음, `git status`로 20개 파일 변경 확인됨).** 다음 세션(또는 이 세션)에서 `git checkout .`/`git reset --hard`/`git stash` 같은 되돌리기 명령을 함부로 쓰면 이번에 한 작업이 전부 사라진다 — 지우기 전에 반드시 사용자에게 커밋 여부를 확인할 것. 서버에는 이미 반영돼 있다(아래 "운영 서버" 섹션 참고)는 것과 "git에 기록됐다"는 것은 별개다.
+
+### 0. [가장 큰 발견] 운영 서버가 열흘 전 빌드로 멈춰 있어서, 이 세션의 수정이 몇 턴 동안 전혀 반영되지 않았음
+
+- **증상:** 사용자가 실기기로 테스트할 때마다 "코드를 고쳤다고 한 기능이 전혀 안 보인다"는 신고가 반복됐다(견본 사진 버튼 자체가 안 보임, 색상 칩이 안 숨겨짐, 중복 선택이 그대로 남음 등) — 매번 코드를 다시 읽고 "로직은 맞는데?"를 반복하다가, 마지막에 가서야 서버 프로세스 자체를 들여다봐서 원인을 찾았다.
+- **원인 (`ps`/`ss`/`systemctl cat`으로 직접 확인):**
+  - 이 리눅스 서버는 `systemd` 유닛 `eden-frontend.service`/`eden-backend.service`/`eden-worker.service`(파일: `/etc/systemd/system/*.service`, `Restart=always`)로 상시 운영되고 있다 — 이 사실 자체가 이번 세션 전까지 어느 핸드오프 기록에도 없었다(위쪽 기록들은 전부 Windows PC `npm run dev`/`uvicorn --reload` 전제로 쓰여 있음 — 어느 시점에 이 리눅스 서버로 운영 방식이 바뀐 것으로 보이는데, 그 전환 자체가 기록이 안 남아 있었다).
+  - `eden-frontend.service`는 `next start -p 3000`(프로덕션 고정 빌드)을 돌리는데, 그 빌드가 **10월 17일**에 만들어진 것이었다 — 그 뒤로 이 세션에서 고친 프론트 코드가 전부 반영 안 됨.
+  - `eden-backend.service`는 `uvicorn app.main:app`을 **`--reload` 없이** 띄워서, 서버가 켜진 시점(이 세션 중간에 켜짐) 이후의 백엔드 코드 변경도 전혀 반영 안 됨.
+  - `next.config.mjs`가 `distDir`을 모드별로 분기한다(`next dev`→`.next`, 일반 빌드→`.next-build`, Capacitor→`.next-capacitor`) — `.next`만 보면 10/17 날짜 그대로라 "빌드가 하나도 안 됐다"고 오판하기 쉬운데, 실제 프로덕션은 `.next-build`를 본다. 이것 때문에 처음엔 빌드 자체가 안 된 줄 알고 헛갈렸다.
+- **조치(재발하면 그대로 따라 할 것):**
+  1. `sudo systemctl stop eden-frontend.service` (포트 3000을 비워야 빌드가 됨 — `scripts/guard-dev-server.mjs`가 포트 3000이 쓰여 있으면 `npm run build`를 거부한다)
+  2. `cd frontend && npm run build` (`.next-build`에 새로 씀, 타입체크까지 통과해야 끝남)
+  3. `sudo systemctl start eden-frontend.service` + `sudo systemctl restart eden-backend.service`
+  4. 확인: `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3000/`·`:8000/docs`가 둘 다 200, `sudo journalctl -u eden-frontend.service -n 20`/`eden-backend...`에 에러 없는지, `grep -rl "<방금 추가한 고유 문자열>" frontend/.next-build` 로 실제로 새 코드가 빌드에 들어갔는지 확인.
+  - **코드만 고치고 이 네 단계를 생략하면 아무것도 반영되지 않는다.** 이 세션에서 프론트/백엔드 파일을 고칠 때마다(총 3번) 매번 이 순서를 다시 밟았다.
+- **주의(데이터 손실):** 백엔드 재시작은 `JOBS`(메모리 전역 dict, `jobs_store.py`)를 전부 비운다 — 진행 중(아직 저장 전)인 견적 작업은 사라진다. 이미 저장된 견적서(`quotes_store`)는 디스크에 있어 영향 없음. 사용자에게 "지금 테스트 중인 작업이 사라질 수 있다"고 미리 알리고 재시작했다.
+- **아직 모르는 것:** 애초에 **왜** 프로덕션 모드로, 그리고 10/17 빌드 그대로 멈춰 있었는지는 알아내지 못했다. 사람이 수동으로 `npm run build && systemctl restart`를 한 뒤 그 이후로 한 번도 안 한 것으로 추정되지만 로그로 확정하지 못함. 다음에 "코드가 반영이 안 된다"는 신고가 또 오면, 코드를 다시 읽기 전에 **먼저 `.next-build`/서비스 재시작 시각부터 확인할 것** — 이번처럼 몇 시간을 코드 재검토에 쓰고 나서야 원인을 찾는 비효율을 반복하지 않기 위함이다.
+
+### 1. "견본 사진을 찍어 올려도 결과가 안 바뀐다" — 수동 모드 AI 렌더링 검증 추가
+- **원인:** `backend/app/services/ai_service.py`의 `render_region`은 견본 사진을 AI 편집 모델의 참고 이미지로 보내긴 했지만, 그 AI가 **예외 없이 "성공"을 반환하면서 지시를 무시하고 원본과 거의 같은 사진을 내놓는 경우**를 걸러내는 장치가 없었다. 자동 모드의 전체 장면 생성(`pipeline._ensure_film_applied` 등)에는 이미 같은 문제에 대한 색 검증이 있었는데, 견본 사진 기능을 쓰는 수동 영역 경로에는 빠져 있었다.
+- **수정:** AI 편집 결과가 나오면 마스크 안 평균색과 견본 사진 평균색의 LAB 거리를 재서(`_color_delta_in_mask`), 기준(`SWATCH_MATCH_MAX_DELTA = 30.0`)을 넘으면 결정적 리컬러로 강제 보정(`_recolor`)한다. 합성 이미지(빨강 vs 파랑 영역)로 판정 로직 자체를 검증함(거리 0 vs 183).
+- **부가 수정:** `MaterialPicker.tsx`에서 실링팬·조명·싱크볼·양변기(object_creation, AI가 새로 그리는 물건이라 참고 이미지를 못 씀)는 견본 사진 버튼 자체를 숨김(`swatchEligibleFor`) — 어차피 무시되는데 버튼이 보이면 똑같은 "안 바뀐다" 혼란이 재현되므로.
+
+### 2. 견본 사진의 "질감"까지 반영 — 평면 색이 아니라 실제 사진을 거울 타일링
+- **문제의식(사용자 요청):** 1번 수정의 리컬러 폴백은 견본 사진의 **평균색 하나**만 입혔다 — 나뭇결·마블링처럼 무늬가 있는 실제 견본은 "민무늬로 칠해졌다"는 인상을 줬다.
+- **구현(`backend/app/services/rendering.py`):** `recolor_surface_with_swatch()` 신규 — 견본 사진을 정사각형으로 크롭 후 거울 타일링(`_mirror_tile`, 2x2 블록을 상/하/좌/우로 뒤집어 이어 붙여 이음매를 없앰)해 마스크 전체를 채운다. 원본 표면의 저주파 명암(문짝 굴곡·조명 그라데이션)은 유지하되 밝기 레벨은 견본 사진 평균에 맞추고, 견본 고유의 고주파 무늬(나뭇결 등)를 그 위에 더한다. 색(a/b)은 타일의 실제 색을 그대로 쓴다.
+- **연결 지점:** `ai_service._recolor`(수동 모드 AI 실패/무시 폴백)와 `pipeline._recolor_for_category`(자동 모드 `_ensure_film_applied`/`_ensure_wall_film_applied`/no-scene 폴백) 양쪽 다 견본 사진이 있으면 이 함수를 쓰도록 바꿈.
+- **검증:** 합성 데이터(세로 줄무늬 견본 + 그라데이션 배경)로 결과 영역의 표준편차(질감 존재 확인, ~11)와 마스크 밖 불변(경계 feather 제외) 확인. **실제 Replicate/Gemini API 호출은 못 함(네트워크·크레딧 불가) — 실기기 확인 필요.**
+
+### 3. 견본 사진을 자동 모드에도 연결 (전에는 수동 모드에만 있었음)
+- `StepItems`의 필름 계열 폼(FilmForm·DoorFrameForm·WallFilmForm·SashForm·FurnitureForm, 나중에 WardrobeForm도 추가 — 아래 8번) 각각에 `SwatchPhotoField` 추가.
+- 백엔드: `upload.py`의 `create_job`이 카테고리별 멀티파트 필드(`swatch_film`/`swatch_door_frame`/... )를 받아 `item_swatch_paths` dict로 만들고, `pipeline.run_pipeline` → `_build_scene_instructions`에 전달. 견본 사진이 있으면 Gemini 지시문이 "a matte white interior film" 같은 색 이름 대신 "the exact material shown in attached reference photo #N" 식으로 바뀌고, 그 사진이 실제로 `render_scene`에 첨부된다(`_material_phrase`, `scene_render.py`의 `reference_images` 파라미터).
+- `_effective_color_hex`/`_recolor_for_category`로 색 검증·폴백도 견본 사진 평균색/질감을 기준으로 삼도록 통일.
+- **합성 데이터로 지시문 생성 로직 검증함**(필름·옷장 둘 다 "reference photo #2" 문구와 이미지 리스트 길이 확인). **실제 Gemini 호출 검증은 못 함.**
+
+### 4. 손그림 "AI로 물체 찾기" — 점 하나가 아니라 그려둔 영역 전체로 더 정확하게
+- **요청:** 손그림을 먼저 대충 그려두고 그 자리를 꾹 누르면, AI가 그 영역을 참고해서 물체 테두리를 더 정확히(사진 테두리에 잘린 부분·가려진 모서리 포함) 그려주는 방식으로.
+- **구현:** 새 백엔드 엔드포인트 `POST /api/manual-mask/session/{id}/snap`(`manual_mask.py`) — 사용자가 채운 영역과 SAM 후보 물체들을 겹쳐 보고, 기준을 넘는(아래 참고) 후보가 있으면 그 물체의 SAM 윤곽 전체(손이 못 닿은 부분 포함)를 합쳐 돌려준다. `ManualMaskStage.tsx`의 `handleLongPress`: 이미 그려둔 `brushStrokes`가 있으면 점이 아니라 그 전체 영역을 이 엔드포인트로 보내고, 없으면(첫 시도) 기존 점 기반 `segmentPoint`를 그대로 씀.
+- **판정 기준을 두 번 손봤다:**
+  1. 처음엔 "사용자가 물체 면적의 60% 이상을 덮었을 때만" — 너무 좁아서 거의 항상 실패.
+  2. "문짝/문틀 사진에서 AI가 영역을 못 찾는다" 재신고 후: coverage(겹친 면적/후보 면적) 40% 이상 **또는** containment(겹친 면적/사용자가 그린 면적) 70%+coverage 8% 이상으로 완화(`SNAP_MIN_COVERAGE`/`SNAP_MIN_CONTAINMENT`/`SNAP_LENIENT_MIN_COVERAGE`, `manual_mask.py`). 문틀처럼 가운데가 뚫린 테 모양은 한쪽 변만 그려도(겹침 35%) 이제 containment 100%로 통과. 후보 면적 상한도 0.5→0.65로 완화(가까이서 찍은 사진은 문짝 하나가 화면 절반 가까이 차지할 수 있어서).
+  - 기준 미달 시 서버 로그에 `[manual_mask] snap: 기준 미달 — 최선 coverage=... containment=...`를 남기므로, 또 신고가 오면 그 값부터 볼 것.
+- **검증:** 합성 마스크(문틀 테 모양 중 한쪽 변만 그린 경우)로 신·구 기준 비교, 화면 밖 낙서가 안 잡히는 것, 거대 후보가 제외되는 것 확인. **실제 SAM 호출·실기기 확인은 못 함.**
+
+### 5. "도형 그리기 → 자재 고르기 → 치수 입력"을 끊김 없이 한 흐름으로 (중복 선택 제거)
+- **문제:** 영역을 그리고 자재(색상/견본)까지 골라도, 견적 계산용 "시공 항목"에는 따로 들어가 치수를 또 입력해야 했고, 그 치수 화면에서 컬러도 다시 골라야 하는 것처럼 보였다(실제로는 기본값으로 리셋된 것처럼 보이는 것뿐이었지만 사용자 입장에선 "중복 선택"으로 느껴짐).
+- **수정(`app/page.tsx`의 `commitRegion`):**
+  - 도형에 자재를 적용하는 순간, 그 카테고리가 "필름 계열"(`FILM_FAMILY_SYNC_ITEMS` — film/door_frame/wall_film/sash/furniture/wardrobe)이면 고른 색상/견본 사진을 `options[category]`(StepItems가 보는 바로 그 상태)에도 그대로 복사해 넣는다 — 치수 시트를 열었을 때 컬러가 이미 채워져 있어 다시 고를 게 없다.
+  - **매번(처음이든 N번째든) 자재 적용 즉시 치수 입력 시트를 자동으로 연다**(`setOpenItemRequest(category)`, 조건 없이 항상 호출). 예전엔 "항목이 추가됐어요" 토스트를 띄우고 그 토스트의 버튼을 또 눌러야 들어갔는데(그 토스트 자체와 관련 state `regionAddedPrompt`는 완전히 제거함), 또 "처음 추가될 때만" 열려서 재방문 시엔 사용자가 직접 항목을 찾아 들어가야 했다 — 둘 다 없앴다.
+- **검증:** 타입체크 통과. 실기기 클릭 흐름 자체는 못 봤지만, 로직(언제 sync되고 언제 시트가 열리는지)은 코드로 추적 가능한 수준까지 다 확인함.
+
+### 6. 견본 사진 찍으면 색상 칩을 완전히 숨기고, 전용 "적용" 버튼 추가
+- 전에는 견본 사진이 있어도 색상 칩을 흐리게만 남겨서 "이것도 골라야 하나" 혼란이 있었다 — `MaterialPicker.tsx`와 StepItems 폼 6개(필름 계열 전부) 모두 `{!value.swatchImageDataUrl && (...)}`로 색상 칩 블록 자체를 아예 안 그리게 바꿨다. 적용 버튼 문구도 견본 사진이 있으면 카탈로그 색 이름("매트 화이트 적용하기")이 아니라 "이 견본 사진으로 적용하기"로 바뀐다.
+- `MaterialPicker.tsx`에 사진을 찍은 즉시 누를 수 있는 전용 초록 버튼 **"견본사진 적용"**을 추가 — 아래로 내려가 "적용하기"를 또 찾을 필요 없이 그 자리에서 바로 확정(기존 적용하기와 동작은 같음, 빠른 경로를 하나 더 둔 것).
+- `SwatchPhotoField.tsx`(신규, `components/ui/`)로 사진 촬영 UI를 공용 컴포넌트화 — `MaterialPicker`와 6개 Form이 전부 이걸 재사용해서, 한쪽만 고치고 다른 쪽을 빼먹는 사고를 구조적으로 막음.
+
+### 7. MaterialPicker가 "일러스트(사장님 전용)"를 그대로 노출하던 버그
+- `ItemPickerSheet`/`StepItems`는 `isOwner`로 일러스트 그룹을 걸러내는데, `MaterialPicker`는 그 prop을 안 받아서 고객 기기에서도 그대로 보였다. 게다가 `MATERIAL_OPTIONS.illustration`이 빈 배열이라(일러스트는 영역별이 아니라 사진 전체에 한 번 넣는 항목) 고르는 순간 `beginPick`이 빈 배열의 `[0]`을 읽어 즉시 멈추는 크래시 위험도 있었다.
+- **수정:** `isOwner`를 따로 넘기지 않고, "자재 목록이 하나도 없는 종목은 통째로 뺀다"(`DRAWABLE_WORK_ITEM_GROUPS = WORK_ITEM_GROUPS.filter(g => g.children.every(item => MATERIAL_OPTIONS[item].length > 0))`)로 더 근본적으로 해결 — 역할이 다른 항목이니 "사장님만 보이게"가 아니라 "누구도 여기선 못 고르게"가 맞다고 판단함.
+
+### 8. "인테리어 필름 > 장롱/옷장"에만 견본 사진 UI가 빠져 있던 버그
+- 5번/6번 작업 때 "자동 모드에 옷장 렌더링 지시문 자체가 없어서 의미 없다"는 이유로 옷장만 빼먹었는데, 재신고를 받고 확인해보니 **수동 모드는 처음부터 옷장을 완전히 지원**하고 있었다 — 빠진 건 StepItems UI와 자동 모드 쪽뿐이었다.
+- **수정:** `WardrobeForm.tsx`에 `SwatchPhotoField` 추가(다른 5개 폼과 동일), `WardrobeOptions.swatchImageDataUrl` 필드 추가, `FILM_FAMILY_SYNC_ITEMS`에 wardrobe 추가. **자동 모드도 이번에 처음 지원**: `pipeline.py`에 `_wardrobe_target_phrases` + Gemini 지시문 분기 신규 추가(전에는 옷장 색상이 카탈로그든 견본이든 자동 모드 AI 사진에 전혀 반영될 길이 없었다). 합성 데이터로 지시문 생성 확인함.
+
+### 다음 세션에 바로 확인해야 할 것 (우선순위순)
+1. **git 커밋 여부를 사용자에게 물을 것** — 위 경고 참고, 지금 전부 uncommitted.
+2. 실기기에서 1~8번 전체 플로우 한 번씩 확인 — 이 세션은 실제 Replicate/Gemini/SAM 호출을 전혀 못 해봤다(네트워크·크레딧 제약), 전부 합성 데이터/타입체크/코드 추적으로만 검증함.
+3. "코드가 안 반영된다"는 신고가 다시 오면 0번 섹션의 4단계(stop→build→start→curl 확인)부터 먼저 할 것.
+4. SNAP_MIN_COVERAGE 등 손그림 AI 다듬기 기준값은 전부 추정치다 — 실사용 신고가 더 오면 그 값들을 더 조정할 것.

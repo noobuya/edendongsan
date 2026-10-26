@@ -35,7 +35,7 @@ from app.services.rendering import (
     tint_fixture_png,
 )
 from app.services.scene_render import render_scene
-from app.services.ai_service import render_region
+from app.services.ai_service import _average_hex_color, render_region
 from app.services.segmentation import segment_surfaces
 from app.services.vision_client import analyze_room
 from app.services.rendering import film_color_delta
@@ -111,6 +111,7 @@ def run_pipeline(
     render_mode: str = "auto",
     auto_description: str = "",
     manual_regions: list[dict] | None = None,
+    item_swatch_paths: dict[str, str] | None = None,
 ) -> None:
     JOBS[job_id]["status"] = "processing"
     _stage(job_id, "현장 사진 준비 중")
@@ -170,8 +171,8 @@ def run_pipeline(
         # 전체 대기 시간을 둘 중 더 오래 걸리는 쪽 수준으로 줄인다.
         default_room_info = {"ceiling_width_m": 0.0, "ceiling_length_m": 0.0}
         room_info = default_room_info
-        scene_instructions = _build_scene_instructions(
-            selected_items, options, illustration_text, illustration_description
+        scene_instructions, scene_reference_images = _build_scene_instructions(
+            selected_items, options, illustration_text, illustration_description, item_swatch_paths
         )
         # 자동 모드에서 사장님이 말로 적어준 요구사항을 지시문 맨 뒤에 얹는다
         # (수동 모드는 영역별로 따로 렌더링하므로 이 경로를 쓰지 않는다).
@@ -200,7 +201,7 @@ def run_pipeline(
                 try:
                     scene_path = f"storage/results/{job_id}_scene.png"
                     with open(scene_path, "wb") as f:
-                        f.write(render_scene(current_path, scene_instructions))
+                        f.write(render_scene(current_path, scene_instructions, scene_reference_images))
                     current_path = scene_path
                     scene_rendered = True
                 except Exception as exc:
@@ -246,7 +247,9 @@ def run_pipeline(
             and options.film
             and _film_target_phrases(options.film)
         ):
-            current_path = _ensure_film_applied(job_id, current_path, masks, options)
+            current_path = _ensure_film_applied(
+                job_id, current_path, masks, options, (item_swatch_paths or {}).get("film")
+            )
         if (
             scene_rendered
             and not manual_regions
@@ -255,7 +258,9 @@ def run_pipeline(
             and options.wall_film
             and any(w.count > 0 for w in options.wall_film.walls)
         ):
-            current_path = _ensure_wall_film_applied(job_id, current_path, masks, options)
+            current_path = _ensure_wall_film_applied(
+                job_id, current_path, masks, options, (item_swatch_paths or {}).get("wall_film")
+            )
 
         if masks is not None:
             ceiling_mask_path = masks.get("ceiling_mask_path")
@@ -319,10 +324,11 @@ def run_pipeline(
                 # (이유는 rendering.recolor_surface의 주석 참고 — 인페인팅은
                 # 마스크 안 원본 픽셀을 버리고 새로 그리기 때문에 요청한 색이
                 # 반영되지 않고 결과가 원본과 거의 같게 나오는 문제가 있었다.)
-                recolor_surface(
+                _recolor_for_category(
                     current_path,
                     film_mask_path,
-                    pattern_meta["color_hex"],
+                    pattern_meta,
+                    (item_swatch_paths or {}).get("film"),
                     pattern_applied_path,
                     wood_grain=_is_wood(options.film.pattern_id),
                     grain_horizontal=options.film.grain_horizontal,
@@ -699,19 +705,27 @@ def _build_scene_instructions(
     options: JobOptions,
     illustration_text: str = "",
     illustration_description: str = "",
-) -> list[str]:
+    item_swatch_paths: dict[str, str] | None = None,
+) -> tuple[list[str], list[Image.Image]]:
     """선택한 시공 항목 전체를 Gemini 이미지 편집 모델에 줄 영어 지시문 목록으로 만든다.
 
     한 번의 호출로 필름/조명/실링팬/싱크볼을 모두 반영해야 결과가 서로 어긋나지 않고
-    "한 번에 리모델링을 마친 사진"처럼 일관되게 나온다."""
+    "한 번에 리모델링을 마친 사진"처럼 일관되게 나온다.
+
+    item_swatch_paths는 시공 항목(StepItems) 화면에서 카테고리별로 찍어 올린 실제
+    필름 견본 사진의 저장 경로다({"film": "...", ...} 형태, 없는 항목은 키가 없다).
+    견본 사진이 있는 항목은 카탈로그 색 이름 대신 _material_phrase가 그 사진을
+    참고 이미지로 가리키는 문구를 만들고, 그 사진 자체는 두 번째 반환값
+    (swatch_images)에 쌓인다 — 호출부가 render_scene에 원본 사진과 같은 순서로
+    첨부해야 문구의 "#N번째 참고 사진"이 실제로 맞아떨어진다."""
     instructions: list[str] = []
+    swatch_images: list[Image.Image] = []
+    swatches = item_swatch_paths or {}
 
     if "film" in selected_items and options.film:
-        # FAN_BLADE_COLOR_PROMPTS는 PATTERNS와 같은 색상 id를 쓰는 영어 색상 표현
-        # 사전이라 필름 색상 문구에도 그대로 재사용한다.
-        color_phrase = FAN_BLADE_COLOR_PROMPTS.get(options.film.pattern_id, "matte white")
         targets = _film_target_phrases(options.film)
         if targets:
+            material_phrase = _material_phrase(options.film.pattern_id, swatches.get("film"), swatch_images)
             grain_clause = ""
             if _is_wood(options.film.pattern_id):
                 # 마스크가 없는 이 전체 장면 경로에서는 결정론적 리컬러처럼 결 방향을
@@ -719,21 +733,23 @@ def _build_scene_instructions(
                 direction = "horizontally" if options.film.grain_horizontal else "vertically"
                 grain_clause = f" The wood grain must run {direction}."
             instructions.append(
-                f"Refinish the {', '.join(targets)} with a {color_phrase} interior film — "
+                f"Refinish the {', '.join(targets)} with {material_phrase} — "
                 "keep the existing door/panel shapes, handles and hinges exactly as they are, "
                 f"only the surface finish changes.{grain_clause}"
             )
 
     if "door_frame" in selected_items and options.door_frame:
-        door_color = FAN_BLADE_COLOR_PROMPTS.get(options.door_frame.pattern_id, "matte white")
         door_targets = []
         if any(d.count > 0 for d in options.door_frame.doors):
             door_targets.append("room door panels")
         if any(d.count > 0 for d in options.door_frame.doorframes):
             door_targets.append("door frames")
         if door_targets:
+            material_phrase = _material_phrase(
+                options.door_frame.pattern_id, swatches.get("door_frame"), swatch_images
+            )
             instructions.append(
-                f"Refinish the {' and '.join(door_targets)} with a {door_color} film — keep the door handles, "
+                f"Refinish the {' and '.join(door_targets)} with {material_phrase} — keep the door handles, "
                 "hinges, lock, peephole and the door's panel shape exactly as they are; only the surface finish changes."
             )
 
@@ -744,21 +760,21 @@ def _build_scene_instructions(
         # 아예 없어서 AI는 벽을 바꾸라는 말을 들어본 적이 없었다 — 그래서 결과
         # 사진의 벽은 AI가 다른 지시(문짝 등)를 따르다 생긴 부작용으로만 우연히
         # 달라졌을 뿐, 고객이 실제로 고른 색(예: 애시 그레이)과는 무관했다.
-        wall_color = FAN_BLADE_COLOR_PROMPTS.get(options.wall_film.pattern_id, "matte white")
+        material_phrase = _material_phrase(options.wall_film.pattern_id, swatches.get("wall_film"), swatch_images)
         grain_clause = ""
         if _is_wood(options.wall_film.pattern_id):
             grain_clause = " The wood grain must run vertically."
         instructions.append(
-            f"Refinish the wall surface with a {wall_color} interior film, evenly covering the "
+            f"Refinish the wall surface with {material_phrase}, evenly covering the "
             "entire visible wall from floor to ceiling — keep light switches, power outlets, "
             "corners, baseboards, and any window or door openings exactly as they are; only the "
             f"wall's surface finish changes.{grain_clause}"
         )
 
     if "sash" in selected_items and options.sash and any(f.count > 0 for f in options.sash.frames):
-        sash_color = FAN_BLADE_COLOR_PROMPTS.get(options.sash.pattern_id, "matte white")
+        material_phrase = _material_phrase(options.sash.pattern_id, swatches.get("sash"), swatch_images)
         instructions.append(
-            f"Refinish the window frames (sash) with a {sash_color} interior film — keep the "
+            f"Refinish the window frames (sash) with {material_phrase} — keep the "
             "window glass, handles and opening direction exactly as they are."
         )
 
@@ -796,20 +812,40 @@ def _build_scene_instructions(
             instructions.append(_illust_instruction("", ""))
 
     if "furniture" in selected_items and options.furniture:
-        color_phrase = FAN_BLADE_COLOR_PROMPTS.get(options.furniture.pattern_id, "matte white")
         targets = _furniture_target_phrases(options.furniture)
         # film과 달리 "아무것도 입력 안 하면 주방 캐비닛"류의 기본값을 두지 않는다.
         # 가구는 사진마다 뭐가 있는지 전혀 다른데, 엉뚱한 기본 대상으로 지시문을 보내면
         # (실제로 교회 의자 사진에 "싱크대 상하부장을 바꿔라"가 나간 사고의 원인이었다)
         # 사진과 무관한 곳이 시공된다. 개수를 하나도 입력하지 않았으면 지시문 자체를 넣지 않는다.
         if targets:
+            material_phrase = _material_phrase(
+                options.furniture.pattern_id, swatches.get("furniture"), swatch_images
+            )
             grain_clause = ""
             if _is_wood(options.furniture.pattern_id):
                 grain_clause = " Follow the natural wood grain direction along each piece."
             instructions.append(
-                f"Refinish the {', '.join(targets)} with a {color_phrase} interior film — "
+                f"Refinish the {', '.join(targets)} with {material_phrase} — "
                 "keep the exact shape, legs, frame structure and proportions of each piece "
                 f"exactly as they are, only the surface finish changes.{grain_clause}"
+            )
+
+    if "wardrobe" in selected_items and options.wardrobe:
+        # [옷장은 원래 이 함수에 branch가 없던 유일한 필름 계열 항목 — "장롱/옷장을
+        # 고르면 견본 사진 UI가 없다" 신고로 StepItems 쪽 UI를 고치면서 보니, 자동
+        # 모드에서는 옷장 색상(카탈로그든 견본 사진이든)이 AI 사진에 전혀 반영될
+        # 길이 없었다(여기 지시문 자체가 없어 Gemini가 옷장 이야기를 들어본 적이
+        # 없다) — film/door_frame/sash/furniture와 같은 방식으로 맞춘다.]
+        targets = _wardrobe_target_phrases(options.wardrobe)
+        if targets:
+            material_phrase = _material_phrase(options.wardrobe.pattern_id, swatches.get("wardrobe"), swatch_images)
+            grain_clause = ""
+            if _is_wood(options.wardrobe.pattern_id):
+                grain_clause = " The wood grain must run vertically."
+            instructions.append(
+                f"Refinish the {', '.join(targets)} with {material_phrase} — "
+                "keep the existing door handles, hinges and structural geometry exactly as they are, "
+                f"only the surface finish changes.{grain_clause}"
             )
 
     if "sink" in selected_items and options.sink:
@@ -821,7 +857,7 @@ def _build_scene_instructions(
             sink_phrase += f" {faucet}"
         instructions.append(f"{sink_phrase}, with a {drain}, installed flush in the countertop.")
 
-    return instructions
+    return instructions, swatch_images
 
 
 def _illust_instruction(text: str, description: str) -> str:
@@ -894,14 +930,33 @@ def _furniture_target_phrases(furniture) -> list[str]:
     return [phrase for count, phrase in mapping if count > 0]
 
 
+def _wardrobe_target_phrases(wardrobe) -> list[str]:
+    """옷장 견적 폼에서 실제로 수량을 입력한 부위(문짝/몸통)만 시공 대상으로
+    지시문에 넣는다 — film/furniture와 같은 원칙(입력 안 한 부위까지 AI가
+    임의로 바꾸지 않게)."""
+    targets = []
+    if any(d.count > 0 for d in wardrobe.doors):
+        targets.append("wardrobe doors")
+    if any(b.count > 0 for b in wardrobe.bodies):
+        targets.append("wardrobe body panels (side and top panels)")
+    return targets
+
+
 # 필름 대상 부위 평균 색이 목표 색과 이 거리(LAB) 이내면 AI 결과가 제대로 입혀진 것으로 본다.
 # 실측: 리컬러 결과는 약 8, AI 결과가 색을 못 바꾼 원본(베이지)은 약 100이었다. 중간쯤으로 잡았다.
 FILM_MATCH_MAX_DELTA = 30.0
 
 
-def _ensure_film_applied(job_id: str, image_path: str, masks: dict, options: JobOptions) -> str:
-    """AI가 그린 장면에서 필름 대상 부위가 목표 색으로 바뀌었는지 확인하고, 아니면 리컬러로 다시 칠한다."""
+def _ensure_film_applied(
+    job_id: str, image_path: str, masks: dict, options: JobOptions, swatch_path: str | None = None
+) -> str:
+    """AI가 그린 장면에서 필름 대상 부위가 목표 색으로 바뀌었는지 확인하고, 아니면 리컬러로 다시 칠한다.
+
+    swatch_path가 있으면(실제 필름 견본 사진을 찍어 올린 경우) 카탈로그 색 대신
+    그 사진의 평균색을 목표색으로 쓴다(_effective_color_hex) — 견본 사진과 색상 칩이
+    다르면 사진이 우선이라는 원칙을 검증·보정 단계에도 그대로 적용한다."""
     pattern_meta = PATTERNS.get(options.film.pattern_id, PATTERNS["matte-white"])
+    target_hex = _effective_color_hex(pattern_meta, swatch_path)
     # 문짝·문틀은 수량을 입력했을 때만 대상이다. 입력하지 않은 방문까지 칠하지 않도록 뺀다.
     doors_requested = any(i.count > 0 for i in options.film.doors + options.film.doorframes)
     candidates = [
@@ -915,16 +970,17 @@ def _ensure_film_applied(job_id: str, image_path: str, masks: dict, options: Job
 
     film_mask_path = f"storage/results/{job_id}_film_check_mask.png"
     combine_masks(film_mask_paths).save(film_mask_path)
-    delta = film_color_delta(image_path, film_mask_path, pattern_meta["color_hex"])
+    delta = film_color_delta(image_path, film_mask_path, target_hex)
     if delta is None or delta <= FILM_MATCH_MAX_DELTA:
         return image_path
 
     print(f"[pipeline] AI 장면의 필름 색이 목표와 {delta:.0f} 차이 — 리컬러로 보정")
     corrected_path = f"storage/results/{job_id}_film_corrected.png"
-    recolor_surface(
+    _recolor_for_category(
         image_path,
         film_mask_path,
-        pattern_meta["color_hex"],
+        pattern_meta,
+        swatch_path,
         corrected_path,
         wood_grain=_is_wood(options.film.pattern_id),
         grain_horizontal=options.film.grain_horizontal,
@@ -935,26 +991,32 @@ def _ensure_film_applied(job_id: str, image_path: str, masks: dict, options: Job
     return corrected_path
 
 
-def _ensure_wall_film_applied(job_id: str, image_path: str, masks: dict, options: JobOptions) -> str:
+def _ensure_wall_film_applied(
+    job_id: str, image_path: str, masks: dict, options: JobOptions, swatch_path: str | None = None
+) -> str:
     """_ensure_film_applied와 같은 목적, 벽 전용. film은 여러 개별 부위(문짝 등)
     마스크를 합쳐 검사하지만, 벽은 segment_surfaces가 needs_wall=True일 때 미리
     내놓는 단일 wall_mask_path 하나로 충분하다(위 run_pipeline의 needs_wall_ref
-    주석 참고 — 개별 부위 분류와는 별개 경로라 벽 전용 마스크가 항상 하나 나온다)."""
+    주석 참고 — 개별 부위 분류와는 별개 경로라 벽 전용 마스크가 항상 하나 나온다).
+
+    swatch_path는 _ensure_film_applied와 같은 뜻(견본 사진이 있으면 그 평균색이 우선)."""
     wall_mask_path = masks.get("wall_mask_path")
     if not wall_mask_path:
         return image_path
 
     pattern_meta = PATTERNS.get(options.wall_film.pattern_id, PATTERNS["matte-white"])
-    delta = film_color_delta(image_path, wall_mask_path, pattern_meta["color_hex"])
+    target_hex = _effective_color_hex(pattern_meta, swatch_path)
+    delta = film_color_delta(image_path, wall_mask_path, target_hex)
     if delta is None or delta <= FILM_MATCH_MAX_DELTA:
         return image_path
 
     print(f"[pipeline] AI 장면의 벽면 색이 목표와 {delta:.0f} 차이 — 리컬러로 보정")
     corrected_path = f"storage/results/{job_id}_wall_corrected.png"
-    recolor_surface(
+    _recolor_for_category(
         image_path,
         wall_mask_path,
-        pattern_meta["color_hex"],
+        pattern_meta,
+        swatch_path,
         corrected_path,
         wood_grain=_is_wood(options.wall_film.pattern_id),
     )
@@ -976,6 +1038,67 @@ def _is_wood(pattern_id: str) -> bool:
     if pattern is not None and "wood_grain" in pattern:
         return bool(pattern["wood_grain"])
     return "wood" in pattern_id
+
+
+def _effective_color_hex(pattern_meta: dict, swatch_path: str | None) -> str:
+    """이 항목에 실제 필름 견본 사진을 찍어 올렸으면 카탈로그 색 대신 그 사진의
+    평균색을 목표 색으로 쓴다 — 수동 모드 MaterialPicker의 "견본 사진이 있으면
+    색상 칩보다 우선한다"는 원칙을 시공 항목(StepItems) 쪼에도 똑같이 적용한다.
+    _ensure_film_applied/_ensure_wall_film_applied가 "AI 결과가 충분히 입혀졌는지"를
+    재는 목표색과, Gemini가 실패했을 때 쓰는 결정적 리컬러의 색이 둘 다 이 값을
+    따라가므로 어느 쪽이든 견본 사진과 어긋나지 않는다."""
+    if swatch_path:
+        with Image.open(swatch_path) as img:
+            return _average_hex_color(img.convert("RGB"))
+    return pattern_meta["color_hex"]
+
+
+def _recolor_for_category(
+    image_path: str,
+    mask_path: str,
+    pattern_meta: dict,
+    swatch_path: str | None,
+    output_path: str,
+    wood_grain: bool,
+    grain_horizontal: bool = True,
+) -> None:
+    """이 항목에 실제 견본 사진이 있으면 그 사진의 질감(색 얼룩·나뭇결 등)을
+    그대로 거울 타일링해 입히고(recolor_surface_with_swatch), 없으면 카탈로그
+    색 하나로 단색 리컬러한다(recolor_surface) — MaterialPicker(수동 모드)·
+    ai_service.render_region과 같은 "견본 사진이 있으면 색상 칩보다 현실감 있게
+    우선한다"는 원칙을 자동 모드의 리컬러 폴백에도 그대로 적용한다."""
+    if swatch_path:
+        from app.services.rendering import recolor_surface_with_swatch
+
+        with Image.open(swatch_path) as img:
+            recolor_surface_with_swatch(image_path, mask_path, img.convert("RGB"), output_path)
+        return
+    recolor_surface(
+        image_path,
+        mask_path,
+        pattern_meta["color_hex"],
+        output_path,
+        wood_grain=wood_grain,
+        grain_horizontal=grain_horizontal,
+    )
+
+
+def _material_phrase(pattern_id: str, swatch_path: str | None, swatch_images: list[Image.Image]) -> str:
+    """시공 지시문에 넣을 자재 문구. 견본 사진이 있으면 카탈로그 색 이름 대신
+    "몇 번째로 첨부한 참고 사진과 똑같이"로 가리킨다 — render_scene이 swatch_images를
+    같은 순서로 Gemini에 첨부해야 번호가 맞으므로, _build_scene_instructions
+    안에서 카테고리마다 같은 swatch_images 리스트를 넘겨 호출해야 한다(처음
+    첨부되는 사진이 #2다 — #1은 항상 원본 현장 사진이다)."""
+    if swatch_path:
+        swatch_images.append(Image.open(swatch_path).convert("RGB"))
+        n = 1 + len(swatch_images)
+        return (
+            f"the exact material shown in attached reference photo #{n} (a real film swatch "
+            "sample, not a room) — match its precise color, sheen and texture as closely as "
+            "possible; do not depict the swatch photo itself anywhere in the result"
+        )
+    color_phrase = FAN_BLADE_COLOR_PROMPTS.get(pattern_id, "matte white")
+    return f"a {color_phrase} interior film"
 
 
 def _fan_prompt(options: JobOptions) -> str:

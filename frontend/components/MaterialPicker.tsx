@@ -1,9 +1,17 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { Camera, Check, ChevronLeft, PenLine, RotateCcw, X } from "lucide-react";
+import { useState } from "react";
+import { Check, ChevronLeft, PenLine, X } from "lucide-react";
 import type { MappedRegion, WorkItemId } from "@/types";
-import { DOOR_MATERIAL_OPTIONS, MATERIAL_OPTIONS, REGION_COLORS, WORK_ITEM_GROUPS, WORK_ITEM_META } from "@/lib/workItems";
+import {
+  DOOR_MATERIAL_OPTIONS,
+  MATERIAL_OPTIONS,
+  REGION_COLORS,
+  WORK_ITEM_GROUPS,
+  WORK_ITEM_META,
+  taskTypeOf,
+} from "@/lib/workItems";
+import SwatchPhotoField from "@/components/ui/SwatchPhotoField";
 
 interface Props {
   regions: MappedRegion[];
@@ -34,18 +42,29 @@ interface PendingPick {
   swatchImageDataUrl?: string;
 }
 
-/** 사진 파일을 data URL로 읽는다 — 마스크(dataUrlToBlob)와 짝을 맞춰 전송 직전에
- *  Blob으로 바꾸기 쉽게 data URL 형태로 들고 있는다. */
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(new Error("사진을 읽지 못했습니다."));
-    reader.readAsDataURL(file);
-  });
+type MaterialOption = { id: string; label: string; colorHex?: string; brand?: string; code?: string };
+
+/** 실링팬·조명·싱크볼·양변기(object_creation)는 "없던 물건을 새로 만드는" 시공이라
+ *  견본 사진을 참고 이미지로 쓸 수 없다(ai_service.render_region이 이 task_type이면
+ *  reference_image를 무시한다). 그 항목에서 견본 사진 버튼을 보여주면 "찍어서
+ *  올렸는데 결과가 안 바뀐다"는 사고가 그대로 재현되므로, 이 항목들은 애초에
+ *  버튼 자체를 숨긴다. */
+function swatchEligibleFor(category: WorkItemId): boolean {
+  return taskTypeOf(category) !== "object_creation";
 }
 
-type MaterialOption = { id: string; label: string; colorHex?: string; brand?: string; code?: string };
+/** [도형 -> 자재 고르기 -> 규격 입력] 패턴 자체가 안 맞는 종목은 애초에 이 목록에서
+ *  뺀다. 일러스트는 사진 전체에 한 번 그려 넣는 항목이라(StepItems의
+ *  IllustrationForm에서 문구로 따로 받는다) 영역별 색상·견본을 고르는 개념이
+ *  없다 — MATERIAL_OPTIONS.illustration이 비어 있는 것도 그 때문이다. 원래는
+ *  "사장님 전용"이라 ItemPickerSheet·StepItems가 isOwner로 걸러내는데, 이
+ *  컴포넌트는 그 필터를 안 받아서 고객 기기에서도 그대로 보였고, 고르는 순간
+ *  beginPick이 빈 배열의 [0]을 읽어 바로 멈췄다. 자재가 하나도 없는 종목(지금은
+ *  일러스트뿐)을 통째로 빼서 두 문제를 한 번에 없앤다 — 역할이 다른 항목이니
+ *  "사장님만 보이게"가 아니라 "아무도 여기선 못 고르게"가 맞는 해결이다. */
+const DRAWABLE_WORK_ITEM_GROUPS = WORK_ITEM_GROUPS.filter((g) =>
+  g.children.every((item) => MATERIAL_OPTIONS[item].length > 0)
+);
 
 /** 자재 목록을 화면에 그릴 순서 그대로 "브랜드별 묶음"으로 나눈다 — brand가 없는
  *  기본 항목은 첫 묶음(이름표 없음)으로, 그 뒤로는 brand가 바뀔 때마다 새 묶음을
@@ -99,36 +118,25 @@ export default function MaterialPicker({
       pending.category === "door_frame"
         ? DOOR_MATERIAL_OPTIONS.find((d) => d.id === pending.doorMaterialOptionId)?.material ?? "wood"
         : undefined;
+    // 실링팬·조명·싱크볼처럼 "없던 물건을 새로 만드는" 항목은 견본 사진을
+    // 참고 이미지로 못 쓴다(ai_service.render_region이 object_creation이면
+    // 무시한다) — 혹시 남아 있어도 보내지 않아, 찍은 사진이 조용히 무시되는
+    // 일이 없게 한다(swatchEligibleFor 참고).
+    const swatchImageDataUrl = swatchEligibleFor(pending.category) ? pending.swatchImageDataUrl : undefined;
     onPickMaterial(
       pending.category,
       pending.option,
-      pending.swatchImageDataUrl ? "견본 사진 자재" : pending.optionLabel,
+      swatchImageDataUrl ? "견본 사진 자재" : pending.optionLabel,
       customDesign.trim(),
       doorMaterial,
-      pending.swatchImageDataUrl
+      swatchImageDataUrl
     );
     setPending(null);
     setOpenGroup(null);
     setCustomDesign("");
   }
 
-  const swatchInputRef = useRef<HTMLInputElement>(null);
-  const [swatchBusy, setSwatchBusy] = useState(false);
-
-  async function handleSwatchFile(file: File | null) {
-    if (!file || !pending) return;
-    setSwatchBusy(true);
-    try {
-      const dataUrl = await readFileAsDataUrl(file);
-      setPending({ ...pending, swatchImageDataUrl: dataUrl });
-    } catch {
-      // 못 읽으면 조용히 포기 — 사용자는 그냥 다시 누르거나 색상 칩을 쓰면 된다.
-    } finally {
-      setSwatchBusy(false);
-    }
-  }
-
-  const group = WORK_ITEM_GROUPS.find((g) => g.id === openGroup) ?? null;
+  const group = DRAWABLE_WORK_ITEM_GROUPS.find((g) => g.id === openGroup) ?? null;
 
   return (
     <div className="space-y-5">
@@ -172,106 +180,97 @@ export default function MaterialPicker({
                     색을 못 맞춘다. 가진 필름 견본을 그 자리에서 찍으면, 그 사진을
                     AI에게 "이 자재와 똑같이" 입히라는 참고 이미지로 그대로 넘긴다 —
                     카탈로그 이름보다 훨씬 사실적인 결과가 나온다. 견본이 없으면
-                    아래 색상 칩을 그대로 쓰면 된다(기존 방식 그대로 유지). */}
-                <div>
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                    실제 필름 견본 사진 (추천)
-                  </span>
-                  {pending.swatchImageDataUrl ? (
-                    <div className="mt-2 flex items-center gap-3 rounded-xl border border-indigo-200 bg-indigo-50/60 p-2">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={pending.swatchImageDataUrl}
-                        alt="견본 사진"
-                        className="h-14 w-14 shrink-0 rounded-lg object-cover"
-                      />
-                      <p className="flex-1 text-[12px] font-semibold leading-snug text-indigo-700">
-                        이 견본 사진 그대로 입혀요
-                      </p>
+                    아래 색상 칩을 그대로 쓰면 된다(기존 방식 그대로 유지).
+
+                    실링팬·조명·싱크볼·양변기(object_creation)는 없던 물건을 새로
+                    만드는 시공이라 견본 사진을 쓸 수 없어(swatchEligibleFor) 이
+                    버튼 자체를 숨긴다 — 찍어 올려도 결과가 안 바뀌는 것처럼 보이는
+                    사고를 막는다. */}
+                {swatchEligibleFor(pending.category) && (
+                  <div className="space-y-2">
+                    <SwatchPhotoField
+                      value={pending.swatchImageDataUrl}
+                      onChange={(swatchImageDataUrl) => setPending({ ...pending, swatchImageDataUrl })}
+                    />
+                    {/* [견본 사진을 찍었는데도 "밑에 있는 색"에 밀려 안 바뀌는 것
+                        처럼 보인다는 신고에 대한 대응]
+                        색상 칩은 이미 숨겼고 백엔드도 견본 사진을 항상 우선하지만,
+                        화면에 "적용"이라는 동작이 안 보이면 사진을 찍은 것만으로
+                        끝났다고 믿기 어렵다. 사진을 찍자마자 바로 이 자리에서
+                        누를 수 있는 전용 버튼을 둬서, 누르는 순간 이 사진이 최종
+                        자재로 확정(applyPick)되는 걸 분명히 보여준다 — 아래로
+                        내려가 추가 요청사항을 적고 싶으면 이 버튼 없이 맨 아래
+                        [적용하기]를 눌러도 결과는 똑같다. */}
+                    {pending.swatchImageDataUrl && (
                       <button
                         type="button"
-                        onClick={() => setPending({ ...pending, swatchImageDataUrl: undefined })}
-                        aria-label="견본 사진 다시 찍기"
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-indigo-600 shadow-sm transition-transform active:scale-90"
+                        onClick={applyPick}
+                        className="flex h-12 w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-600 text-[13px] font-semibold text-white shadow-[0_6px_20px_rgba(5,150,105,0.35)] transition-transform active:scale-[0.98]"
                       >
-                        <RotateCcw className="h-4 w-4" />
+                        <Check className="h-4 w-4" />
+                        견본사진 적용
                       </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={swatchBusy}
-                      onClick={() => swatchInputRef.current?.click()}
-                      className="mt-2 flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-indigo-300 bg-indigo-50/40 text-[12px] font-semibold text-indigo-600 transition-transform active:scale-[0.98] disabled:opacity-50"
-                    >
-                      <Camera className="h-4 w-4" />
-                      {swatchBusy ? "불러오는 중..." : "견본 사진 찍기 · 올리기"}
-                    </button>
-                  )}
-                  <input
-                    ref={swatchInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
-                    onChange={(e) => {
-                      void handleSwatchFile(e.target.files?.[0] ?? null);
-                      e.target.value = "";
-                    }}
-                  />
-                </div>
+                    )}
+                  </div>
+                )}
 
-                <div className={`space-y-3 ${pending.swatchImageDataUrl ? "opacity-50" : ""}`}>
-                  {/* 실제 제조사 브랜드가 있는 옵션(현대보닥 등)은 묶어서 이름표를 단다 —
-                      "기본 색상"은 일반명뿐이라 이름표 없이 바로 보여주고, 그 뒤로
-                      브랜드가 바뀔 때마다 "현대보닥(BODAQ)"처럼 새 이름표가 붙는다.
-                      화면에서 고른 게 실제 어느 제품인지(코드까지) 그대로 보여야
-                      현장에서 자재 발주서에 옮길 수 있다.
-                      견본 사진을 찍었으면 이 칩들은 "견본이 없을 때의 대안"이라
-                      흐리게 둔다 — 적용 시 견본 사진이 우선한다(applyPick 참고). */}
-                  <span className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                    또는 색상 칩에서 고르기 (견본 사진이 없을 때)
-                  </span>
-                  {groupMaterialsByBrand(MATERIAL_OPTIONS[pending.category]).map((group, idx) => (
-                    <div key={group.label ?? `basic-${idx}`}>
-                      <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                        {group.label ?? "색상 · 자재"}
-                      </span>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {group.items.map((opt) => {
-                          const active = opt.id === pending.option;
-                          return (
-                            <button
-                              key={opt.id}
-                              type="button"
-                              onClick={() =>
-                                setPending({ ...pending, option: opt.id, optionLabel: opt.label })
-                              }
-                              className={`flex items-center gap-1.5 rounded-full border py-2 pl-2 pr-3.5 text-[12px] transition-all active:scale-95 ${
-                                active
-                                  ? "border-indigo-600 bg-indigo-600 font-semibold text-white shadow-[0_4px_14px_rgba(79,70,229,0.35)]"
-                                  : "border-slate-900/10 bg-white/80 font-medium text-slate-700"
-                              }`}
-                            >
-                              <span
-                                className={`h-4 w-4 shrink-0 rounded-full border ${
-                                  active ? "border-white/60" : "border-black/10"
+                {/* [견본 사진을 찍었으면 색상 칩은 보여주지 않는다]
+                    전에는 칩을 흐리게("견본이 없을 때의 대안") 남겨뒀는데, 그래도
+                    눌리는 칩이 화면에 보이면 "이것도 골라야 하나" 헷갈려했다
+                    ("견본품 찍었는데 매트 화이트 적용하기가 나온다" 문의). 견본
+                    사진이 있으면 이 블록 전체를 숨긴다 — 적용 버튼도 더는 카탈로그
+                    색 이름을 보여주지 않는다(아래 적용하기 버튼 참고). */}
+                {!pending.swatchImageDataUrl && (
+                  <div className="space-y-3">
+                    {/* 실제 제조사 브랜드가 있는 옵션(현대보닥 등)은 묶어서 이름표를 단다 —
+                        "기본 색상"은 일반명뿐이라 이름표 없이 바로 보여주고, 그 뒤로
+                        브랜드가 바뀔 때마다 "현대보닥(BODAQ)"처럼 새 이름표가 붙는다.
+                        화면에서 고른 게 실제 어느 제품인지(코드까지) 그대로 보여야
+                        현장에서 자재 발주서에 옮길 수 있다. */}
+                    <span className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                      {swatchEligibleFor(pending.category) ? "또는 색상 칩에서 고르기" : "색상 · 스타일 고르기"}
+                    </span>
+                    {groupMaterialsByBrand(MATERIAL_OPTIONS[pending.category]).map((group, idx) => (
+                      <div key={group.label ?? `basic-${idx}`}>
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                          {group.label ?? "색상 · 자재"}
+                        </span>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {group.items.map((opt) => {
+                            const active = opt.id === pending.option;
+                            return (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                onClick={() =>
+                                  setPending({ ...pending, option: opt.id, optionLabel: opt.label })
+                                }
+                                className={`flex items-center gap-1.5 rounded-full border py-2 pl-2 pr-3.5 text-[12px] transition-all active:scale-95 ${
+                                  active
+                                    ? "border-indigo-600 bg-indigo-600 font-semibold text-white shadow-[0_4px_14px_rgba(79,70,229,0.35)]"
+                                    : "border-slate-900/10 bg-white/80 font-medium text-slate-700"
                                 }`}
-                                style={{ backgroundColor: opt.colorHex ?? "#cbd5e1" }}
-                              />
-                              {opt.label}
-                              {opt.code && (
-                                <span className={active ? "font-normal text-indigo-100" : "font-normal text-slate-400"}>
-                                  {opt.code}
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
+                              >
+                                <span
+                                  className={`h-4 w-4 shrink-0 rounded-full border ${
+                                    active ? "border-white/60" : "border-black/10"
+                                  }`}
+                                  style={{ backgroundColor: opt.colorHex ?? "#cbd5e1" }}
+                                />
+                                {opt.label}
+                                {opt.code && (
+                                  <span className={active ? "font-normal text-indigo-100" : "font-normal text-slate-400"}>
+                                    {opt.code}
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* 문짝/문틀에서만 — 나무 문(방문)인지, 페인트칠한 스틸 문(현관문·방화문)인지.
                     AI 편집 지시문이 문 재질에 맞는 문장을 쓰도록 갈라 준다(스틸 문에는
@@ -331,7 +330,11 @@ export default function MaterialPicker({
                     className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2.5 text-[12px] font-semibold text-white shadow-[0_6px_20px_rgba(79,70,229,0.35)] transition-transform active:scale-[0.98]"
                   >
                     <Check className="h-3.5 w-3.5" />
-                    {pending.optionLabel} 적용하기
+                    {/* 견본 사진이 있으면 카탈로그 색 이름(예: "매트 화이트")을 보여주지
+                        않는다 — 실제로 적용되는 건 그 사진이라, 남아 있던 기본 색상
+                        이름이 그대로 뜨면 "사진을 찍었는데 왜 매트 화이트가 나오냐"는
+                        혼란을 준다. */}
+                    {pending.swatchImageDataUrl ? "이 견본 사진으로 적용하기" : `${pending.optionLabel} 적용하기`}
                   </button>
                 </div>
               </div>
@@ -368,7 +371,7 @@ export default function MaterialPicker({
             ) : (
               /* 1뎁스: 큰 종목 고르기 */
               <div className="mt-3 grid grid-cols-2 gap-2">
-                {WORK_ITEM_GROUPS.map((g) => {
+                {DRAWABLE_WORK_ITEM_GROUPS.map((g) => {
                   const Icon = g.icon;
                   const single = g.children.length === 1 ? g.children[0] : null;
                   return (

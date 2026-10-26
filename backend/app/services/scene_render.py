@@ -72,8 +72,15 @@ BASE_INSTRUCTION = (
 )
 
 
-def render_scene(image_path: str, work_instructions: list[str]) -> bytes:
-    """원본 사진 + 시공 지시문으로 "시공 후" 이미지를 생성해 PNG/JPEG 바이트로 돌려준다."""
+def render_scene(
+    image_path: str, work_instructions: list[str], reference_images: list[Image.Image] | None = None
+) -> bytes:
+    """원본 사진 + 시공 지시문으로 "시공 후" 이미지를 생성해 PNG/JPEG 바이트로 돌려준다.
+
+    reference_images가 있으면(시공 항목 화면에서 찍어 올린 실제 필름 견본 사진)
+    원본 사진 뒤에 같은 순서로 이어 붙여 함께 보낸다 — work_instructions의 문구가
+    "attached reference photo #2"처럼 이 사진들을 가리키므로(pipeline._material_phrase
+    참고), 여기서 붙이는 순서가 그 번호와 반드시 일치해야 한다."""
     settings = get_settings()
     if not settings.gemini_api_key:
         raise RuntimeError("Gemini API 키가 설정되어 있지 않습니다.")
@@ -83,6 +90,7 @@ def render_scene(image_path: str, work_instructions: list[str]) -> bytes:
     prompt = BASE_INSTRUCTION + "\n".join(f"- {line}" for line in work_instructions)
     client = genai.Client(api_key=settings.gemini_api_key)
     source = Image.open(image_path)
+    contents = [prompt, source, *(reference_images or [])]
 
     last_error: Exception | None = None
     for model in IMAGE_MODELS:
@@ -91,7 +99,7 @@ def render_scene(image_path: str, work_instructions: list[str]) -> bytes:
                 client.models.generate_content,
                 SCENE_TIMEOUT_S,
                 model=model,
-                contents=[prompt, source],
+                contents=contents,
                 max_retries=SCENE_MAX_RETRIES,
                 retry_wait_s=SCENE_RETRY_WAIT_S,
                 retry_on_timeout=True,
