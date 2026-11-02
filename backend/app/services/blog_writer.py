@@ -149,13 +149,25 @@ def generate_blog_post(quote: dict) -> dict:
 
     prompt = PROMPT_TEMPLATE.format(
         customer_name=quote.get("customer_name") or "고객님",
-        item_names=", ".join(item_names) or "인테리어 시공",
+        item_names=", ".join(item_names) or (quote.get("blog_memo") or "").strip() or "인테리어 필름 시공",
         material_names=material_names,
         service_area=BUSINESS_SERVICE_AREA,
         service_area_short=BUSINESS_SERVICE_AREA_SHORT,
         standard_process=STANDARD_PROCESS_NOTE,
         business_name=BUSINESS_NAME,
     )
+
+    # 사진·제목만으로 만드는 블로그(routers/blog_compose.py): 사장님이 정한 제목은 바꾸지
+    # 않고, 한 줄 메모(시공 내용)는 견적 내역 대신 사실 근거로 쓴다.
+    title_override = (quote.get("blog_title") or "").strip()
+    memo = (quote.get("blog_memo") or "").strip()
+    if memo:
+        prompt += f"\n- 사장님이 적은 시공 메모(사실로 취급해 본문에 반영할 것): {memo}"
+    if title_override:
+        prompt += (
+            f"\n- 제목은 사장님이 정한 '{title_override}'를 그대로 쓴다(제목 줄에 이 문장을 그대로 적고, "
+            "본문은 이 제목에 어울리게 새로 쓴다)."
+        )
 
     client = genai.Client(api_key=settings.gemini_api_key)
     try:
@@ -178,7 +190,7 @@ def generate_blog_post(quote: dict) -> dict:
         raise
 
     sections = _parse_sections(response.text)
-    title = sections[TITLE_MARKER] or "시공 후기"
+    title = title_override or sections[TITLE_MARKER] or "시공 후기"
     content = _assemble_content(sections)
     hashtags = _parse_hashtags(sections[HASHTAG_MARKER])
     return {

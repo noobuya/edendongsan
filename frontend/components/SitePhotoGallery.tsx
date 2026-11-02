@@ -282,6 +282,7 @@ export default function SitePhotoGallery({
                   ...blogPost,
                   coverUrl: photos.find((p) => p.stage === "after")?.url,
                   photos,
+                  jobId,
                 }}
               />
             )}

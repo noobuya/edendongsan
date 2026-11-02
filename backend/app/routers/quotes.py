@@ -50,7 +50,9 @@ def _to_static_url(storage_path: str) -> str:
 
 @router.get("", response_model=QuoteListResponse)
 async def get_quotes(q: str = ""):
-    quotes = list_quotes()
+    # 견적 없이 사진만으로 만든 블로그 글(kind="blog_only", routers/blog_compose.py)은
+    # 견적이 아니므로 견적 목록·불러오기에 섞지 않는다.
+    quotes = [quote for quote in list_quotes() if quote.get("kind") != "blog_only"]
     needle = q.strip().lower()
     summaries = [
         QuoteSummary(

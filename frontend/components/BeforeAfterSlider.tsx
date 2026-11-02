@@ -24,6 +24,9 @@ export default function BeforeAfterSlider({ beforeSrc, afterSrc, className = "",
   const [beforeUrl, setBeforeUrl] = useState<string | null>(null);
   const [afterUrl, setAfterUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  // bigLabels(블로그)일 때는 사진을 자르지 않고 원래 비율 그대로 보여 준다 — 시공 후
+  // 사진의 가로:세로 비율로 상자를 잡는다("시공 전후 글자가 잘렸다", 2026-11-03).
+  const [ratio, setRatio] = useState<number | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -44,6 +47,11 @@ export default function BeforeAfterSlider({ beforeSrc, afterSrc, className = "",
         createdAfter = a;
         setBeforeUrl(b);
         setAfterUrl(a);
+        const probe = new Image();
+        probe.onload = () => {
+          if (active && probe.naturalWidth > 0) setRatio(probe.naturalWidth / probe.naturalHeight);
+        };
+        probe.src = a;
       })
       .catch(() => {
         if (active) setFailed(true);
@@ -68,11 +76,16 @@ export default function BeforeAfterSlider({ beforeSrc, afterSrc, className = "",
     return <div className={`animate-pulse bg-slate-100 ${className}`} />;
   }
 
+  const natural = bigLabels && ratio !== null;
+  const fit = natural ? { objectFit: "contain" as const, backgroundColor: "#0f172a" } : undefined;
   return (
-    <div className={`relative overflow-hidden ${className}`}>
+    <div
+      className={`relative overflow-hidden ${natural ? "bg-slate-900" : ""} ${className}`}
+      style={natural ? { aspectRatio: String(ratio) } : undefined}
+    >
       <ReactCompareSlider
-        itemOne={<ReactCompareSliderImage src={beforeUrl} alt="시공 전" />}
-        itemTwo={<ReactCompareSliderImage src={afterUrl} alt="시공 후" />}
+        itemOne={<ReactCompareSliderImage src={beforeUrl} alt="시공 전" style={fit} />}
+        itemTwo={<ReactCompareSliderImage src={afterUrl} alt="시공 후" style={fit} />}
         style={{ width: "100%", height: "100%" }}
       />
       {bigLabels ? (

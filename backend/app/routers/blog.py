@@ -4,9 +4,12 @@ app/routers/quotes.py가 사장님(내부) 쪽 견적 관리/생성 API라면, �
 import os
 
 from fastapi import APIRouter, HTTPException
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import FileResponse
 
 from app.quotes_store import list_quotes, load_quote
 from app.schemas import BlogDetailResponse, BlogListResponse, BlogSummary, WorkPhoto
+from app.services.blog_video import make_compare_gif
 
 router = APIRouter(prefix="/api/blog", tags=["blog"])
 
@@ -70,4 +73,29 @@ async def get_blog_detail(job_id: str):
             if os.path.exists(f"storage/results/{job_id}_blog_video.mp4")
             else None
         ),
+        video_status=quote.get("video_status"),
     )
+
+
+@router.get("/{job_id}/compare/{index}")
+async def get_compare_gif(job_id: str, index: int):
+    """index번째 시공 전/후 짝의 "밀어 보기" 움짤(GIF) — 네이버 블로그에는 손으로 끄는
+    슬라이더를 넣을 수 없어서, 선이 저절로 오가는 GIF로 대신 올린다
+    (services/blog_video.make_compare_gif). 짝 규칙은 프론트 lib/blogBlocks.ts와 같다
+    (시공 전 i번째 ↔ 시공 후 i번째). 사진 id로 캐시해, 사진이 바뀌면 새로 만든다."""
+    quote = load_quote(job_id)
+    if quote is None or not quote.get("blog_post"):
+        raise HTTPException(status_code=404, detail="블로그 글을 찾을 수 없습니다.")
+    photos = quote.get("work_photos", [])
+    before = [p for p in photos if p.get("stage") == "before"]
+    after = [p for p in photos if p.get("stage") == "after"]
+    if index < 0 or index >= min(len(before), len(after)):
+        raise HTTPException(status_code=404, detail="비교할 시공 전/후 사진이 없습니다.")
+    b, a = before[index], after[index]
+    out = f"storage/results/{job_id}_compare_{b['id']}_{a['id']}.gif"
+    if not os.path.exists(out):
+        to_path = lambda url: "storage/" + url.split("/static/", 1)[1]  # noqa: E731
+        tmp = out.replace(".gif", ".tmp.gif")
+        await run_in_threadpool(make_compare_gif, to_path(b["url"]), to_path(a["url"]), tmp)
+        os.replace(tmp, out)
+    return FileResponse(out, media_type="image/gif")

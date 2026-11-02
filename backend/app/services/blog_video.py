@@ -47,9 +47,24 @@ def _static_to_path(url: str) -> str:
     return "storage/" + url.split("/static/", 1)[1] if "/static/" in url else url
 
 
+# 사진 본체가 화면에서 차지하는 최대 비율 — 천천히 다가가는 확대(ZOOM)가 가장자리를
+# 잘라도 사진 모서리(현장 사진 왼쪽 아래의 "대한인테리어필름 · 시공 전/후" 표시)가
+# 화면 밖으로 나가지 않을 만큼 여백을 둔다.
+FIT_MARGIN = 0.9
+
+
 def _cover(img: Image.Image, scale: float = ZOOM) -> Image.Image:
-    """출력 화면을 꽉 채우도록(남는 쪽은 잘라) 맞추되, 확대 여유분(scale)만큼 크게 만든다."""
-    return ImageOps.fit(img.convert("RGB"), (int(W * scale), int(H * scale)), Image.LANCZOS)
+    """[2026-11-03 "시공 전후 글자가 잘렸다"] 예전엔 사진을 4:5 화면에 꽉 채우려고
+    가운데만 잘라 써서, 가로 사진은 양옆이 통째로 날아가며 왼쪽 아래 시공 표시가
+    잘렸다. 지금은 사진 전체를 화면 안에 넣고(자르지 않음), 남는 여백은 같은 사진을
+    흐리고 어둡게 깔아 채운다. 확대 여유분(scale)만큼 크게 만든다."""
+    rgb = img.convert("RGB")
+    size = (int(W * scale), int(H * scale))
+    bg = ImageOps.fit(rgb, size, Image.LANCZOS).filter(ImageFilter.GaussianBlur(28))
+    bg = Image.eval(bg, lambda v: int(v * 0.45))
+    fg = ImageOps.contain(rgb, (int(size[0] * FIT_MARGIN), int(size[1] * FIT_MARGIN)), Image.LANCZOS)
+    bg.paste(fg, ((size[0] - fg.width) // 2, (size[1] - fg.height) // 2))
+    return bg
 
 
 def _zoom_frame(big: Image.Image, t: float) -> Image.Image:
@@ -171,7 +186,8 @@ def make_blog_video(quote: dict, out_path: str) -> str:
 
         # 3) 추가 시공 사진
         if extras:
-            more = _text_layer([("시공 완료 현장", 70, "#ffffff")], H - 170, band=True)
+            # 글자띠는 위쪽에 — 아래쪽엔 현장 사진의 시공 표시가 있어 가리면 안 된다.
+            more = _text_layer([("시공 완료 현장", 70, "#ffffff")], 130, band=True)
             for img in extras:
                 big = _cover(img)
                 n = int(FPS * 1.7)
@@ -197,4 +213,100 @@ def make_blog_video(quote: dict, out_path: str) -> str:
         code = proc.wait()
     if code != 0 or not Path(out_path).exists():
         raise RuntimeError("영상 인코딩에 실패했습니다.")
+    return out_path
+
+
+def transcode_uploaded_video(src_path: str, out_path: str) -> str:
+    """사장님이 올린 영상(휴대폰 .mov/HEVC 등)을 어느 브라우저·네이버에서나 재생되는
+    H.264 MP4로 바꾼다. 긴 변은 1280px로 줄여 용량을 낮추고, 소리는 그대로 둔다
+    (사장님이 직접 찍은 현장 영상이라 저작권 문제가 없다)."""
+    scale = "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(1280,ih))'"
+    result = subprocess.run(
+        [
+            imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error", "-i", src_path,
+            "-vf", scale, "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", out_path,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    if result.returncode != 0 or not Path(out_path).exists():
+        raise RuntimeError(f"영상 변환에 실패했습니다: {result.stderr[-300:]}")
+    return out_path
+
+
+# ── 시공 전/후 "밀어 보기" 움짤(GIF) ───────────────────────────────────────────
+# [2026-11-03 "가운데 선을 좌우로 밀어서 보는 건 네이버에 안 들어간다"]
+# 앱 블로그의 비교 슬라이더는 손으로 끄는 웹 기능이라 네이버 블로그(스크립트 금지)에는
+# 넣을 수 없다. 대신 선이 저절로 좌우로 오가며 시공 전→후를 보여 주는 GIF를 만든다 —
+# 네이버는 GIF를 움직이는 사진으로 그대로 보여 준다. 용량을 줄이려고 가로 640px,
+# 공통 팔레트 하나로 만든다.
+GIF_WIDTH = 640
+GIF_FPS = 15
+
+
+def make_compare_gif(before_path: str, after_path: str, out_path: str) -> str:
+    after = ImageOps.exif_transpose(Image.open(after_path)).convert("RGB")
+    before = ImageOps.exif_transpose(Image.open(before_path)).convert("RGB")
+    w = GIF_WIDTH
+    h = max(1, round(after.height * w / after.width))
+    h = min(h, round(w * 1.4))  # 아주 긴 세로 사진은 너무 커지지 않게
+    box = (w, h)
+
+    def fit(img: Image.Image) -> Image.Image:
+        canvas = Image.new("RGB", box, (15, 23, 42))
+        inner = ImageOps.contain(img, box, Image.LANCZOS)
+        canvas.paste(inner, ((w - inner.width) // 2, (h - inner.height) // 2))
+        return canvas
+
+    b, a = fit(before), fit(after)
+    font = _font(max(18, w // 22))
+
+    def label(draw: ImageDraw.ImageDraw, text: str, x: int, fill: tuple, ink: tuple) -> None:
+        tw = draw.textlength(text, font=font)
+        pad = 8
+        bx = x if x >= 0 else w + x - int(tw) - pad * 2
+        draw.rounded_rectangle((bx, 10, bx + tw + pad * 2, 10 + font.size + pad * 1.6), radius=8, fill=fill)
+        draw.text((bx + pad, 10 + pad * 0.6), text, font=font, fill=ink)
+
+    # 선 위치(0~1): 오른쪽 끝에서 잠깐 멈춤(화면 대부분이 시공 전) → 왼쪽으로 쓸며 시공 후가
+    # 드러남 → 멈춤 → 되돌아감
+    positions: list[float] = []
+    hold = int(GIF_FPS * 0.6)
+    move = int(GIF_FPS * 1.4)
+    positions += [0.92] * hold
+    positions += [0.92 - 0.84 * (0.5 - 0.5 * np.cos(np.pi * i / move)) for i in range(1, move + 1)]
+    positions += [0.08] * hold
+    positions += [0.08 + 0.84 * (0.5 - 0.5 * np.cos(np.pi * i / move)) for i in range(1, move + 1)]
+
+    palette_src = Image.new("RGB", (w * 2, h))
+    palette_src.paste(b, (0, 0))
+    palette_src.paste(a, (w, 0))
+    palette = palette_src.quantize(colors=255, method=Image.Quantize.MEDIANCUT)
+
+    frames = []
+    for pos in positions:
+        x = int(w * pos)
+        frame = b.copy()  # 앱 슬라이더와 같게: 선 왼쪽은 시공 전, 오른쪽은 시공 후
+        frame.paste(a.crop((x, 0, w, h)), (x, 0))
+        d = ImageDraw.Draw(frame)
+        d.rectangle((x - 2, 0, x + 2, h), fill=(255, 255, 255))
+        r = max(14, w // 28)
+        d.ellipse((x - r, h // 2 - r, x + r, h // 2 + r), fill=(255, 255, 255), outline=(15, 23, 42), width=2)
+        d.polygon([(x - r // 2, h // 2), (x - 3, h // 2 - r // 2), (x - 3, h // 2 + r // 2)], fill=(15, 23, 42))
+        d.polygon([(x + r // 2, h // 2), (x + 3, h // 2 - r // 2), (x + 3, h // 2 + r // 2)], fill=(15, 23, 42))
+        label(d, "BEFORE 시공 전", 10, (0, 0, 0), (255, 255, 255))
+        label(d, "AFTER 시공 후", -10, (251, 191, 36), (15, 23, 42))
+        frames.append(frame.quantize(palette=palette, dither=Image.Dither.NONE))
+
+    frames[0].save(
+        out_path,
+        save_all=True,
+        append_images=frames[1:],
+        duration=int(1000 / GIF_FPS),
+        loop=0,
+        optimize=True,
+        disposal=1,
+    )
     return out_path

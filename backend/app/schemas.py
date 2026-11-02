@@ -572,6 +572,8 @@ class BlogDetailResponse(BaseModel):
     hashtags: list[str] = Field(default_factory=list)
     # 홍보 영상을 만들어 둔 경우에만 값이 있다(POST /api/quotes/{id}/blog/video).
     video_url: Optional[str] = None
+    # 사진·제목으로 만든 블로그의 영상 준비 상태: processing / failed (준비되면 video_url)
+    video_status: Optional[str] = None
 
 
 # ── AI 제안서(고객 발송용 상세페이지) ──────────────────────────────────

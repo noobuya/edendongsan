@@ -586,6 +586,48 @@ export async function createBlogVideo(jobId: string, ownerToken: string): Promis
   return data.video_url as string;
 }
 
+export interface ComposeBlogParams {
+  title: string;
+  memo: string;
+  siteName: string;
+  stamp: boolean;
+  makeVideo: boolean;
+  before: Blob[];
+  progress: Blob[];
+  after: Blob[];
+  video?: File | null;
+}
+
+/** 견적 없이 사진·영상·제목만으로 블로그 글을 만든다(백엔드 routers/blog_compose.py).
+ *  AI가 글을 쓰는 동안 30~90초 걸리고, 영상은 그 뒤 서버에서 따로 준비된다. */
+export async function composeBlog(
+  params: ComposeBlogParams,
+  ownerToken: string
+): Promise<{ job_id: string; warning?: string }> {
+  const form = new FormData();
+  form.append("title", params.title);
+  form.append("memo", params.memo);
+  form.append("site_name", params.siteName);
+  form.append("stamp", String(params.stamp));
+  form.append("make_video", String(params.makeVideo));
+  params.before.forEach((b, i) => form.append("before", b, `before_${i + 1}.jpg`));
+  params.progress.forEach((b, i) => form.append("progress", b, `progress_${i + 1}.jpg`));
+  params.after.forEach((b, i) => form.append("after", b, `after_${i + 1}.jpg`));
+  if (params.video) form.append("video", params.video, params.video.name);
+  const res = await apiFetch(`${API_BASE}/api/blog/compose`, {
+    method: "POST",
+    headers: ownerHeaders(ownerToken),
+    body: form,
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "블로그를 만들지 못했습니다."));
+  return res.json();
+}
+
+/** i번째 시공 전/후 짝의 "밀어 보기" 움짤(GIF) 주소 — 네이버에 슬라이더 대신 올린다. */
+export function compareGifUrl(jobId: string, index: number): string {
+  return `${API_BASE}/api/blog/${jobId}/compare/${index}`;
+}
+
 export async function getBlogDetail(jobId: string): Promise<BlogDetail> {
   const res = await apiFetch(`${API_BASE}/api/blog/${jobId}`);
   if (!res.ok) throw new Error(await extractErrorMessage(res, "블로그 글을 찾을 수 없습니다."));

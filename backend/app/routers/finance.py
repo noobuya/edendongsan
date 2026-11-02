@@ -63,7 +63,7 @@ def _revenue_and_material(month_start: datetime) -> tuple[int, int]:
     revenue = 0
     material = 0
     for quote in list_quotes():
-        if quote.get("status") != "done":
+        if quote.get("status") != "done" or quote.get("kind") == "blog_only":
             continue
         if _quote_month_key(quote) != key:
             continue
@@ -94,7 +94,11 @@ def _labor_cost(month_start: datetime, month_end: datetime) -> int:
 def _outstanding_count() -> int:
     count = 0
     for quote in list_quotes():
-        if quote.get("status") == "done" and (quote.get("payment_status") or "pending") != "balance_paid":
+        if (
+            quote.get("status") == "done"
+            and quote.get("kind") != "blog_only"
+            and (quote.get("payment_status") or "pending") != "balance_paid"
+        ):
             count += 1
     return count
 

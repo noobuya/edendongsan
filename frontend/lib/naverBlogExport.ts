@@ -1,4 +1,4 @@
-import { fetchAssetObjectUrl, resolveAssetUrl } from "@/lib/api";
+import { compareGifUrl, fetchAssetObjectUrl, resolveAssetUrl } from "@/lib/api";
 import { pairsAfterSection, parseBlogSections, planBlogPhotos } from "@/lib/blogBlocks";
 import { splitBoldSegments } from "@/lib/richText";
 import type { WorkPhoto } from "@/types";
@@ -15,6 +15,8 @@ export interface NaverExportPost {
   photos: WorkPhoto[];
   /** 홍보 영상(MP4)을 만들어 뒀으면 그 주소 — 순서표에 "영상 저장" 단계가 생긴다. */
   videoUrl?: string | null;
+  /** 블로그 글(견적) id — 있으면 비교 사진마다 "움짤(GIF) 저장"을 붙인다. */
+  jobId?: string;
 }
 
 // 네이버 블로그 본문 폭이 최대 약 900px이라 그 이상은 용량만 커진다. 한 장에
@@ -239,7 +241,7 @@ export async function saveAllPhotos(
 export type NaverStep =
   | { kind: "text"; label: string; html: string; plain: string }
   | { kind: "photo"; label: string; url: string }
-  | { kind: "pair"; label: string; before: string; after: string }
+  | { kind: "pair"; label: string; before: string; after: string; gifUrl?: string }
   | { kind: "video"; label: string; url: string };
 
 /** 단계의 사진 캐시 키 — 패널이 미리 만들어 두는 PNG를 찾을 때 쓴다. */
@@ -282,7 +284,13 @@ export function buildNaverSteps(post: NaverExportPost): NaverStep[] {
       if (post.videoUrl) steps.push({ kind: "video", label: "시공 영상 (네이버 [동영상] 버튼으로 올리기)", url: post.videoUrl });
     }
     for (const k of pairsAfterSection(i, sections.length, pairs.length)) {
-      steps.push({ kind: "pair", label: `시공 전·후 비교 사진 ${k + 1}`, before: pairs[k].before.url, after: pairs[k].after.url });
+      steps.push({
+        kind: "pair",
+        label: `시공 전·후 비교 사진 ${k + 1}`,
+        before: pairs[k].before.url,
+        after: pairs[k].after.url,
+        gifUrl: post.jobId ? compareGifUrl(post.jobId, k) : undefined,
+      });
     }
   });
   rest.forEach((photo, i) => {
@@ -409,4 +417,20 @@ export async function copyNaverStep(step: NaverStep, png?: Blob | Promise<Blob>)
     throw new Error("이 브라우저는 사진 복사를 지원하지 않아요. '사진 전체 저장' 후 끌어다 놓아 주세요.");
   }
   await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+}
+
+
+/** 비교 움짤(GIF)을 파일로 저장한다 — 브라우저 클립보드는 GIF를 못 담아서, 저장한 뒤
+ *  네이버 글쓰기의 [사진] 버튼으로 올리거나 화면에 끌어다 놓는다. */
+export async function saveCompareGif(url: string, index: number): Promise<void> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("움짤을 만들지 못했습니다.");
+  const blobUrl = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = `시공전후_움짤_${index}.gif`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 30_000);
 }

@@ -428,6 +428,8 @@ export interface BlogDetail {
   hashtags?: string[];
   /** 홍보 영상을 만들어 둔 경우에만 있다. */
   video_url?: string | null;
+  /** 사진·제목으로 만든 블로그의 영상 준비 상태(processing / failed). */
+  video_status?: string | null;
 }
 
 // ── AI 제안서(고객 발송용 상세페이지) — /blog와 분리된 비공개 공유 링크 ──

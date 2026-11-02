@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowLeft, Film, Loader2 } from "lucide-react";
+import { AlertCircle, ArrowLeft, Film, Loader2, RefreshCw } from "lucide-react";
 import AssetImage from "@/components/AssetImage";
 import BeforeAfterSlider from "@/components/BeforeAfterSlider";
 import BusinessBanner from "@/components/BusinessBanner";
@@ -11,7 +11,7 @@ import CallBanner from "@/components/CallBanner";
 import ShareLinkButton from "@/components/ShareLinkButton";
 import CopyToNaverButton from "@/components/blog/CopyToNaverButton";
 import { readOwnerToken } from "@/lib/ownerToken";
-import { createBlogVideo, getBlogDetail, resolveAssetUrl } from "@/lib/api";
+import { createBlogVideo, generateBlogPost, getBlogDetail, resolveAssetUrl } from "@/lib/api";
 import { pairsAfterSection, parseBlogSections, planBlogPhotos } from "@/lib/blogBlocks";
 import type { BlogDetail, WorkPhotoStage } from "@/types";
 import { splitBoldSegments } from "@/lib/richText";
@@ -52,6 +52,7 @@ export default function BlogDetailPage() {
   const [ownerToken, setOwnerToken] = useState<string | null>(null);
   const [videoBusy, setVideoBusy] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
+  const [rewriting, setRewriting] = useState(false);
 
   useEffect(() => {
     const token = readOwnerToken();
@@ -69,6 +70,19 @@ export default function BlogDetailPage() {
       .then(setPost)
       .catch((err) => setError(err instanceof Error ? err.message : "글을 불러오지 못했습니다."));
   }, []);
+
+  // 사진으로 만든 블로그는 영상이 서버에서 따로 준비된다 — 준비 중이면 10초마다 다시 본다.
+  useEffect(() => {
+    if (!jobId || post?.video_url || post?.video_status !== "processing") return;
+    const id = window.setInterval(() => {
+      getBlogDetail(jobId)
+        .then((fresh) => {
+          if (fresh.video_url || fresh.video_status !== "processing") setPost(fresh);
+        })
+        .catch(() => undefined);
+    }, 10_000);
+    return () => window.clearInterval(id);
+  }, [jobId, post?.video_url, post?.video_status]);
 
   if (error) {
     return (
@@ -104,6 +118,20 @@ export default function BlogDetailPage() {
   const afterPhotos = post.work_photos.filter((p) => p.stage === "after");
   // AI 합성 사진(after_image_url)은 실제 시공 결과가 아니므로 대표 사진 후보에서 뺀다.
   const coverUrl = afterPhotos[0]?.url ?? post.work_photos[0]?.url ?? post.before_image_url ?? undefined;
+
+  async function handleRewrite() {
+    if (!ownerToken || !jobId) return;
+    if (!window.confirm("AI가 사진을 보고 글을 새로 써요. 지금 글은 바뀝니다. 계속할까요?")) return;
+    setRewriting(true);
+    try {
+      const fresh = await generateBlogPost(jobId, ownerToken);
+      setPost((prev) => (prev ? { ...prev, title: fresh.title, content: fresh.content, hashtags: fresh.hashtags } : prev));
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "글을 다시 쓰지 못했습니다.");
+    } finally {
+      setRewriting(false);
+    }
+  }
 
   async function handleMakeVideo() {
     if (!ownerToken || !jobId) return;
@@ -148,7 +176,22 @@ export default function BlogDetailPage() {
               {videoBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Film className="h-3.5 w-3.5" />}
               {videoBusy ? "영상 만드는 중… (최대 1분)" : post.video_url ? "시공 영상 다시 만들기" : "시공 영상 만들기"}
             </button>
+            <button
+              type="button"
+              onClick={handleRewrite}
+              disabled={rewriting}
+              className="flex items-center gap-1.5 rounded-full bg-white px-3.5 py-2 text-[13px] font-semibold text-slate-700 ring-1 ring-slate-200 transition active:scale-95 disabled:opacity-60"
+            >
+              {rewriting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              {rewriting ? "글 쓰는 중… (1분 안팎)" : "글 다시 쓰기"}
+            </button>
             {videoError && <span className="text-xs text-red-600">{videoError}</span>}
+            {!post.video_url && post.video_status === "processing" && (
+              <span className="text-xs text-slate-500">영상을 준비하고 있어요(1~3분) — 다 되면 자동으로 나타나요</span>
+            )}
+            {!post.video_url && post.video_status === "failed" && (
+              <span className="text-xs text-red-600">영상 준비에 실패했어요 — &apos;시공 영상 만들기&apos;로 사진 영상을 만들 수 있어요</span>
+            )}
           </div>
           <CopyToNaverButton
             post={{
@@ -158,6 +201,7 @@ export default function BlogDetailPage() {
               coverUrl,
               photos: post.work_photos,
               videoUrl: post.video_url,
+              jobId: jobId ?? undefined,
             }}
           />
         </div>
@@ -192,7 +236,7 @@ export default function BlogDetailPage() {
             <AssetImage
               src={coverUrl}
               alt={post.title}
-              className="mb-8 aspect-[4/5] w-full rounded-2xl object-cover shadow-lg"
+              className="mb-8 h-auto min-h-[240px] w-full rounded-2xl shadow-lg"
             />
           )
         )}
@@ -230,7 +274,7 @@ export default function BlogDetailPage() {
                     beforeSrc={pairs[k].before.url}
                     afterSrc={pairs[k].after.url}
                     bigLabels
-                    className="aspect-[4/5] w-full rounded-2xl shadow-lg"
+                    className="min-h-[240px] w-full rounded-2xl shadow-lg"
                   />
                   <figcaption className="text-center text-sm font-semibold text-slate-400">
                     👆 가운데 선을 좌우로 밀어 보세요
@@ -249,7 +293,7 @@ export default function BlogDetailPage() {
                 <AssetImage
                   src={photo.url}
                   alt={STAGE_LABEL[photo.stage]}
-                  className="aspect-[4/5] w-full rounded-2xl object-cover shadow"
+                  className="h-auto min-h-[240px] w-full rounded-2xl shadow"
                 />
                 <span className="absolute left-3 top-3 rounded-lg bg-black/60 px-2.5 py-1 text-sm font-bold text-white">
                   {STAGE_LABEL[photo.stage]}

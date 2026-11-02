@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { AlertCircle, Loader2, Search } from "lucide-react";
+import { AlertCircle, Loader2, Search, Sparkles } from "lucide-react";
 import AssetImage from "@/components/AssetImage";
 import BusinessBanner from "@/components/BusinessBanner";
 import { listBlogPosts } from "@/lib/api";
 import type { BlogSummary } from "@/types";
+import { readOwnerToken } from "@/lib/ownerToken";
 import { useAndroidBack } from "@/lib/useAndroidBack";
 
 function formatDate(iso: string): string {
@@ -28,6 +29,8 @@ export default function BlogListPage() {
   const [posts, setPosts] = useState<BlogSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [isOwner, setIsOwner] = useState(false);
+  useEffect(() => setIsOwner(!!readOwnerToken()), []);
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -50,6 +53,15 @@ export default function BlogListPage() {
         <p className="mt-2 text-sm text-slate-500">
           실제로 진행한 인테리어 시공 현장을 사진과 함께 기록합니다
         </p>
+        {isOwner && (
+          <Link
+            href="/blog/new"
+            className="mt-5 inline-flex items-center gap-1.5 rounded-full bg-[#03c75a] px-5 py-2.5 text-[14px] font-bold text-white shadow-sm transition active:scale-95"
+          >
+            <Sparkles className="h-4 w-4" />
+            사진으로 블로그 만들기
+          </Link>
+        )}
       </header>
 
       <div className="mx-auto mb-8 flex max-w-md items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
