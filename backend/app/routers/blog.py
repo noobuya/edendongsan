@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 
 from app.quotes_store import list_quotes, load_quote
 from app.schemas import BlogDetailResponse, BlogListResponse, BlogSummary, WorkPhoto
-from app.services.blog_video import make_compare_gif
+from app.services.blog_video import make_compare_gif, make_compare_mp4
 
 router = APIRouter(prefix="/api/blog", tags=["blog"])
 
@@ -78,8 +78,8 @@ async def get_blog_detail(job_id: str):
 
 
 @router.get("/{job_id}/compare/{index}")
-async def get_compare_gif(job_id: str, index: int):
-    """index번째 시공 전/후 짝의 "밀어 보기" 움짤(GIF) — 네이버 블로그에는 손으로 끄는
+async def get_compare_gif(job_id: str, index: int, fmt: str = "gif"):
+    """index번째 시공 전/후 짝의 "밀어 보기" 움짤(GIF, fmt=mp4면 영상) — 네이버 블로그에는 손으로 끄는
     슬라이더를 넣을 수 없어서, 선이 저절로 오가는 GIF로 대신 올린다
     (services/blog_video.make_compare_gif). 짝 규칙은 프론트 lib/blogBlocks.ts와 같다
     (시공 전 i번째 ↔ 시공 후 i번째). 사진 id로 캐시해, 사진이 바뀌면 새로 만든다."""
@@ -92,10 +92,13 @@ async def get_compare_gif(job_id: str, index: int):
     if index < 0 or index >= min(len(before), len(after)):
         raise HTTPException(status_code=404, detail="비교할 시공 전/후 사진이 없습니다.")
     b, a = before[index], after[index]
-    out = f"storage/results/{job_id}_compare_{b['id']}_{a['id']}.gif"
+    # fmt=mp4: 같은 장면의 영상판 — 네이버가 GIF를 안 받을 때의 확실한 대안([동영상] 버튼).
+    # 파일 이름의 v2는 GIF 인코딩 방식을 바꾼 표시(예전 Pillow판 캐시를 다시 쓰지 않게).
+    ext, maker, media = ("mp4", make_compare_mp4, "video/mp4") if fmt == "mp4" else ("gif", make_compare_gif, "image/gif")
+    out = f"storage/results/{job_id}_compare_v2_{b['id']}_{a['id']}.{ext}"
     if not os.path.exists(out):
         to_path = lambda url: "storage/" + url.split("/static/", 1)[1]  # noqa: E731
-        tmp = out.replace(".gif", ".tmp.gif")
-        await run_in_threadpool(make_compare_gif, to_path(b["url"]), to_path(a["url"]), tmp)
+        tmp = out.replace(f".{ext}", f".tmp.{ext}")
+        await run_in_threadpool(maker, to_path(b["url"]), to_path(a["url"]), tmp)
         os.replace(tmp, out)
-    return FileResponse(out, media_type="image/gif")
+    return FileResponse(out, media_type=media)

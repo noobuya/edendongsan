@@ -1,5 +1,5 @@
 import { compareGifUrl, fetchAssetObjectUrl, resolveAssetUrl } from "@/lib/api";
-import { pairsAfterSection, parseBlogSections, planBlogPhotos } from "@/lib/blogBlocks";
+import { parseBlogSections, planBlogPhotos } from "@/lib/blogBlocks";
 import { splitBoldSegments } from "@/lib/richText";
 import type { WorkPhoto } from "@/types";
 
@@ -262,46 +262,43 @@ function sectionHtml(headline: string | undefined, paragraphs: string[]): string
   return head + body;
 }
 
-/** [2026-11-03 재구성] 앱 블로그 화면(/blog/post)과 똑같은 순서 — 제목 + 첫 블록 →
- *  (영상) → 블록마다 뒤에 시공 전/후 비교 사진 → 남은 사진 → 해시태그. 배치 규칙은
- *  lib/blogBlocks.ts 한 곳에서 정한다. */
+/** [2026-11-03 "문단을 하나로 — 한 번 복사로 전체가 들어가게"]
+ *  처음엔 문단마다 따로 복사해 사이사이에 사진을 넣게 했는데, 사장님은 글을 한 번에
+ *  넣고 싶어 했다. 지금은 1번 단계 하나로 제목·본문 전체·해시태그를 통째로 복사하고,
+ *  그 뒤에 영상 → 시공 전/후 비교 사진(+움짤·비교 영상) → 남은 사진을 이어 넣는다. */
 export function buildNaverSteps(post: NaverExportPost): NaverStep[] {
   const steps: NaverStep[] = [];
   const sections = parseBlogSections(post.content);
   const { pairs, rest } = planBlogPhotos(post.photos);
 
-  sections.forEach((sec, i) => {
-    const titleHtml =
-      i === 0 ? `<p style="text-align:center"><span style="font-size:30px"><b>${escapeHtml(post.title)}</b></span></p>` : "";
+  const titleHtml = `<p style="text-align:center"><span style="font-size:30px"><b>${escapeHtml(post.title)}</b></span></p>`;
+  const bodyHtml = sections.map((sec) => sectionHtml(sec.headline, sec.paragraphs)).join("<p><br></p>");
+  const tagsHtml = post.hashtags.length ? `<p><br></p><p>${escapeHtml(post.hashtags.join(" "))}</p>` : "";
+  const plain = [
+    post.title,
+    ...sections.map((sec) => [sec.headline ?? "", ...sec.paragraphs].filter(Boolean).join("\n")),
+    post.hashtags.join(" "),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  steps.push({ kind: "text", label: "글 전체 (제목 + 본문 + 해시태그)", html: titleHtml + bodyHtml + tagsHtml, plain });
+
+  if (pairs.length === 0 && post.coverUrl) steps.push({ kind: "photo", label: "대표 사진", url: post.coverUrl });
+  if (post.videoUrl) steps.push({ kind: "video", label: "시공 영상 (네이버 [동영상] 버튼으로 올리기)", url: post.videoUrl });
+  pairs.forEach((pair, k) => {
     steps.push({
-      kind: "text",
-      label: i === 0 ? `제목 + ${sec.headline ?? "첫 문단"}` : sec.headline ?? `문단 ${i + 1}`,
-      html: titleHtml + sectionHtml(sec.headline, sec.paragraphs),
-      plain: [i === 0 ? post.title : "", sec.headline ?? "", ...sec.paragraphs].filter(Boolean).join("\n\n"),
+      kind: "pair",
+      label: `시공 전·후 비교 사진 ${k + 1}`,
+      before: pair.before.url,
+      after: pair.after.url,
+      gifUrl: post.jobId ? compareGifUrl(post.jobId, k) : undefined,
     });
-    if (i === 0) {
-      if (pairs.length === 0 && post.coverUrl) steps.push({ kind: "photo", label: "대표 사진", url: post.coverUrl });
-      if (post.videoUrl) steps.push({ kind: "video", label: "시공 영상 (네이버 [동영상] 버튼으로 올리기)", url: post.videoUrl });
-    }
-    for (const k of pairsAfterSection(i, sections.length, pairs.length)) {
-      steps.push({
-        kind: "pair",
-        label: `시공 전·후 비교 사진 ${k + 1}`,
-        before: pairs[k].before.url,
-        after: pairs[k].after.url,
-        gifUrl: post.jobId ? compareGifUrl(post.jobId, k) : undefined,
-      });
-    }
   });
   rest.forEach((photo, i) => {
     if (pairs.length === 0 && photo.url === post.coverUrl) return;
     const stage = photo.stage === "before" ? "시공 전" : photo.stage === "progress" ? "작업 중" : "시공 후";
     steps.push({ kind: "photo", label: `${stage} 사진 (추가 ${i + 1})`, url: photo.url });
   });
-  if (post.hashtags.length) {
-    const tags = post.hashtags.join(" ");
-    steps.push({ kind: "text", label: "해시태그", html: `<p>${escapeHtml(tags)}</p>`, plain: tags });
-  }
   return steps;
 }
 
@@ -420,15 +417,16 @@ export async function copyNaverStep(step: NaverStep, png?: Blob | Promise<Blob>)
 }
 
 
-/** 비교 움짤(GIF)을 파일로 저장한다 — 브라우저 클립보드는 GIF를 못 담아서, 저장한 뒤
- *  네이버 글쓰기의 [사진] 버튼으로 올리거나 화면에 끌어다 놓는다. */
-export async function saveCompareGif(url: string, index: number): Promise<void> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error("움짤을 만들지 못했습니다.");
+/** 비교 움짤(GIF) 또는 같은 장면의 비교 영상(MP4)을 파일로 저장한다 — 브라우저
+ *  클립보드는 GIF·영상을 못 담아서, 저장한 뒤 네이버 글쓰기의 [사진](GIF) /
+ *  [동영상](MP4) 버튼으로 올린다. */
+export async function saveCompareGif(url: string, index: number, format: "gif" | "mp4" = "gif"): Promise<void> {
+  const res = await fetch(format === "mp4" ? `${url}?fmt=mp4` : url);
+  if (!res.ok) throw new Error(format === "mp4" ? "비교 영상을 만들지 못했습니다." : "움짤을 만들지 못했습니다.");
   const blobUrl = URL.createObjectURL(await res.blob());
   const a = document.createElement("a");
   a.href = blobUrl;
-  a.download = `시공전후_움짤_${index}.gif`;
+  a.download = format === "mp4" ? `before_after_${index}.mp4` : `before_after_${index}.gif`;
   document.body.appendChild(a);
   a.click();
   a.remove();

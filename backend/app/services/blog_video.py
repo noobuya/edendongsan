@@ -246,12 +246,14 @@ GIF_WIDTH = 640
 GIF_FPS = 15
 
 
-def make_compare_gif(before_path: str, after_path: str, out_path: str) -> str:
+def _compare_frames(before_path: str, after_path: str) -> tuple[list[Image.Image], tuple[int, int]]:
+    """"밀어 보기" 비교 장면들(RGB)을 만든다 — GIF·MP4가 같은 장면을 쓴다."""
     after = ImageOps.exif_transpose(Image.open(after_path)).convert("RGB")
     before = ImageOps.exif_transpose(Image.open(before_path)).convert("RGB")
     w = GIF_WIDTH
     h = max(1, round(after.height * w / after.width))
     h = min(h, round(w * 1.4))  # 아주 긴 세로 사진은 너무 커지지 않게
+    h -= h % 2  # H.264(MP4)는 짝수 크기만 받는다
     box = (w, h)
 
     def fit(img: Image.Image) -> Image.Image:
@@ -280,11 +282,6 @@ def make_compare_gif(before_path: str, after_path: str, out_path: str) -> str:
     positions += [0.08] * hold
     positions += [0.08 + 0.84 * (0.5 - 0.5 * np.cos(np.pi * i / move)) for i in range(1, move + 1)]
 
-    palette_src = Image.new("RGB", (w * 2, h))
-    palette_src.paste(b, (0, 0))
-    palette_src.paste(a, (w, 0))
-    palette = palette_src.quantize(colors=255, method=Image.Quantize.MEDIANCUT)
-
     frames = []
     for pos in positions:
         x = int(w * pos)
@@ -298,15 +295,60 @@ def make_compare_gif(before_path: str, after_path: str, out_path: str) -> str:
         d.polygon([(x + r // 2, h // 2), (x + 3, h // 2 - r // 2), (x + 3, h // 2 + r // 2)], fill=(15, 23, 42))
         label(d, "BEFORE 시공 전", 10, (0, 0, 0), (255, 255, 255))
         label(d, "AFTER 시공 후", -10, (251, 191, 36), (15, 23, 42))
-        frames.append(frame.quantize(palette=palette, dither=Image.Dither.NONE))
+        frames.append(frame)
+    return frames, box
 
-    frames[0].save(
+
+def _encode_frames(frames: list[Image.Image], size: tuple[int, int], out_path: str, args: list[str]) -> None:
+    proc = subprocess.Popen(
+        [
+            imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error",
+            "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{size[0]}x{size[1]}", "-r", str(GIF_FPS), "-i", "-",
+            *args, out_path,
+        ],
+        stdin=subprocess.PIPE,
+    )
+    assert proc.stdin is not None
+    try:
+        for f in frames:
+            proc.stdin.write(np.asarray(f, dtype=np.uint8).tobytes())
+    finally:
+        proc.stdin.close()
+        code = proc.wait()
+    if code != 0 or not Path(out_path).exists():
+        raise RuntimeError("비교 움짤 인코딩에 실패했습니다.")
+
+
+def make_compare_gif(before_path: str, after_path: str, out_path: str) -> str:
+    """[2026-11-03 "GIF 움짤이 네이버 블로그에 안 올라간다"]
+    처음엔 Pillow로 투명색을 이용해 "바뀐 부분만 겹쳐 그리는" 최적화 GIF를 만들었는데,
+    이런 GIF를 제대로 못 받는 업로더가 있다. 지금은 ffmpeg로 투명색 없이 공통 팔레트 하나로
+    만든 표준 GIF89a를 쓴다(
+    호환성 우선 — 단, 프레임 통째 저장은 6~12MB로 너무 무거워 바뀐 사각형 영역만 담는 표준
+    방식으로, 실측 약 1.2MB). 네이버 [사진] 버튼으로 올린다."""
+    frames, size = _compare_frames(before_path, after_path)
+    _encode_frames(
+        frames,
+        size,
         out_path,
-        save_all=True,
-        append_images=frames[1:],
-        duration=int(1000 / GIF_FPS),
-        loop=0,
-        optimize=True,
-        disposal=1,
+        [
+            "-filter_complex", "split[a][b];[a]palettegen=stats_mode=full:reserve_transparent=0[p];[b][p]paletteuse=dither=none",
+            # 투명 차분(transdiff) 없이 바뀐 사각형 영역만 담는 표준 방식 — 포토샵 등 일반
+            # 프로그램이 만드는 GIF와 같은 형식(프레임 통째는 6~12MB라 너무 무겁다, 실측).
+            "-gifflags", "+offsetting-transdiff", "-loop", "0", "-f", "gif",
+        ],
+    )
+    return out_path
+
+
+def make_compare_mp4(before_path: str, after_path: str, out_path: str) -> str:
+    """같은 "밀어 보기" 장면을 MP4로 — 네이버는 영상은 확실히 받으므로 GIF가 안 될 때의
+    확실한 대안이다(네이버 [동영상] 버튼). 3번 반복해 10초 안팎."""
+    frames, size = _compare_frames(before_path, after_path)
+    _encode_frames(
+        frames * 3,
+        size,
+        out_path,
+        ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-movflags", "+faststart"],
     )
     return out_path
