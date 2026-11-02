@@ -276,7 +276,15 @@ export default function SitePhotoGallery({
             </div>
             <p className="line-clamp-3 whitespace-pre-line text-xs text-slate-500">{blogPost.content}</p>
 
-            {isOwner && <CopyToNaverButton post={blogPost} />}
+            {isOwner && (
+              <CopyToNaverButton
+                post={{
+                  ...blogPost,
+                  coverUrl: photos.find((p) => p.stage === "after")?.url,
+                  photos,
+                }}
+              />
+            )}
 
             {isOwner && (
               <button

@@ -8,6 +8,8 @@ import AssetImage from "@/components/AssetImage";
 import BusinessBanner from "@/components/BusinessBanner";
 import CallBanner from "@/components/CallBanner";
 import ShareLinkButton from "@/components/ShareLinkButton";
+import CopyToNaverButton from "@/components/blog/CopyToNaverButton";
+import { readOwnerToken } from "@/lib/ownerToken";
 import { getBlogDetail } from "@/lib/api";
 import type { BlogDetail, WorkPhoto, WorkPhotoStage } from "@/types";
 import { splitBoldSegments } from "@/lib/richText";
@@ -43,8 +45,11 @@ export default function BlogDetailPage() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [post, setPost] = useState<BlogDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 네이버 블로그용 전체 복사는 사장님 기기에서만 — 손님이 보는 공개 페이지라서다.
+  const [isOwner, setIsOwner] = useState(false);
 
   useEffect(() => {
+    setIsOwner(!!readOwnerToken());
     const id = new URLSearchParams(window.location.search).get("job");
     setJobId(id);
     if (!id) {
@@ -115,6 +120,20 @@ export default function BlogDetailPage() {
         </Link>
         <ShareLinkButton url={typeof window !== "undefined" ? window.location.href : ""} title={post.title} />
       </div>
+
+      {isOwner && (
+        <div className="mb-6 rounded-xl border border-emerald-100 bg-emerald-50/60 p-3">
+          <CopyToNaverButton
+            post={{
+              title: post.title,
+              content: post.content,
+              hashtags: post.hashtags ?? [],
+              coverUrl,
+              photos: post.work_photos,
+            }}
+          />
+        </div>
+      )}
 
       <article>
         <header className="mb-6 space-y-2">

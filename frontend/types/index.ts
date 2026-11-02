@@ -425,6 +425,7 @@ export interface BlogDetail {
   after_image_url?: string;
   work_photos: WorkPhoto[];
   line_item_names: string[];
+  hashtags?: string[];
 }
 
 // ── AI 제안서(고객 발송용 상세페이지) — /blog와 분리된 비공개 공유 링크 ──

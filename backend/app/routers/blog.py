@@ -62,4 +62,5 @@ async def get_blog_detail(job_id: str):
         after_image_url=quote.get("rendered_image_url"),
         work_photos=[WorkPhoto(**p) for p in quote.get("work_photos", [])],
         line_item_names=[li.get("item_name", "") for li in estimate.get("line_items", [])],
+        hashtags=post.get("hashtags") or [],
     )

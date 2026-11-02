@@ -569,6 +569,7 @@ class BlogDetailResponse(BaseModel):
     after_image_url: Optional[str] = None
     work_photos: list[WorkPhoto] = Field(default_factory=list)
     line_item_names: list[str] = Field(default_factory=list)
+    hashtags: list[str] = Field(default_factory=list)
 
 
 # ── AI 제안서(고객 발송용 상세페이지) ──────────────────────────────────
