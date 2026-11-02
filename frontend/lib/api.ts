@@ -323,7 +323,8 @@ export async function createMaskSession(photo: Blob): Promise<string> {
 /** 꾹 누른 자리(사진 원본 픽셀 좌표)의 물체 윤곽을 AI에게 받아온다. 같은
  *  세션의 두 번째 호출부터는 서버가 캐시된 후보로 즉시 답해 비용이 들지
  *  않는다(manual_mask.py 주석 참고). */
-export async function segmentPoint(sessionId: string, point: Pt): Promise<Pt[]> {
+/** 꾹 누른 자리의 물체 윤곽을 받는다. 물체가 여러 조각이면 큰 것부터 여러 다각형. */
+export async function segmentPoint(sessionId: string, point: Pt): Promise<Pt[][]> {
   const res = await apiFetch(`${API_BASE}/api/manual-mask/session/${sessionId}/point`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -331,24 +332,29 @@ export async function segmentPoint(sessionId: string, point: Pt): Promise<Pt[]> 
   });
   if (!res.ok) throw new Error(await extractErrorMessage(res, "이 자리에서 물체를 찾지 못했어요."));
   const data = await res.json();
-  return data.points as Pt[];
+  return (data.polygons as Pt[][] | undefined) ?? (data.points ? [data.points as Pt[]] : []);
 }
 
-/** 손그림(올가미)으로 막 채운 영역이 사진 테두리나 다른 물건에 가려 물체의
- *  일부만 덮었을 때, 이미 "충분히" 덮은 물체가 있으면 그 물체 전체 윤곽까지
- *  넓혀 돌려받는다(손이 못 닿은 부분도 포함). 겹치는 물체가 기준을 못
- *  넘으면 null — 호출부는 원래 손그림 그대로 쓰면 된다. maskDataUrl은
- *  사진 원본 해상도로 구운 흑백 PNG(흰색 = 손으로 채운 자리)여야 한다. */
-export async function snapBrushToObjects(sessionId: string, maskDataUrl: string): Promise<Pt[] | null> {
+/** 손그림(올가미)으로 대충 칠한 영역을 AI가 실제 물체 테두리로 다듬어 돌려준다.
+ *  돌려받은 다각형들은 손그림을 "교체"하는 용도다 — 벽·옆 가구로 번진 부분이
+ *  빠지고 물체 테두리에 딱 맞게 정리된다(백엔드 manual_mask.snap_to_object 주석).
+ *  못 찾으면 null — 호출부는 원래 손그림 그대로 쓰면 된다. maskDataUrl은
+ *  사진 원본 해상도로 구운 흑백 PNG(흰색 = 손으로 채운 자리), press는 꾹 누른 자리. */
+export async function snapBrushToObjects(sessionId: string, maskDataUrl: string, press?: Pt): Promise<Pt[][] | null> {
   const form = new FormData();
   form.append("mask", dataUrlToBlob(maskDataUrl), "mask.png");
+  if (press) {
+    form.append("x", String(press.x));
+    form.append("y", String(press.y));
+  }
   const res = await apiFetch(`${API_BASE}/api/manual-mask/session/${sessionId}/snap`, {
     method: "POST",
     body: form,
   });
   if (!res.ok) return null; // AI 보정은 "있으면 좋은" 기능 — 실패해도 손그림 자체는 그대로 쓴다.
   const data = await res.json();
-  return (data.points as Pt[] | null) ?? null;
+  const polygons = (data.polygons as Pt[][] | undefined) ?? (data.points ? [data.points as Pt[]] : null);
+  return polygons && polygons.length > 0 ? polygons : null;
 }
 
 /** 현장에서 고객이 그린 서명을 저장한다. 다른 현장 기록처럼 인증이 필요 없다

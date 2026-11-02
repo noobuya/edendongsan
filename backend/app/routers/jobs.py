@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, File, Form, Header, HTTPException, UploadFile
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+from app.services.swatch import extract_swatch_patch
 from app.catalog import PATTERNS
 from app.jobs_store import JOBS
 from app.catalog import manual_base_prompt
@@ -402,6 +403,9 @@ def _save_swatch(raw: bytes, job_id: str, suffix: int | str) -> str:
             normalized = ImageOps.exif_transpose(img).convert("RGB")
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         raise HTTPException(status_code=422, detail="견본 사진을 읽을 수 없습니다.") from exc
+    # 카탈로그 한 페이지를 통째로 찍은 사진이면 종이 여백·품번 글자·배경을 잘라내고
+    # 자재 부분만 남긴다(services/swatch.py 주석 참고).
+    normalized = extract_swatch_patch(normalized)
     path = f"storage/uploads/{job_id}_swatch{suffix}.jpg"
     normalized.save(path, "JPEG", quality=92)
     return path

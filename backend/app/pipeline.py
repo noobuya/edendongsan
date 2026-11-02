@@ -115,6 +115,12 @@ def run_pipeline(
 ) -> None:
     JOBS[job_id]["status"] = "processing"
     _stage(job_id, "현장 사진 준비 중")
+    if render_mode == "manual" and not manual_regions:
+        # 수동 모드인데 영역이 하나도 안 왔다 — 예전엔 아무 말 없이 자동 장면 생성으로
+        # 넘어가 "그린 곳이 아니라 엉뚱한 곳(하부장 문짝만)이 시공됐다"로 보였다(연습22).
+        JOBS[job_id].setdefault("notices", []).append(
+            "지정(손그림)한 영역이 없어 AI가 사진 전체를 보고 자동으로 시공했어요. 원하는 곳만 시공하려면 영역을 그린 뒤 자재를 '적용'해 주세요."
+        )
     try:
         # 조명/실링팬은 천장 마스크를 원근 스케일링 기준으로 쓰므로, 항목이
         # 선택되어 있으면(개수 무관하게) 세그멘테이션이 필요하다.
@@ -844,8 +850,8 @@ def _build_scene_instructions(
                 grain_clause = " The wood grain must run vertically."
             instructions.append(
                 f"Refinish the {', '.join(targets)} with {material_phrase} — "
-                "keep the existing door handles, hinges and structural geometry exactly as they are, "
-                f"only the surface finish changes.{grain_clause}"
+                "keep the existing door handles, hinges, glass panes, the items on the shelves and the "
+                f"structural geometry exactly as they are, only the surface finish changes.{grain_clause}"
             )
 
     if "sink" in selected_items and options.sink:
@@ -935,10 +941,12 @@ def _wardrobe_target_phrases(wardrobe) -> list[str]:
     지시문에 넣는다 — film/furniture와 같은 원칙(입력 안 한 부위까지 AI가
     임의로 바꾸지 않게)."""
     targets = []
+    # 문짝만 입력해도 유리문 테두리까지는 문짝의 일부다 — "wardrobe doors"만 쓰면
+    # 책장형·진열장형 옷장에서 막힌 하부 문짝 두 장만 칠해졌다(연습22).
     if any(d.count > 0 for d in wardrobe.doors):
-        targets.append("wardrobe doors")
+        targets.append("wardrobe / tall storage cabinet door fronts, including the frames around any glass door panes")
     if any(b.count > 0 for b in wardrobe.bodies):
-        targets.append("wardrobe body panels (side and top panels)")
+        targets.append("its outer frame, side panels, top and visible shelf edges")
     return targets
 
 

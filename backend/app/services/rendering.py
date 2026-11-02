@@ -188,6 +188,8 @@ _SWATCH_TILE_MAX_PX = 360
 # 같은 역할이지만, 여기서는 "합성한 질감"이 아니라 실제 사진의 무늬라 그만큼
 # 눌러 가릴 이유가 없어 훨씬 많이(대부분) 살린다.
 _SWATCH_TEXTURE_KEEP = 0.8
+# 원본 명암(저주파 L)을 필름 위로 옮길 때 허용하는 최대 편차.
+_SWATCH_SHADING_CLIP = 22.0
 
 
 def _mirror_tile(tile: Image.Image, size: tuple[int, int]) -> np.ndarray:
@@ -250,13 +252,18 @@ def _recolor_pixels_with_texture(base: Image.Image, mask: Image.Image, swatch: I
     )
     tile_detail = tile_l - tile_low  # 견본 사진 고유의 무늬·결(고주파)만 남긴다
 
-    base_mean_low = float(base_low[sel].mean())
+    # 기준 밝기는 평균이 아니라 중앙값 — 선반 안 책·소품처럼 어두운 물건이 영역에
+    # 섞여 있으면 평균이 끌려 내려가 표면 전체가 들뜬다(연습21 책장).
+    base_mean_low = float(np.median(base_low[sel]))
     tile_mean_low = float(tile_low[sel].mean())
     std_low = float(base_low[sel].std()) or 1.0
     gain = min(_SHADING_GAIN, _TARGET_SHADING_SPREAD / std_low)
 
     # 원본 굴곡의 "모양"(평균에서 얼마나 떨어져 있는지) + 견본 사진의 "밝기 레벨".
-    new_l = tile_mean_low + (base_low - base_mean_low) * gain
+    # 편차는 _SWATCH_SHADING_CLIP으로 자른다 — 굴곡·조명 그라데이션 정도의 명암만
+    # 살리고, 유리 너머 책처럼 표면이 아닌 물건의 짙은 얼룩은 필름 위에 번지지 않게.
+    deviation = np.clip(base_low - base_mean_low, -_SWATCH_SHADING_CLIP, _SWATCH_SHADING_CLIP)
+    new_l = tile_mean_low + deviation * gain
     # 그 위에 견본 사진 고유의 무늬를 더한다 — 이게 없으면 결국 단색 리컬러와 같다.
     new_l = new_l + tile_detail * _SWATCH_TEXTURE_KEEP
     # 원본의 강한 반사(스포트 하이라이트)는 색을 입혀도 살아있어야 자연스럽다.

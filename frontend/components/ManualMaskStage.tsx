@@ -272,11 +272,16 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
         const baked = rasterizeMask([{ id: -1, kind: "brush", strokes: brushStrokes, radiusPx }], natural.w, natural.h);
         if (baked) {
           setSegmentingPoint(true);
-          setAiHint(null);
-          snapBrushToObjects(maskSessionId, baked.maskDataUrl)
-            .then((points) => {
-              if (points && points.length >= 3) {
-                setBrushStrokes((prev) => [...prev, points]);
+          setAiHint("AI가 물체 테두리를 찾는 중이에요… (처음엔 최대 1분 걸릴 수 있어요)");
+          snapBrushToObjects(maskSessionId, baked.maskDataUrl, point)
+            .then((polygons) => {
+              const valid = polygons?.filter((p) => p.length >= 3) ?? [];
+              if (valid.length > 0) {
+                // 더하지 않고 교체한다 — 손그림이 벽·옆 가구로 번진 부분까지 지워져야
+                // 테두리가 바르게 잡힌다. 덜 잡힌 곳은 손그림으로 다시 그어 더하면 된다.
+                setBrushStrokes(valid);
+                setAiHint("AI가 테두리를 맞췄어요. 빠진 곳은 손으로 더 그으면 합쳐져요.");
+                window.setTimeout(() => setAiHint(null), 3000);
               } else {
                 setAiHint("이 영역에서 물체 테두리를 더 정확히 찾지 못했어요. 그린 그대로 쓰거나 더 채워서 다시 눌러보세요.");
                 window.setTimeout(() => setAiHint(null), 2500);
@@ -292,10 +297,12 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
       }
 
       setSegmentingPoint(true);
-      setAiHint(null);
+      setAiHint("AI가 물체를 찾는 중이에요… (처음엔 최대 1분 걸릴 수 있어요)");
       segmentPoint(maskSessionId, point)
-        .then((points) => {
-          if (points.length >= 3) setBrushStrokes((prev) => [...prev, points]);
+        .then((polygons) => {
+          const valid = polygons.filter((p) => p.length >= 3);
+          if (valid.length > 0) setBrushStrokes((prev) => [...prev, ...valid]);
+          setAiHint(null);
         })
         .catch((err: unknown) => {
           setAiHint(err instanceof Error ? err.message : "이 자리에서 물체를 찾지 못했어요.");
@@ -387,10 +394,24 @@ const ManualMaskStage = forwardRef<MaskStageHandle, Props>(function ManualMaskSt
 
   useImperativeHandle(ref, () => ({
     clearShape,
+    // 아직 "완료"를 안 누른 손그림 획·닫지 않은 다각형도 같이 넣는다 — 예전엔 확정된
+    // 도형(shapes)만 봐서, 손그림 후 바로 자재를 적용하거나 시공을 누르면 그린 영역이
+    // 통째로 빠졌다(연습22: 그린 진열장 대신 자동 모드가 하부장만 칠함).
     extractShape: () => {
-      if (!natural || shapes.length === 0) return null;
-      const baked = rasterizeMask(shapes, natural.w, natural.h);
-      return baked ? { ...baked, shapes } : null;
+      if (!natural) return null;
+      const all: MaskShape[] = [...shapes];
+      if (brushStrokes.length > 0) {
+        all.push({
+          id: -1,
+          kind: "brush",
+          strokes: brushStrokes,
+          radiusPx: BRUSH_RADIUS_SCREEN_PX / (displayScale * viewScale || 1),
+        });
+      }
+      if (draftPoints.length >= MIN_POLYGON_POINTS) all.push({ id: -2, kind: "polygon", points: draftPoints });
+      if (all.length === 0) return null;
+      const baked = rasterizeMask(all, natural.w, natural.h);
+      return baked ? { ...baked, shapes: all } : null;
     },
   }));
 

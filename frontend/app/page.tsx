@@ -25,7 +25,7 @@ import {
 import { registerForPush } from "@/lib/pushRegistration";
 import { clearOwnerToken, readOwnerToken, saveOwnerToken } from "@/lib/ownerToken";
 import { useAndroidBack } from "@/lib/useAndroidBack";
-import { DEFAULT_OPTIONS, DEFAULT_WORK_ITEMS, taskTypeOf } from "@/lib/workItems";
+import { DEFAULT_OPTIONS, DEFAULT_WORK_ITEMS, MATERIAL_OPTIONS, taskTypeOf } from "@/lib/workItems";
 import type { JobOptionsState, JobStatusResponse, MappedRegion, RenderMode, WorkItemId } from "@/types";
 
 const POLL_INTERVAL_MS = 2000;
@@ -407,6 +407,54 @@ export default function HomePage() {
     // 일러스트는 사장님 기기에서만 보낸다. 학생 기기가 담아 와도 여기서 걸러낸다.
     const submitItems = ownerToken ? selectedItems : selectedItems.filter((i) => i !== "illustration");
     if (!photo || submitItems.length === 0) return;
+
+    // [손그림이 말없이 버려지던 문제 — 연습22]
+    // 영역을 그려 놓고 자재 "적용"을 안 누른 채 시공을 누르면 그 영역은 버려지고,
+    // 영역이 0개인 채로 서버가 자동 모드(사진 전체를 AI가 추측)로 돌았다. 그린 게
+    // 남아 있으면 지금 선택된 필름 계열 항목의 자재로 자동 적용하고, 그래도 영역이
+    // 없으면 자동 모드로 갈지 먼저 묻는다.
+    let regions = mappedRegions;
+    if (renderMode === "manual") {
+      const pending = maskStageRef.current?.extractShape();
+      if (pending) {
+        const category = (submitItems.find(
+          (i) => isFilmFamilySyncItem(i) && !!options[i as FilmFamilySyncItem]?.swatchImageDataUrl
+        ) ?? submitItems.find((i) => isFilmFamilySyncItem(i))) as FilmFamilySyncItem | undefined;
+        if (category) {
+          const opt = options[category];
+          const optionLabel = opt.swatchImageDataUrl
+            ? "견본 사진 자재"
+            : MATERIAL_OPTIONS[category].find((m) => m.id === opt.patternId)?.label ?? opt.patternId;
+          regions = [
+            ...regions,
+            {
+              id: regionIdRef.current++,
+              maskDataUrl: pending.maskDataUrl,
+              labelAt: pending.labelAt,
+              shapes: pending.shapes,
+              category,
+              option: opt.patternId,
+              optionLabel,
+              taskType: taskTypeOf(category),
+              prompt: optionLabel,
+              swatchImageDataUrl: opt.swatchImageDataUrl,
+              colorIndex: regions.length,
+            },
+          ];
+          setMappedRegions(regions);
+          maskStageRef.current?.clearShape();
+        }
+      }
+      if (
+        regions.length === 0 &&
+        !window.confirm(
+          "그려서 '적용'한 시공 영역이 없습니다.\n\nAI가 사진 전체를 보고 자동으로 시공할까요?\n(원하는 곳만 시공하려면 '취소' 후 영역을 그리고 자재를 적용하세요)"
+        )
+      ) {
+        return;
+      }
+    }
+
     setSubmitting(true);
     setSubmitError(null);
     setStep(3);
@@ -422,7 +470,7 @@ export default function HomePage() {
         ownerToken,
         renderMode,
         autoDescription,
-        manualRegions: renderMode === "manual" ? mappedRegions : [],
+        manualRegions: renderMode === "manual" ? regions : [],
       });
       setJob({
         job_id,

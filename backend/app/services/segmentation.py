@@ -370,6 +370,50 @@ def _fetch_mask_array(mask_url: str) -> np.ndarray | None:
         return None
 
 
+# --- 박스/점으로 "이 물체" 하나를 콕 집어 분할 (손그림 꾹 누르기 전용) ----------
+# 위 SAM_MODEL(meta/sam-2)은 사진 전체를 격자로 훑는 자동 모드뿐이라, 흰 책장·문짝처럼
+# 크고 밋밋한 물체는 후보에 아예 안 나오는 경우가 많다(연습21: 후보 50개 중 책장
+# 프레임·문짝은 0개, 책·장난감·바닥·천장만 나옴). 이 모델은 SAM 원래의 "박스/점
+# 프롬프트"를 받아, 사장님이 대충 그린 영역의 박스나 꾹 누른 점에 있는 물체 하나를
+# 정확한 테두리로 돌려준다(같은 사진으로 실측 — 유리문 책장 전체를 유리 너머 책은
+# 빼고 정확히 잡음). Replicate API로 실존·입력 형식을 확인한 버전 해시.
+SAM_PROMPT_MODEL = "datong-new/sam-point:ddae29125730397cd9bd25fa2c5212e5411c6dcaa02334a63db767a78fefa21b"
+# 커뮤니티 모델이라 한동안 안 쓰면 콜드스타트에 1분 가까이 걸린다(실측 65초).
+SAM_PROMPT_TIMEOUT_S = 100
+
+
+def segment_with_prompt(
+    image_path: str,
+    api_token: str,
+    box: tuple[int, int, int, int] | None = None,
+    point: tuple[int, int] | None = None,
+) -> np.ndarray | None:
+    """box(x1, y1, x2, y2) 또는 point(x, y) — 사진 원본 픽셀 좌표 — 에 있는 물체 하나의
+    마스크(bool 배열, 사진과 같은 크기)를 돌려준다. 못 찾으면 None."""
+    if box is None and point is None:
+        return None
+    payload: dict = {}
+    if box is not None:
+        payload["input_box"] = json.dumps([int(v) for v in box])
+    if point is not None:
+        payload["input_points"] = json.dumps([[int(point[0]), int(point[1])]])
+    client = replicate.Client(api_token=api_token)
+    with open(image_path, "rb") as f:
+        output = run_replicate_with_retry(
+            client.run, SAM_PROMPT_TIMEOUT_S, SAM_PROMPT_MODEL, input={"image": f, **payload}
+        )
+    # 출력은 [mask1.png, img1.png, mask2.png, img2.png] — mask1이 찾은 물체(흰색),
+    # mask2는 그 반전이다. 이름으로 첫 번째 마스크를 고른다.
+    urls = [_resolve_mask_url(item) for item in (output or [])]
+    mask_urls = [u for u in urls if u.rsplit("/", 1)[-1].startswith("mask")]
+    if not mask_urls:
+        return None
+    arr = _fetch_mask_array(mask_urls[0])
+    if arr is None or not arr.any() or arr.all():
+        return None
+    return arr
+
+
 # --- "평평한 패널(문짝)다움" 판정 ---------------------------------------------
 # Gemini 분류를 쓸 수 없을 때(키 미설정/크레딧 소진) SAM 후보를 전부 시공 대상으로
 # 삼으면 타일 벽, 레인지후드, 밥솥 같은 것까지 같이 색이 바뀐다. 문짝은 (1) 마스크가

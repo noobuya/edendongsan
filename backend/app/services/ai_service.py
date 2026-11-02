@@ -332,14 +332,26 @@ def render_region(
         # 보정한다. 문구·그림 요청(design)은 리컬러로 그릴 수 없으니 검사하지
         # 않고 AI 결과를 그대로 받는다 — _recolor도 design이 있으면 항상 None을
         # 돌려줘 이 분기와 일관된다.
+        #
+        # [연습21 책장 사고로 기준 보강 (2026-11-02)]
+        # "결과 평균색이 목표색에서 30 이내"만 보면, 책장·선반처럼 영역 안에 책·소품이
+        # 같이 들어간 경우 AI가 프레임을 견본대로 잘 입혀도 책 색이 평균을 끌어당겨
+        # 늘 "실패"로 판정되고, 멀쩡한 결과를 버린 채 책까지 덮어 칠하는 폴백으로
+        # 바뀌었다. 이 검사의 원래 목적은 "AI가 지시를 무시하고 원본을 그대로 돌려준
+        # 경우"를 잡는 것이므로, 원본 대비 목표색 쪽으로 충분히 움직였으면 통과시킨다.
         if not design and fallback_hex is not None:
             delta = _color_delta_in_mask(rendered, mask, fallback_hex)
-            if delta is not None and delta > SWATCH_MATCH_MAX_DELTA:
+            delta_before = _color_delta_in_mask(base, mask, fallback_hex)
+            moved = (delta_before - delta) if (delta is not None and delta_before is not None) else 0.0
+            moved_enough = delta_before is not None and moved >= max(
+                SWATCH_MIN_SHIFT, delta_before * SWATCH_MIN_SHIFT_RATIO
+            )
+            if delta is not None and delta > SWATCH_MATCH_MAX_DELTA and not moved_enough:
                 recolored = _recolor(image_path, mask_path, option_id, fallback_hex, reference_image)
                 if recolored is not None:
                     print(
-                        f"[ai_service] AI 편집 결과가 목표 색과 {delta:.0f} 차이(기준 {SWATCH_MATCH_MAX_DELTA}) "
-                        f"-> 리컬러로 보정: {fallback_hex}"
+                        f"[ai_service] AI 편집 결과가 목표 색과 {delta:.0f} 차이(기준 {SWATCH_MATCH_MAX_DELTA}), "
+                        f"원본 대비 {moved:.0f}만 이동 -> 리컬러로 보정: {fallback_hex}"
                     )
                     return _paste_back(base, recolored, mask)
 
@@ -439,6 +451,12 @@ def _average_hex_color(image: Image.Image) -> str:
 # 거리 계산 방식(LAB)이 같고, "AI가 지시를 무시했는지"를 가르는 기준이라는 목적도
 # 같다. 다만 여기는 전체 장면이 아니라 크롭된 조각이라 실측 전 추정값이다.
 SWATCH_MATCH_MAX_DELTA = 30.0
+# 결과가 목표색과 30 넘게 떨어져 있어도, 원본보다 목표색 쪽으로 이만큼(절대값 또는
+# 원래 거리의 비율 중 큰 쪽) 움직였으면 "AI가 실제로 입혔다"고 본다 — 영역 안에
+# 책·소품처럼 시공 대상이 아닌 물건이 섞여 평균색이 목표에 못 닿는 경우를 위해서다.
+# AI가 지시를 무시한 경우는 원본과 거의 같아 이동량이 0에 가깝다.
+SWATCH_MIN_SHIFT = 12.0
+SWATCH_MIN_SHIFT_RATIO = 0.35
 
 
 def _color_delta_in_mask(image: Image.Image, mask: Image.Image, color_hex: str) -> float | None:
@@ -487,10 +505,24 @@ def surface_label(category: str) -> str:
         "film": "kitchen cabinet door",
         "sash": "window frame",
         "door_frame": "door and door frame",
-        "wardrobe": "wardrobe door",
+        # [연습22: "책장·진열장 전체가 아니라 하부장 문짝만 시공됐다" (2026-11-02)]
+        # 예전엔 "wardrobe door"(옷장 문짝)라서, 사장님이 진열장 전체를 칠해 지정해도
+        # AI는 막힌 문짝 면만 바꾸고 프레임·옆판·선반·유리문 테두리는 그대로 뒀다.
+        # 필름 리폼은 보이는 면 전체를 감싸는 시공이므로 "보이는 모든 면"을 하나하나
+        # 짚어 준다. 편집 모델은 마스크를 받지 않고 마스크 박스만 잘라낸 사진을 받으므로
+        # (render_region 주석), 옆 가구가 아니라 "가운데 있는 그 가구"라고 못 박는다.
+        "wardrobe": (
+            "entire wardrobe / tall storage cabinet in the center of this photo — every visible "
+            "surface of it: outer frame, side panels, top, base, shelves and shelf edges, door fronts "
+            "and the frames around any glass door panes"
+        ),
         "glass": "glass panel",
         "wall_film": "wall surface",
-        "furniture": "furniture piece (chair, desk, bookshelf, drawer cabinet, or display cabinet)",
+        "furniture": (
+            "entire piece of furniture in the center of this photo (bookshelf, display cabinet, desk, "
+            "chair or drawer cabinet) — every visible surface of it: frame, side panels, top, shelves "
+            "and shelf edges, door and drawer fronts, and the frames around any glass panes"
+        ),
     }.get(category, MANUAL_CATEGORY_PROMPTS.get(category, "interior"))
 
 
@@ -632,12 +664,18 @@ def _closest_resolution(size: tuple[int, int]) -> str:
 PRESERVE_HINTS = {
     "film": "the cabinet door handles, hinges and structural geometry",
     "door_frame": "the door handle, hinges and structural geometry",
-    "wardrobe": "the cabinet door handles, hinges and structural geometry",
+    "wardrobe": (
+        "the glass panes, every item displayed on or inside the shelves, the door handles, hinges, "
+        "and the exact shape, joints and proportions of the cabinet"
+    ),
     "sash": "the window frame profile, glass panes and locking hardware",
     "wall_film": "light switches, power outlets, corners, baseboards and existing wall structure",
     "glass": "the glass panel edges and frame",
     "mesh_screen": "the frame profile and structural geometry",
-    "furniture": "the furniture's original shape, legs, joints, frame structure and proportions",
+    "furniture": (
+        "the glass panes, every item displayed on or inside the shelves, and the furniture's original "
+        "shape, legs, joints, frame structure and proportions"
+    ),
 }
 # 실제로 나무 마감이 흔한 항목(싱크대장·문짝·옷장·가구)에서만 "나뭇결을 없애라"고
 # 구체적으로 말해 기존 무늬를 강하게 덮어쓰게 한다(안 그러면 모델이 기존 나뭇결을 살짝

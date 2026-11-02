@@ -19,12 +19,13 @@ import uuid
 
 import cv2
 import numpy as np
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel
 
 from app.config import get_settings
-from app.services.segmentation import _fetch_mask_array, _generate_masks
+from app.services.segmentation import _fetch_mask_array, _generate_masks, segment_with_prompt
 
 router = APIRouter(prefix="/api/manual-mask", tags=["manual-mask"])
 
@@ -106,7 +107,32 @@ async def segment_point(session_id: str, body: PointRequest):
     if not session:
         raise HTTPException(status_code=404, detail="마스킹 세션이 만료됐어요. 사진을 다시 불러와 주세요.")
 
-    masks = _ensure_masks(session)
+    # [먼저 "이 점의 물체"를 직접 묻는다 — 연습21 책장 사고]
+    # 아래 자동 후보 방식은 흰 책장·문짝처럼 크고 밋밋한 물체를 후보로 아예 못 뽑는
+    # 경우가 많아, 그런 물체를 눌러도 "못 찾음"이 됐다. 점 프롬프트 SAM은 누른 자리의
+    # 물체 하나를 바로 돌려준다. 실패하거나 배경급(방 전체)이면 예전 방식으로 넘어간다.
+    settings = get_settings()
+    if settings.replicate_api_token:
+        try:
+            hit = await run_in_threadpool(
+                segment_with_prompt,
+                session["image_path"],
+                settings.replicate_api_token,
+                None,
+                (int(round(body.x)), int(round(body.y))),
+            )
+        except Exception as exc:  # noqa: BLE001 - 실패하면 예전 자동 후보 방식으로
+            print(f"[manual_mask] point: 점 프롬프트 SAM 실패 -> 자동 후보로 대체: {exc}")
+            hit = None
+        if hit is not None and hit.mean() <= SNAP_MAX_CANDIDATE_AREA_RATIO:
+            polygons = _mask_to_polygons(hit)
+            if polygons:
+                h, w = hit.shape
+                sx, sy = session["width"] / w, session["height"] / h
+                scaled = [[{"x": x * sx, "y": y * sy} for x, y in poly] for poly in polygons]
+                return {"points": scaled[0], "polygons": scaled}
+
+    masks = await run_in_threadpool(_ensure_masks, session)
     if not masks:
         raise HTTPException(status_code=404, detail="이 사진에서는 물체를 찾지 못했어요.")
 
@@ -139,44 +165,36 @@ async def segment_point(session_id: str, body: PointRequest):
     return {"points": [{"x": x * scale_x, "y": y * scale_y} for x, y in polygon]}
 
 
-# [판정 기준 — "손그림을 그려도 AI가 자주 못 찾는다" 신고로 완화함 (2026-10-25)]
-# 처음엔 "사용자가 물체 면적의 60% 이상을 직접 덮었을 때만"로 좁게 잡았는데,
-# 이 기능의 목적 자체가 "대충·일부만 그려도 채워달라"이므로 실제로는 거의 늘
-# 60%에 못 미쳐 대부분 실패했다. 이제 두 기준 중 하나만 넘으면 같은 물체로 본다.
-#   coverage(= 겹친 면적 / 후보 면적)   — 후보를 얼마나 "많이" 덮었는지
-#   containment(= 겹친 면적 / 사용자가 그린 면적) — 사용자가 그린 부분이 그
-#                                                후보 "안에" 얼마나 깔끔히
-#                                                들어가 있는지
-# 작은 후보(문짝 한 짝 등)는 coverage 기준으로, 사용자가 큰 물체의 한쪽 구석만
-# 대충 그린 경우는 containment 기준으로 잡힌다 — 그려진 부분이 거의 전부 그
-# 물체 안에만 있으면(containment 높음) 다른 물건과는 안 겹친 깨끗한 신호이므로
-# coverage는 아주 낮아도(그려진 양이 적어도) 인정한다.
-SNAP_MIN_COVERAGE = 0.4
-SNAP_MIN_CONTAINMENT = 0.7
-SNAP_LENIENT_MIN_COVERAGE = 0.08
-# 후보가 사진 전체의 이 비율보다 크면(벽 전체·방 전체급) 아무리 겹침 비율이 높아도
-# 건너뛴다 — 작게 칠한 손그림이 우연히 배경급 후보와 많이 겹쳐도 방 전체가
-# 끌려오는 사고를 막는다. 상/하부장을 가까이서 찍은 사진은 문짝 하나가 화면의
-# 절반 가까이 차지할 수 있어 기존 0.5보다 조금 더 여유를 뒀다.
+# 찾은 물체가 사진 전체의 이 비율보다 크면(벽 전체·방 전체급) 버린다 — 꾹 누르기가
+# 방 전체를 끌어오는 사고를 막는다. 가까이서 찍은 사진은 가구 하나가 화면 절반
+# 넘게 차지할 수 있어 0.5보다 여유를 뒀다.
 SNAP_MAX_CANDIDATE_AREA_RATIO = 0.65
 
 
 @router.post("/session/{session_id}/snap")
-async def snap_to_object(session_id: str, mask: UploadFile = File(...)):
-    """손그림(올가미)으로 채운 영역을 SAM 후보 물체 전체 윤곽으로 넓혀 돌려준다.
+async def snap_to_object(
+    session_id: str,
+    mask: UploadFile = File(...),
+    x: float | None = Form(None),
+    y: float | None = Form(None),
+):
+    """손그림(올가미)으로 대충 칠한 영역을 "실제 물체 테두리"로 다듬어 돌려준다.
 
-    [왜 필요한가 — "사물에서 잘린 부분은 시공이 안 된다" 신고]
-    손그림 도구는 손가락이 지나간 자리를 그대로 닫아 채우는 올가미라, 사진 테두리에
-    걸려 물체 일부가 화면 밖으로 나가 있거나 다른 물건에 가려 손으로 테두리를 끝까지
-    두르지 못하면 그 부분은 색이 입혀지지 않는다. 이 엔드포인트는 사용자가 이미 칠한
-    영역과 SAM이 찾아둔 물체 후보들을 겹쳐 보고, 어느 후보가 "같은 물체"라고 볼 만큼
-    (coverage 또는 containment 기준, 아래 상수 참고) 겹치면 그 물체의 SAM 윤곽
-    전체(손이 못 닿은 부분까지)를 사용자가 칠한 영역과 합쳐 하나의 다각형으로
-    돌려준다. 기준을 넘는 후보가 여럿이면 가장 작은(=가장 구체적인) 것을 쓴다 —
-    상하부장 전체를 아우르는 큰 후보보다 문짝 한 짝짜리 후보가 있으면 그걸 우선한다.
-    기준을 넘는 후보가 하나도 없으면 None을 돌려줘 호출부가 원래 손그림만 그대로
-    쓰게 한다 — AI가 실패하거나 세션이 없어도 손그림 자체는 늘 그대로 쓸 수 있어야
-    한다."""
+    [2026-11-02 재설계 — 연습21 책장: "꾹 눌러도 AI 영역이 안 잡힌다"]
+    예전 방식은 사진 전체를 자동으로 훑은 SAM 후보 중 손그림과 겹치는 것을 골라
+    손그림에 "더하기"만 했다. 실측해 보니 문제가 셋이었다.
+      1. 자동 후보에 흰 책장 프레임·문짝 자체가 아예 없었다(책·장난감·바닥만 있음).
+      2. 판정이 "후보가 손그림 안에 얼마나 들어가 있나"라서, 손그림 안의 책 한 권
+         같은 작은 물건이 100%로 통과해 그게 "찾은 물체"로 뽑혔다(=아무 변화 없음).
+      3. 더하기만 하니 손그림이 벽·옆 책장으로 번진 부분은 절대 안 지워졌다.
+    지금은 손그림의 박스를 SAM에 직접 "이 안의 물체"로 지정해(segment_with_prompt)
+    테두리를 받아오고, 결과로 손그림을 **교체**한다 — 번진 부분은 빠지고, 유리 너머
+    책처럼 물체가 아닌 부분도 테두리 기준으로 정리된다. 손그림이 물체 두 개(예: 열린
+    선반장 + 유리문장)에 걸쳐 있으면 남은 부분으로 한 번 더 묻는다. AI가 확인 못 한
+    큰 덩어리는 손그림 그대로 남겨, 사장님이 칠한 영역이 통째로 사라지는 일은 없다.
+
+    x, y(꾹 누른 자리)는 박스로 못 찾았을 때 점 프롬프트로 한 번 더 묻는 데 쓴다.
+    결과가 없으면 {"points": None} — 호출부는 원래 손그림을 그대로 쓴다."""
     session = _SESSIONS.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="마스킹 세션이 만료됐어요. 사진을 다시 불러와 주세요.")
@@ -184,80 +202,172 @@ async def snap_to_object(session_id: str, mask: UploadFile = File(...)):
     raw = await mask.read()
     try:
         with Image.open(io.BytesIO(raw)) as img:
-            # 프론트가 사진 원본 해상도(session width x height)로 구워 보낸다 —
-            # segment_point의 SAM 격자 해상도와 달리 여기는 변환 없이 그대로 쓴다.
+            # 프론트가 사진 원본 해상도(session width x height)로 구워 보낸다.
             user_mask = np.array(img.convert("L")) > 127
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         raise HTTPException(status_code=422, detail="손그림 마스크를 읽을 수 없습니다.") from exc
-
-    masks = _ensure_masks(session)
-    if not masks:
-        print("[manual_mask] snap: 이 세션에 SAM 후보가 하나도 없음")
+    if not user_mask.any():
         return {"points": None}
 
-    uh, uw = user_mask.shape
+    press = (x, y) if x is not None and y is not None else None
+    result = await run_in_threadpool(_refine_user_mask, session, user_mask, press)
+    if result is None:
+        return {"points": None}
+    polygons = _mask_to_polygons(result)
+    if not polygons:
+        return {"points": None}
+    scaled = [[{"x": px, "y": py} for px, py in poly] for poly in polygons]
+    return {"points": scaled[0], "polygons": scaled, "replace": True}
+
+
+# 손그림 다듬기 판정 기준 (비율은 모두 면적 기준)
+REFINE_MIN_COMPONENT = 0.05  # 손그림 덩어리 중 전체의 5% 미만(잔획)은 따로 묻지 않는다
+REFINE_INSIDE_MIN = 0.6  # SAM 결과의 60% 이상이 손그림(+여유 폭) 안에 있어야 "같은 물체"
+REFINE_MIN_SIZE = 0.15  # SAM 결과가 그 손그림 덩어리의 15%도 안 되면(책 한 권 등) 버린다
+REFINE_RESIDUAL_ASK = 0.2  # 확인 안 된 손그림이 20% 이상 남으면 그 부분으로 한 번 더 묻는다
+REFINE_RESIDUAL_KEEP = 0.12  # 끝까지 확인 안 된 덩어리도 이만큼 크면 손그림 그대로 남긴다
+REFINE_MAX_CALLS = 3
+
+
+def _kernel(radius: int) -> np.ndarray:
+    radius = max(1, radius)
+    return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * radius + 1, 2 * radius + 1))
+
+
+def _components(mask: np.ndarray, min_area: int) -> list[np.ndarray]:
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(mask.astype(np.uint8), connectivity=8)
+    comps = [(stats[i, cv2.CC_STAT_AREA], labels == i) for i in range(1, count) if stats[i, cv2.CC_STAT_AREA] >= min_area]
+    comps.sort(key=lambda c: -c[0])
+    return [c[1] for c in comps]
+
+
+def _bbox(mask: np.ndarray, pad_ratio: float = 0.03) -> tuple[int, int, int, int]:
+    ys, xs = np.where(mask)
+    h, w = mask.shape
+    pad = int(max(xs.max() - xs.min(), ys.max() - ys.min()) * pad_ratio)
+    return (
+        max(0, int(xs.min()) - pad),
+        max(0, int(ys.min()) - pad),
+        min(w - 1, int(xs.max()) + pad),
+        min(h - 1, int(ys.max()) + pad),
+    )
+
+
+def _refine_user_mask(session: dict, user_mask: np.ndarray, press: tuple[float, float] | None) -> np.ndarray | None:
+    settings = get_settings()
+    if not settings.replicate_api_token:
+        raise HTTPException(status_code=503, detail="AI 객체 인식 기능이 이 서버에 설정되어 있지 않습니다.")
+
+    h, w = user_mask.shape
     user_area = int(user_mask.sum())
-    if user_area == 0:
-        return {"points": None}
+    margin = _kernel(int(np.hypot(w, h) * 0.03))  # 손그림이 물체 가장자리에 못 미친 정도의 여유
+    calls = 0
 
-    best: np.ndarray | None = None
-    best_area: int | None = None
-    best_score = (0.0, 0.0)  # 로그용 — 기준을 못 넘었을 때 "얼마나 모자랐는지" 보려고
-    for arr in masks:
-        h, w = arr.shape
-        candidate_area = int(arr.sum())
-        if candidate_area == 0 or candidate_area / (h * w) > SNAP_MAX_CANDIDATE_AREA_RATIO:
-            continue
-        resized_user = cv2.resize(user_mask.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST) > 0
-        inter = int((resized_user & arr).sum())
-        if inter == 0:
-            continue
-        coverage = inter / candidate_area
-        containment = inter / (user_area * (w * h) / (uw * uh))  # 사용자 면적도 후보 해상도 기준으로 환산
-        passes = coverage >= SNAP_MIN_COVERAGE or (
-            containment >= SNAP_MIN_CONTAINMENT and coverage >= SNAP_LENIENT_MIN_COVERAGE
-        )
-        if coverage > best_score[0]:
-            best_score = (coverage, containment)
-        if not passes:
-            continue
-        # 기준을 넘는 후보가 여럿이면 가장 작은(가장 구체적인) 것을 쓴다.
-        if best_area is None or candidate_area < best_area:
-            best, best_area = arr, candidate_area
+    def ask(region: np.ndarray, *, box: bool = True, point: tuple[int, int] | None = None) -> np.ndarray | None:
+        nonlocal calls
+        if calls >= REFINE_MAX_CALLS:
+            return None
+        calls += 1
+        try:
+            found = segment_with_prompt(
+                session["image_path"],
+                settings.replicate_api_token,
+                box=_bbox(region) if box else None,
+                point=point,
+            )
+        except Exception as exc:  # noqa: BLE001 - AI 실패는 "못 찾음"으로 처리
+            print(f"[manual_mask] snap: SAM 프롬프트 호출 실패: {exc}")
+            return None
+        if found is None:
+            return None
+        if found.shape != (h, w):
+            found = cv2.resize(found.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST) > 0
+        found_area = int(found.sum())
+        if found_area == 0 or found_area / (h * w) > SNAP_MAX_CANDIDATE_AREA_RATIO:
+            return None
+        near_region = cv2.dilate(region.astype(np.uint8), margin) > 0
+        inside = (found & near_region).sum() / found_area
+        if inside < REFINE_INSIDE_MIN or found_area < REFINE_MIN_SIZE * region.sum():
+            print(f"[manual_mask] snap: SAM 결과 기각 — inside={inside:.2f}, size={found_area / region.sum():.2f}")
+            return None
+        # 여유 폭 바깥으로 튀어나간 부분(옆 가구 등)은 잘라낸다.
+        return found & near_region
 
-    if best is None:
-        print(f"[manual_mask] snap: 기준 미달 — 최선 coverage={best_score[0]:.2f}, containment={best_score[1]:.2f}")
-        return {"points": None}
+    accepted = np.zeros_like(user_mask)
+    for comp in _components(user_mask, int(user_area * REFINE_MIN_COMPONENT))[:2]:
+        found = ask(comp)
+        if found is not None:
+            accepted |= found
 
-    h, w = best.shape
-    resized_candidate = cv2.resize(best.astype(np.uint8), (uw, uh), interpolation=cv2.INTER_NEAREST) > 0
-    combined = user_mask | resized_candidate
+    # 손그림이 물체 밖으로 번진 "얇은 띠"는 남기지도, 다시 묻지도 않는다 — 두께가
+    # 이 정도도 안 되는 잔여는 번짐으로 본다. (연습22 시험: 물체를 감싼 U자 띠가 통째로
+    # "확인 안 된 덩어리"로 남아 벽·옆 선반에 줄무늬로 칠해졌다.)
+    thin = _kernel(int(np.hypot(w, h) * 0.025))
 
-    polygon = _mask_to_polygon(combined.astype(np.uint8))
-    if polygon is None:
-        return {"points": None}
-    # user_mask와 같은 해상도(session 원본 사진 크기)에서 뽑았으므로 추가 변환이 없다.
-    return {"points": [{"x": x, "y": y} for x, y in polygon]}
+    def unexplained() -> list[np.ndarray]:
+        covered = cv2.dilate(accepted.astype(np.uint8), margin) > 0
+        rest = cv2.morphologyEx((user_mask & ~covered).astype(np.uint8), cv2.MORPH_OPEN, thin) > 0
+        return _components(rest & user_mask, int(user_area * REFINE_RESIDUAL_KEEP))
 
+    # 손그림이 물체 두 개에 걸쳐 있으면(열린 선반장 + 유리문장 등) 남은 쪽으로 한 번 더.
+    for rest in unexplained():
+        if rest.sum() < user_area * REFINE_RESIDUAL_ASK:
+            break
+        found = ask(rest)
+        if found is not None:
+            accepted |= found
 
-def _mask_to_polygon(mask: np.ndarray, max_points: int = 60) -> list[tuple[float, float]] | None:
-    """이진 마스크의 가장 큰 외곽선을 뽑아 다각형 점 목록으로 단순화한다.
-    점이 너무 많으면(수백 개) 프론트에서 그리기·전송이 무거워지므로
-    max_points로 추려낸다."""
-    mask_u8 = mask.astype(np.uint8) * 255
-    contours, _ = cv2.findContours(mask_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not contours:
+    # 박스로 하나도 못 찾았으면 꾹 누른 점으로 마지막으로 묻는다.
+    if not accepted.any() and press is not None:
+        px, py = int(round(press[0])), int(round(press[1]))
+        if 0 <= px < w and 0 <= py < h:
+            found = ask(user_mask, box=False, point=(px, py))
+            if found is not None:
+                accepted |= found
+
+    if not accepted.any():
+        print(f"[manual_mask] snap: AI가 손그림 영역의 물체를 확인하지 못함 (호출 {calls}회)")
         return None
-    largest = max(contours, key=cv2.contourArea)
-    if cv2.contourArea(largest) < 16:
-        return None
-    perimeter = cv2.arcLength(largest, True)
-    epsilon = max(1.0, perimeter * 0.004)
-    approx = cv2.approxPolyDP(largest, epsilon, True)
+
+    result = accepted.copy()
+    for rest in unexplained():
+        result |= rest  # AI가 확인 못 한 큰 덩어리는 사장님이 칠한 그대로 둔다
+    # 잔구멍·톱니 정리
+    result = cv2.morphologyEx(result.astype(np.uint8), cv2.MORPH_CLOSE, _kernel(int(np.hypot(w, h) * 0.004))) > 0
+    return result
+
+
+def _simplify_contour(contour: np.ndarray, max_points: int) -> list[tuple[float, float]] | None:
+    """외곽선을 max_points 이하로 단순화한다. 예전엔 점을 건너뛰며 솎아냈는데
+    (points[int(i*step)]), 그러면 모서리 점이 빠져 테두리가 톱니처럼 튀었다 —
+    지금은 허용 오차(epsilon)를 키워 가며 모양을 유지한 채 점 수를 줄인다."""
+    perimeter = cv2.arcLength(contour, True)
+    epsilon = max(1.0, perimeter * 0.002)
+    approx = cv2.approxPolyDP(contour, epsilon, True)
+    while len(approx) > max_points:
+        epsilon *= 1.4
+        approx = cv2.approxPolyDP(contour, epsilon, True)
     points = [(float(p[0][0]), float(p[0][1])) for p in approx]
-    if len(points) < 3:
-        return None
-    if len(points) > max_points:
-        step = len(points) / max_points
-        points = [points[int(i * step)] for i in range(max_points)]
-    return points
+    return points if len(points) >= 3 else None
+
+
+def _mask_to_polygons(mask: np.ndarray, max_points: int = 160, min_area_ratio: float = 0.002) -> list[list[tuple[float, float]]]:
+    """이진 마스크의 바깥 윤곽선들을 큰 것부터 다각형 목록으로 돌려준다(아주 작은
+    조각은 버린다). 손그림 획 하나 = 다각형 하나로 프론트에 그대로 들어간다."""
+    mask_u8 = mask.astype(np.uint8) * 255
+    contours, _ = cv2.findContours(mask_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    min_area = max(16.0, mask.shape[0] * mask.shape[1] * min_area_ratio)
+    polygons = []
+    for contour in sorted(contours, key=cv2.contourArea, reverse=True):
+        if cv2.contourArea(contour) < min_area:
+            break
+        poly = _simplify_contour(contour, max_points)
+        if poly:
+            polygons.append(poly)
+    return polygons
+
+
+def _mask_to_polygon(mask: np.ndarray, max_points: int = 160) -> list[tuple[float, float]] | None:
+    """가장 큰 윤곽선 하나만(자동 후보로 점 하나를 찾았을 때 쓰는 예전 경로)."""
+    polygons = _mask_to_polygons(mask, max_points)
+    return polygons[0] if polygons else None
