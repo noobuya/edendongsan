@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { Camera, ImagePlus, RotateCcw } from "lucide-react";
 import AssetImage from "@/components/AssetImage";
-import { BRAND_HERO_ALT, useBrandImageSrc } from "@/components/BrandHero";
+import { BRAND_HERO_ALT, BrandLogoMark, useBrandImageSrc } from "@/components/BrandHero";
 import CameraSheet from "@/components/CameraSheet";
 import { PhotoGuideSheet, PhotoGuideTip } from "@/components/PhotoGuide";
 import { BUSINESS_SERVICE_AREA } from "@/lib/businessInfo";
@@ -94,7 +94,8 @@ export default function CanvasStage({
             </button>
           ) : (
             <div className="pointer-events-auto flex flex-col items-center gap-5 text-center foldLandscape:gap-7">
-              <div className="space-y-1.5">
+              <div className="flex flex-col items-center gap-1.5">
+                <BrandLogoMark className="mb-0.5" />
                 <p className="text-[21px] font-extrabold leading-[1.3] tracking-[-0.02em] text-white break-keep foldLandscape:text-[28px]">
                   {BRAND_HERO_ALT}
                 </p>

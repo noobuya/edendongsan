@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import AssetImage from "@/components/AssetImage";
+import { getBrandAssets } from "@/lib/api";
 import { BUSINESS_SERVICE_AREA } from "@/lib/businessInfo";
 
 /** 대표 시공 사진이 놓이는 자리. 실제 사진은 public/images/eden_main.jpg 로 넣으면 된다.
@@ -32,6 +34,37 @@ export function useBrandImageSrc(): string | null {
   return src;
 }
 
+/** 사장님이 /admin/brand에서 올린 로고 주소. 없으면 null. */
+export function useBrandLogoSrc(): string | null {
+  const [logo, setLogo] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    getBrandAssets()
+      .then((a) => active && setLogo(a.logo))
+      .catch(() => {
+        /* 로고가 아직 없거나 서버에 못 닿아도 글자 상호로 조용히 대체된다. */
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+  return logo;
+}
+
+/** 대표 사진 위 글씨 옆에 붙는 로고 배지. 로고를 올려두지 않았으면 아무것도
+ *  그리지 않는다(빈 자리를 남기지 않고 글자만으로도 완성된 화면이어야 한다). */
+export function BrandLogoMark({ className = "" }: { className?: string }) {
+  const logo = useBrandLogoSrc();
+  if (!logo) return null;
+  return (
+    <span
+      className={`inline-flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white/90 shadow-sm ${className}`}
+    >
+      <AssetImage src={logo} alt="" className="h-full w-full object-contain p-1" />
+    </span>
+  );
+}
+
 /** 첫 화면·견적 화면 위쪽의 대표 사진 카드.
  *
  *  [사진이 아직 없을 때]
@@ -53,11 +86,14 @@ export default function BrandHero({ aspect = "aspect-[16/9]", className = "" }: 
         aria-hidden
         className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/30 to-black/5"
       />
-      <figcaption className="absolute inset-x-0 bottom-0 p-5">
-        <p className="text-[19px] font-extrabold leading-[1.3] tracking-[-0.02em] text-white break-keep [text-wrap:balance]">
-          {BRAND_HERO_ALT}
-        </p>
-        <p className="mt-1.5 text-[13px] leading-snug text-white/85 break-keep">{BUSINESS_SERVICE_AREA}</p>
+      <figcaption className="absolute inset-x-0 bottom-0 flex items-end gap-2.5 p-5">
+        <BrandLogoMark />
+        <div>
+          <p className="text-[19px] font-extrabold leading-[1.3] tracking-[-0.02em] text-white break-keep [text-wrap:balance]">
+            {BRAND_HERO_ALT}
+          </p>
+          <p className="mt-1.5 text-[13px] leading-snug text-white/85 break-keep">{BUSINESS_SERVICE_AREA}</p>
+        </div>
       </figcaption>
     </figure>
   );

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AlertCircle, Loader2, Search, Sparkles } from "lucide-react";
 import AssetImage from "@/components/AssetImage";
+import BrandShowcase from "@/components/BrandShowcase";
 import BusinessBanner from "@/components/BusinessBanner";
 import { listBlogPosts } from "@/lib/api";
 import type { BlogSummary } from "@/types";
@@ -47,6 +48,8 @@ export default function BlogListPage() {
       <div className="mb-6">
         <BusinessBanner />
       </div>
+
+      <BrandShowcase />
 
       <header className="mb-8 text-center">
         <h1 className="text-2xl font-bold text-slate-900">시공 후기 블로그</h1>

@@ -2,3 +2,7 @@
 # next-pwa가 만드는 서비스워커 산출물 (이 앱은 PWA를 쓰지 않는다)
 public/sw.js
 public/workbox-*.js
+
+# 이 서버 전용 환경값·빌드 캐시(기기마다 달라 커밋하면 충돌만 남는다)
+.env.production.local
+tsconfig.tsbuildinfo
