@@ -1,6 +1,7 @@
 """고객명으로 검색 가능한 공개 시공 후기 블로그.
 app/routers/quotes.py가 사장님(내부) 쪽 견적 관리/생성 API라면, 이 라우터는
 그중 블로그 글이 생성된 건만 골라 외부에 공개하는 조회 전용 API다."""
+import hashlib
 import os
 
 from fastapi import APIRouter, HTTPException
@@ -10,6 +11,8 @@ from fastapi.responses import FileResponse
 from app.quotes_store import list_quotes, load_quote
 from app.schemas import BlogDetailResponse, BlogListResponse, BlogSummary, WorkPhoto
 from app.services.blog_video import make_compare_gif, make_compare_mp4
+from app.services.brand_banner import make_brand_banner
+from app.business_info import BUSINESS_NAME, BUSINESS_PHONE, BUSINESS_SERVICE_AREA
 
 router = APIRouter(prefix="/api/blog", tags=["blog"])
 
@@ -75,6 +78,22 @@ async def get_blog_detail(job_id: str):
         ),
         video_status=quote.get("video_status"),
     )
+
+
+@router.get("/brand/{variant}")
+async def get_brand_banner(variant: str):
+    """네이버 블로그에 넣을 업체 배너 이미지 — top(상단 상호 배너) / bottom(하단 전화 상담
+    배너). 상호·전화번호가 바뀌면 파일 이름이 바뀌어 자동으로 새로 만든다
+    (services/brand_banner.py)."""
+    if variant not in ("top", "bottom"):
+        raise HTTPException(status_code=404, detail="없는 배너입니다.")
+    key = hashlib.md5(f"{BUSINESS_NAME}|{BUSINESS_PHONE}|{BUSINESS_SERVICE_AREA}|v2".encode()).hexdigest()[:8]
+    out = f"storage/results/brand_{variant}_{key}.png"
+    if not os.path.exists(out):
+        tmp = out.replace(".png", ".tmp.png")
+        await run_in_threadpool(make_brand_banner, variant, tmp)
+        os.replace(tmp, out)
+    return FileResponse(out, media_type="image/png")
 
 
 @router.get("/{job_id}/compare/{index}")

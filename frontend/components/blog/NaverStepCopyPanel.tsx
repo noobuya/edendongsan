@@ -73,11 +73,20 @@ export default function NaverStepCopyPanel({ post }: { post: NaverExportPost }) 
 
   return (
     <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3">
-      <p className="text-xs leading-relaxed text-slate-600">
-        <b>1번 [복사]</b> 한 번이면 제목·본문·해시태그 <b>글 전체</b>가 들어가요(네이버 글쓰기 화면에서 <b>Ctrl+V</b>).
-        네이버는 붙여넣은 글 속 사진은 받지 않아서, 사진은 그 아래 줄부터 하나씩 [복사] → Ctrl+V 하세요. 사진은
-        파일로 붙여넣어져 바로 올라갑니다. 영상은 [저장] 후 네이버의 <b>[동영상]</b> 버튼으로 올리세요. 비교 사진 줄의 <b>[움짤]</b>은 가운데 선이 저절로 움직이는 GIF(네이버 <b>[사진]</b> 버튼으로), <b>[영상]</b>은 같은 장면의 짧은 MP4(네이버 <b>[동영상]</b> 버튼으로)예요 — 움짤이 안 올라가면 영상을 쓰세요(손으로 미는 슬라이더는 네이버가 지원하지 않아요).
-      </p>
+      <ol className="list-decimal space-y-1 rounded-lg bg-slate-50 py-2 pl-7 pr-3 text-xs leading-relaxed text-slate-600">
+        <li>
+          맨 위 <b>[글 복사]</b> → 네이버 글쓰기 화면에 <b>Ctrl+V</b>. 글 전체가 들어가고, 사진 넣을 곳에 주황색{" "}
+          <b className="rounded bg-amber-200 px-1 text-orange-800">📷 [사진 N]</b> 표시가 생겨요.
+        </li>
+        <li>
+          네이버에서 <b>[사진 1]</b> 표시 줄을 클릭 → 아래 <b>사진 1</b>의 [복사] → <b>Ctrl+V</b> → 표시 글자는 지우기.
+          사진 2, 3 … 순서대로 반복하세요.
+        </li>
+        <li>
+          영상은 [저장] 후 그 표시 줄을 클릭하고 네이버 <b>[동영상]</b> 버튼으로 올려요. 비교 사진 줄의 <b>[움짤]</b>(GIF →
+          네이버 [사진] 버튼) / <b>[영상]</b>(MP4 → [동영상] 버튼)은 움직이는 비교를 넣고 싶을 때 쓰세요.
+        </li>
+      </ol>
       <ol className="space-y-1.5">
         {steps.map((step, i) => {
           const isDone = done.has(i);
@@ -89,7 +98,13 @@ export default function NaverStepCopyPanel({ post }: { post: NaverExportPost }) 
                 isNext ? "bg-emerald-50 ring-1 ring-emerald-200" : ""
               }`}
             >
-              <span className="w-5 shrink-0 text-center text-xs font-semibold text-slate-400">{i + 1}</span>
+              <span
+                className={`w-12 shrink-0 rounded px-1 py-0.5 text-center text-[11px] font-bold ${
+                  step.kind === "text" ? "bg-slate-200 text-slate-700" : "bg-amber-200 text-orange-800"
+                }`}
+              >
+                {step.kind === "text" ? "글" : `사진 ${step.slot ?? i}`}
+              </span>
               {step.kind === "photo" ? (
                 <AssetImage src={step.url} alt={step.label} className="h-10 w-10 shrink-0 rounded object-cover" />
               ) : step.kind === "video" ? (
@@ -158,7 +173,7 @@ export default function NaverStepCopyPanel({ post }: { post: NaverExportPost }) 
                 ) : (
                   <ClipboardCopy className="h-3 w-3" />
                 )}
-                {step.kind === "video" ? (isDone ? "저장함" : "저장") : isDone ? "복사함" : "복사"}
+                {step.kind === "video" ? (isDone ? "저장함" : "저장") : step.kind === "text" ? (isDone ? "글 복사함" : "글 복사") : isDone ? "복사함" : "복사"}
               </button>
             </li>
           );

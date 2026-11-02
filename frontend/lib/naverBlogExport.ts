@@ -1,5 +1,5 @@
-import { compareGifUrl, fetchAssetObjectUrl, resolveAssetUrl } from "@/lib/api";
-import { parseBlogSections, planBlogPhotos } from "@/lib/blogBlocks";
+import { brandBannerUrl, compareGifUrl, fetchAssetObjectUrl, resolveAssetUrl } from "@/lib/api";
+import { pairsAfterSection, parseBlogSections, planBlogPhotos } from "@/lib/blogBlocks";
 import { splitBoldSegments } from "@/lib/richText";
 import type { WorkPhoto } from "@/types";
 
@@ -238,11 +238,12 @@ export async function saveAllPhotos(
 // 시공 전/후를 따로 붙이면 순서가 어긋나거나 한 장을 빠뜨려 짝이 틀어졌다. 짝은
 // "시공 전 | 시공 후"를 나란히 붙인 비교 사진 한 장(kind: "pair")으로 만든다 —
 // 짝이 어긋날 수 없고 붙여넣는 횟수도 절반이 된다.
+// slot: 글 속 "[사진 N]" 자리 표시 번호 — 이 단계의 사진/영상을 그 줄에 넣는다.
 export type NaverStep =
-  | { kind: "text"; label: string; html: string; plain: string }
-  | { kind: "photo"; label: string; url: string }
-  | { kind: "pair"; label: string; before: string; after: string; gifUrl?: string }
-  | { kind: "video"; label: string; url: string };
+  | { kind: "text"; label: string; html: string; plain: string; slot?: undefined }
+  | { kind: "photo"; label: string; url: string; slot?: number }
+  | { kind: "pair"; label: string; before: string; after: string; gifUrl?: string; slot?: number }
+  | { kind: "video"; label: string; url: string; slot?: number };
 
 /** 단계의 사진 캐시 키 — 패널이 미리 만들어 두는 PNG를 찾을 때 쓴다. */
 export function stepImageKey(step: NaverStep): string | null {
@@ -262,44 +263,74 @@ function sectionHtml(headline: string | undefined, paragraphs: string[]): string
   return head + body;
 }
 
-/** [2026-11-03 "문단을 하나로 — 한 번 복사로 전체가 들어가게"]
- *  처음엔 문단마다 따로 복사해 사이사이에 사진을 넣게 했는데, 사장님은 글을 한 번에
- *  넣고 싶어 했다. 지금은 1번 단계 하나로 제목·본문 전체·해시태그를 통째로 복사하고,
- *  그 뒤에 영상 → 시공 전/후 비교 사진(+움짤·비교 영상) → 남은 사진을 이어 넣는다. */
+/** 글 속에 넣는 사진 자리 표시 — 눈에 띄게 주황 바탕. 네이버에서 이 줄을 클릭하고
+ *  순서표의 같은 번호 사진을 붙여넣은 뒤, 표시 글자는 지운다. */
+function slotHtml(n: number, label: string): string {
+  return `<p style="text-align:center"><span style="background-color:#fde68a;color:#9a3412;font-size:18px"><b>📷 [사진 ${n}] ${escapeHtml(label)} — 여기에 붙여넣기</b></span></p>`;
+}
+
+/** [2026-11-03 "본문을 하나로 하니 중간에 사진·영상을 넣기 힘들다 — 순서대로 넣게"]
+ *  글은 여전히 1번 [복사] 한 번으로 전체(제목·본문·해시태그)를 넣되, 앱 블로그와 같은
+ *  위치에 "📷 [사진 N] … 여기에 붙여넣기" 자리 표시를 함께 넣는다. 순서표 2번부터는
+ *  그 N번 사진/영상이 순서대로 나온다 — 자리 표시 줄을 클릭하고 [복사]→Ctrl+V.
+ *  맨 위·맨 아래에는 앱 블로그의 상호 표시·전화 상담 배너와 같은 모양의 업체 배너
+ *  이미지(백엔드 /api/blog/brand/top|bottom)를 넣는다. 배치 규칙은 lib/blogBlocks.ts. */
 export function buildNaverSteps(post: NaverExportPost): NaverStep[] {
-  const steps: NaverStep[] = [];
   const sections = parseBlogSections(post.content);
   const { pairs, rest } = planBlogPhotos(post.photos);
+  const media: NaverStep[] = [];
+  const html: string[] = [];
+  const plain: string[] = [];
 
-  const titleHtml = `<p style="text-align:center"><span style="font-size:30px"><b>${escapeHtml(post.title)}</b></span></p>`;
-  const bodyHtml = sections.map((sec) => sectionHtml(sec.headline, sec.paragraphs)).join("<p><br></p>");
-  const tagsHtml = post.hashtags.length ? `<p><br></p><p>${escapeHtml(post.hashtags.join(" "))}</p>` : "";
-  const plain = [
-    post.title,
-    ...sections.map((sec) => [sec.headline ?? "", ...sec.paragraphs].filter(Boolean).join("\n")),
-    post.hashtags.join(" "),
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-  steps.push({ kind: "text", label: "글 전체 (제목 + 본문 + 해시태그)", html: titleHtml + bodyHtml + tagsHtml, plain });
+  const slot = (step: NaverStep, label: string) => {
+    const n = media.length + 1;
+    media.push({ ...step, slot: n } as NaverStep);
+    html.push(slotHtml(n, label));
+    plain.push(`📷 [사진 ${n}] ${label} — 여기에 붙여넣기`);
+  };
 
-  if (pairs.length === 0 && post.coverUrl) steps.push({ kind: "photo", label: "대표 사진", url: post.coverUrl });
-  if (post.videoUrl) steps.push({ kind: "video", label: "시공 영상 (네이버 [동영상] 버튼으로 올리기)", url: post.videoUrl });
-  pairs.forEach((pair, k) => {
-    steps.push({
-      kind: "pair",
-      label: `시공 전·후 비교 사진 ${k + 1}`,
-      before: pair.before.url,
-      after: pair.after.url,
-      gifUrl: post.jobId ? compareGifUrl(post.jobId, k) : undefined,
-    });
+  slot({ kind: "photo", label: "업체 배너 (상단)", url: brandBannerUrl("top") }, "업체 배너");
+  html.push(`<p style="text-align:center"><span style="font-size:30px"><b>${escapeHtml(post.title)}</b></span></p>`);
+  plain.push(post.title);
+
+  sections.forEach((sec, i) => {
+    html.push(sectionHtml(sec.headline, sec.paragraphs));
+    plain.push([sec.headline ?? "", ...sec.paragraphs].filter(Boolean).join("\n"));
+    if (i === 0) {
+      if (post.videoUrl) slot({ kind: "video", label: "시공 영상", url: post.videoUrl }, "시공 영상(동영상)");
+      if (pairs.length === 0 && post.coverUrl) slot({ kind: "photo", label: "대표 사진", url: post.coverUrl }, "대표 사진");
+    }
+    for (const k of pairsAfterSection(i, sections.length, pairs.length)) {
+      slot(
+        {
+          kind: "pair",
+          label: `시공 전·후 비교 ${k + 1}`,
+          before: pairs[k].before.url,
+          after: pairs[k].after.url,
+          gifUrl: post.jobId ? compareGifUrl(post.jobId, k) : undefined,
+        },
+        `시공 전·후 비교 ${k + 1}`
+      );
+    }
   });
   rest.forEach((photo, i) => {
     if (pairs.length === 0 && photo.url === post.coverUrl) return;
     const stage = photo.stage === "before" ? "시공 전" : photo.stage === "progress" ? "작업 중" : "시공 후";
-    steps.push({ kind: "photo", label: `${stage} 사진 (추가 ${i + 1})`, url: photo.url });
+    slot({ kind: "photo", label: `${stage} 현장 사진 ${i + 1}`, url: photo.url }, `${stage} 현장 사진 ${i + 1}`);
   });
-  return steps;
+  slot({ kind: "photo", label: "전화 상담 배너 (하단)", url: brandBannerUrl("bottom") }, "전화 상담 배너");
+  if (post.hashtags.length) {
+    html.push(`<p><br></p><p>${escapeHtml(post.hashtags.join(" "))}</p>`);
+    plain.push(post.hashtags.join(" "));
+  }
+
+  const text: NaverStep = {
+    kind: "text",
+    label: "글 전체 (사진 넣을 자리 표시 포함)",
+    html: html.join("<p><br></p>"),
+    plain: plain.join("\n\n"),
+  };
+  return [text, ...media];
 }
 
 /** 사진을 클립보드용 PNG로 만든다 — 크롬·엣지 클립보드는 사진 형식으로 PNG만 받는다.

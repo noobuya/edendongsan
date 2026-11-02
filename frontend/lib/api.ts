@@ -623,6 +623,11 @@ export async function composeBlog(
   return res.json();
 }
 
+/** 네이버 블로그용 업체 배너 이미지(앱 블로그의 상호 표시·전화 상담 배너와 같은 모양). */
+export function brandBannerUrl(variant: "top" | "bottom"): string {
+  return `/api/blog/brand/${variant}`;
+}
+
 /** i번째 시공 전/후 짝의 "밀어 보기" 움짤(GIF) 주소 — 네이버에 슬라이더 대신 올린다. */
 export function compareGifUrl(jobId: string, index: number): string {
   return `${API_BASE}/api/blog/${jobId}/compare/${index}`;
