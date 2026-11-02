@@ -1,8 +1,10 @@
 import io
 import uuid
+from pathlib import Path
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
+from fastapi.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
 from PIL import Image, ImageOps, UnidentifiedImageError
 
@@ -28,6 +30,7 @@ from app.schemas import (
     WorkPhoto,
     WorkPhotoStage,
 )
+from app.services.blog_video import make_blog_video
 from app.services.blog_writer import generate_blog_post
 
 
@@ -188,6 +191,28 @@ async def create_blog_post(job_id: str):
         raise HTTPException(status_code=502, detail=f"블로그 글 생성에 실패했습니다: {exc}") from exc
     set_blog_post(job_id, post)
     return BlogPost(**post)
+
+
+def blog_video_path(job_id: str) -> str:
+    return f"storage/results/{job_id}_blog_video.mp4"
+
+
+@router.post("/{job_id}/blog/video")
+async def create_blog_video(job_id: str):
+    """현장 사진으로 블로그용 홍보 영상(MP4)을 만든다(services/blog_video.py).
+    CPU로 20~40초 걸리므로 스레드풀에서 돌려 다른 요청을 막지 않는다. 다시 누르면
+    최신 사진으로 새로 만든다."""
+    quote = load_quote(job_id)
+    if quote is None:
+        raise HTTPException(status_code=404, detail="견적서를 찾을 수 없습니다.")
+    path = blog_video_path(job_id)
+    tmp = path.replace(".mp4", ".tmp.mp4")
+    try:
+        await run_in_threadpool(make_blog_video, quote, tmp)
+    except Exception as exc:  # noqa: BLE001 - 사진 없음/인코딩 실패를 그대로 사용자에게
+        raise HTTPException(status_code=502, detail=f"영상을 만들지 못했습니다: {exc}") from exc
+    Path(tmp).replace(path)
+    return {"video_url": f"/static/results/{job_id}_blog_video.mp4"}
 
 
 @router.delete("/{job_id}/blog")

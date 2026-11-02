@@ -116,9 +116,30 @@ export function computeEdgeMap(img: HTMLImageElement, naturalW: number, naturalH
   ctx.drawImage(img, 0, 0, w, h);
   const { data: rgba } = ctx.getImageData(0, 0, w, h);
 
-  const gray = new Float32Array(w * h);
+  const raw = new Float32Array(w * h);
   for (let i = 0, p = 0; i < rgba.length; i += 4, p++) {
-    gray[p] = 0.299 * rgba[i] + 0.587 * rgba[i + 1] + 0.114 * rgba[i + 2];
+    raw[p] = 0.299 * rgba[i] + 0.587 * rgba[i + 1] + 0.114 * rgba[i + 2];
+  }
+  // 소벨 전에 살짝 흐린다(1-2-1 가로·세로) — 나뭇결·패브릭·책등 글씨 같은 잔무늬가
+  // 가장자리로 잡혀 선이 그쪽으로 튀던 것(삐뚤빼뚤)을 줄이고, 가구 테두리처럼 굵은
+  // 경계만 남긴다.
+  const tmp = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      const l = x > 0 ? raw[i - 1] : raw[i];
+      const r = x < w - 1 ? raw[i + 1] : raw[i];
+      tmp[i] = (l + 2 * raw[i] + r) / 4;
+    }
+  }
+  const gray = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      const u = y > 0 ? tmp[i - w] : tmp[i];
+      const d = y < h - 1 ? tmp[i + w] : tmp[i];
+      gray[i] = (u + 2 * tmp[i] + d) / 4;
+    }
   }
 
   const edge = new Uint8ClampedArray(w * h);
@@ -166,6 +187,137 @@ export function snapToEdge(map: EdgeMap, naturalPt: Pt, naturalShortSide: number
   }
   if (bestVal < EDGE_SNAP_MIN_STRENGTH) return naturalPt;
   return { x: bestX / scale, y: bestY / scale };
+}
+
+/** [선을 따라 "이어서" 붙는 자석 — "손그림이 라인을 못 따라가고 삐뚤빼뚤하다" 신고]
+ *  snapToEdge는 점마다 따로 반경 안의 "가장 센" 가장자리로 튀어서, 이웃한 점이
+ *  서로 다른 선(나뭇결·책 모서리·선반 줄)에 붙어 지그재그가 됐다. 이 스내퍼는
+ *  한 획 동안 상태를 들고 다니며
+ *    1. 손가락 진행 방향의 "옆(법선) 방향"으로만 가장자리를 찾고,
+ *    2. 손가락에서 멀수록, 그리고 바로 앞 점이 붙어 있던 선에서 벗어날수록 감점해
+ *       같은 선을 계속 따라가게 하고,
+ *    3. 붙는 위치를 저역 필터로 부드럽게 옮겨 갑자기 튀지 않게 한다.
+ *  가장자리가 없는 곳(빈 벽)에서는 앞의 붙은 거리를 서서히 풀어 손가락으로 돌아온다. */
+export interface EdgeSnapper {
+  snap: (naturalPt: Pt) => Pt;
+}
+
+const SNAP_DIST_PENALTY = 0.6; // 손가락에서 1px(지도 기준) 멀어질 때마다 감점
+const SNAP_CONTINUITY_PENALTY = 4; // 앞 점이 붙은 선에서 1px 벗어날 때마다 감점
+const SNAP_SMOOTHING = 0.35; // 0~1, 새 위치로 옮겨 가는 비율(작을수록 부드럽다)
+const SNAP_RELEASE = 0.75; // 가장자리가 없을 때 앞의 붙은 거리를 남기는 비율
+
+export function createEdgeSnapper(map: EdgeMap, naturalShortSide: number): EdgeSnapper {
+  const { data, width, height, scale } = map;
+  const radiusNatural = Math.max(
+    EDGE_SNAP_RADIUS_MIN_PX,
+    Math.min(EDGE_SNAP_RADIUS_MAX_PX, naturalShortSide * EDGE_SNAP_RADIUS_FRACTION)
+  );
+  const r = Math.max(2, Math.round(radiusNatural * scale));
+  let prevRaw: Pt | null = null; // 지도 좌표
+  let dir: Pt | null = null;
+  let offset: Pt = { x: 0, y: 0 }; // 붙은 점 - 손가락 (지도 좌표)
+
+  const sample = (x: number, y: number) => {
+    const xi = Math.round(x);
+    const yi = Math.round(y);
+    if (xi < 0 || yi < 0 || xi >= width || yi >= height) return 0;
+    return data[yi * width + xi];
+  };
+
+  return {
+    snap(naturalPt: Pt): Pt {
+      const raw = { x: naturalPt.x * scale, y: naturalPt.y * scale };
+      if (!prevRaw) {
+        // 첫 점은 방향을 모르니 예전 방식(반경 안 최강 가장자리)으로 시작한다.
+        const first = snapToEdge(map, naturalPt, naturalShortSide);
+        offset = { x: first.x * scale - raw.x, y: first.y * scale - raw.y };
+        prevRaw = raw;
+        return first;
+      }
+      const mx = raw.x - prevRaw.x;
+      const my = raw.y - prevRaw.y;
+      const len = Math.hypot(mx, my);
+      if (len > 0.5) {
+        const nd = { x: mx / len, y: my / len };
+        // 방향도 부드럽게 — 손 떨림 한 번에 법선이 휙 돌지 않게.
+        dir = dir ? { x: dir.x * 0.6 + nd.x * 0.4, y: dir.y * 0.6 + nd.y * 0.4 } : nd;
+        const dl = Math.hypot(dir.x, dir.y) || 1;
+        dir = { x: dir.x / dl, y: dir.y / dl };
+      }
+      prevRaw = raw;
+      if (!dir) return naturalPt;
+
+      const n = { x: -dir.y, y: dir.x };
+      const prevT = offset.x * n.x + offset.y * n.y; // 앞의 붙은 거리를 법선에 투영
+      let bestT = 0;
+      let bestScore = -Infinity;
+      let bestStrength = 0;
+      for (let t = -r; t <= r; t++) {
+        const v = sample(raw.x + n.x * t, raw.y + n.y * t);
+        const score = v - SNAP_DIST_PENALTY * Math.abs(t) - SNAP_CONTINUITY_PENALTY * Math.abs(t - prevT);
+        if (score > bestScore) {
+          bestScore = score;
+          bestT = t;
+          bestStrength = v;
+        }
+      }
+      const targetT = bestStrength >= EDGE_SNAP_MIN_STRENGTH ? bestT : prevT * SNAP_RELEASE;
+      const t = prevT + (targetT - prevT) * SNAP_SMOOTHING;
+      offset = { x: n.x * t, y: n.y * t };
+      return { x: (raw.x + offset.x) / scale, y: (raw.y + offset.y) / scale };
+    },
+  };
+}
+
+/** 손을 뗀 획을 정리한다 — 가벼운 이동평균으로 잔떨림을 없앤 뒤, 거의 일직선인
+ *  구간은 더글러스-포이커로 곧게 편다(가구 테두리는 대부분 직선이라 이게 "자연스럽게
+ *  선을 따라 그린" 느낌을 만든다). tolerance는 사진 원본 픽셀 기준. */
+export function smoothStroke(points: Pt[], tolerance: number): Pt[] {
+  if (points.length < 4) return points;
+  let avg = points;
+  // 두 번 — 연습22 사진에 떨리는 손 경로를 흉내 내 비교했을 때 한 번보다 확실히 매끈했다.
+  for (let pass = 0; pass < 2; pass++) {
+    const src = avg;
+    avg = src.map((p, i) => {
+      if (i === 0 || i === src.length - 1) return p;
+      const a = src[i - 1];
+      const b = src[i + 1];
+      return { x: (a.x + 2 * p.x + b.x) / 4, y: (a.y + 2 * p.y + b.y) / 4 };
+    });
+  }
+  return douglasPeucker(avg, tolerance);
+}
+
+function douglasPeucker(points: Pt[], tolerance: number): Pt[] {
+  if (points.length <= 2) return points;
+  const keep = new Uint8Array(points.length);
+  keep[0] = 1;
+  keep[points.length - 1] = 1;
+  const stack: [number, number][] = [[0, points.length - 1]];
+  while (stack.length) {
+    const [s, e] = stack.pop()!;
+    const a = points[s];
+    const b = points[e];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const segLen = Math.hypot(dx, dy) || 1;
+    let maxDist = 0;
+    let index = -1;
+    for (let i = s + 1; i < e; i++) {
+      const p = points[i];
+      const dist = Math.abs(dy * p.x - dx * p.y + b.x * a.y - b.y * a.x) / segLen;
+      if (dist > maxDist) {
+        maxDist = dist;
+        index = i;
+      }
+    }
+    if (index !== -1 && maxDist > tolerance) {
+      keep[index] = 1;
+      stack.push([s, index], [index, e]);
+    }
+  }
+  return points.filter((_, i) => keep[i]);
 }
 
 /** 면이 되려면 최소 세 점은 있어야 한다. 위쪽 한계는 없다 —

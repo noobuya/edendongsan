@@ -1,4 +1,5 @@
 import { fetchAssetObjectUrl, resolveAssetUrl } from "@/lib/api";
+import { pairsAfterSection, parseBlogSections, planBlogPhotos } from "@/lib/blogBlocks";
 import { splitBoldSegments } from "@/lib/richText";
 import type { WorkPhoto } from "@/types";
 
@@ -12,6 +13,8 @@ export interface NaverExportPost {
   /** 본문 맨 위 대표 사진(없으면 생략). */
   coverUrl?: string;
   photos: WorkPhoto[];
+  /** 홍보 영상(MP4)을 만들어 뒀으면 그 주소 — 순서표에 "영상 저장" 단계가 생긴다. */
+  videoUrl?: string | null;
 }
 
 // 네이버 블로그 본문 폭이 최대 약 900px이라 그 이상은 용량만 커진다. 한 장에
@@ -229,26 +232,61 @@ export async function saveAllPhotos(
 // 때와 똑같이 그 사진을 바로 업로드한다. 브라우저 클립보드엔 사진을 한 번에 한 장만
 // 넣을 수 있어서, 글 → 사진1 → 사진2 … 순서로 하나씩 복사·붙여넣기하게 안내한다.
 
+// [2026-11-03 "하나씩 올리면 시공 전후 사진이 안 맞는다"]
+// 시공 전/후를 따로 붙이면 순서가 어긋나거나 한 장을 빠뜨려 짝이 틀어졌다. 짝은
+// "시공 전 | 시공 후"를 나란히 붙인 비교 사진 한 장(kind: "pair")으로 만든다 —
+// 짝이 어긋날 수 없고 붙여넣는 횟수도 절반이 된다.
 export type NaverStep =
   | { kind: "text"; label: string; html: string; plain: string }
-  | { kind: "photo"; label: string; url: string };
+  | { kind: "photo"; label: string; url: string }
+  | { kind: "pair"; label: string; before: string; after: string }
+  | { kind: "video"; label: string; url: string };
 
+/** 단계의 사진 캐시 키 — 패널이 미리 만들어 두는 PNG를 찾을 때 쓴다. */
+export function stepImageKey(step: NaverStep): string | null {
+  if (step.kind === "photo") return step.url;
+  if (step.kind === "pair") return `${step.before}|${step.after}`;
+  return null;
+}
+
+/** 큰 문구(# ) 블록을 네이버 에디터에서도 크게 보이도록 HTML로. */
+function sectionHtml(headline: string | undefined, paragraphs: string[]): string {
+  const head = headline
+    ? `<p style="text-align:center"><span style="font-size:26px"><b>${escapeHtml(headline)}</b></span></p>`
+    : "";
+  const body = paragraphs
+    .map((p) => `<p style="text-align:center">${boldToHtml(p).replace(/\n/g, "<br>")}</p>`)
+    .join("");
+  return head + body;
+}
+
+/** [2026-11-03 재구성] 앱 블로그 화면(/blog/post)과 똑같은 순서 — 제목 + 첫 블록 →
+ *  (영상) → 블록마다 뒤에 시공 전/후 비교 사진 → 남은 사진 → 해시태그. 배치 규칙은
+ *  lib/blogBlocks.ts 한 곳에서 정한다. */
 export function buildNaverSteps(post: NaverExportPost): NaverStep[] {
   const steps: NaverStep[] = [];
-  steps.push({
-    kind: "text",
-    label: "제목 + 본문 글",
-    html: `<h2>${escapeHtml(post.title)}</h2>${paragraphsHtml(post.content)}`,
-    plain: [post.title, post.content].join("\n\n"),
-  });
-  const { pairs, rest } = orderedSections(post);
-  if (post.coverUrl) steps.push({ kind: "photo", label: "대표 사진", url: post.coverUrl });
-  pairs.forEach(([b, a], i) => {
-    steps.push({ kind: "photo", label: `시공 전 사진 ${i + 1}`, url: b.url });
-    steps.push({ kind: "photo", label: `시공 후 사진 ${i + 1}`, url: a.url });
+  const sections = parseBlogSections(post.content);
+  const { pairs, rest } = planBlogPhotos(post.photos);
+
+  sections.forEach((sec, i) => {
+    const titleHtml =
+      i === 0 ? `<p style="text-align:center"><span style="font-size:30px"><b>${escapeHtml(post.title)}</b></span></p>` : "";
+    steps.push({
+      kind: "text",
+      label: i === 0 ? `제목 + ${sec.headline ?? "첫 문단"}` : sec.headline ?? `문단 ${i + 1}`,
+      html: titleHtml + sectionHtml(sec.headline, sec.paragraphs),
+      plain: [i === 0 ? post.title : "", sec.headline ?? "", ...sec.paragraphs].filter(Boolean).join("\n\n"),
+    });
+    if (i === 0) {
+      if (pairs.length === 0 && post.coverUrl) steps.push({ kind: "photo", label: "대표 사진", url: post.coverUrl });
+      if (post.videoUrl) steps.push({ kind: "video", label: "시공 영상 (네이버 [동영상] 버튼으로 올리기)", url: post.videoUrl });
+    }
+    for (const k of pairsAfterSection(i, sections.length, pairs.length)) {
+      steps.push({ kind: "pair", label: `시공 전·후 비교 사진 ${k + 1}`, before: pairs[k].before.url, after: pairs[k].after.url });
+    }
   });
   rest.forEach((photo, i) => {
-    if (photo.url === post.coverUrl) return;
+    if (pairs.length === 0 && photo.url === post.coverUrl) return;
     const stage = photo.stage === "before" ? "시공 전" : photo.stage === "progress" ? "작업 중" : "시공 후";
     steps.push({ kind: "photo", label: `${stage} 사진 (추가 ${i + 1})`, url: photo.url });
   });
@@ -280,6 +318,58 @@ export async function fetchClipboardPng(path: string): Promise<Blob> {
   }
 }
 
+/** 시공 전/후 두 장을 같은 높이로 맞춰 나란히 붙이고, 위에 "시공 전 / 시공 후"
+ *  라벨 띠를 얹은 비교 사진 PNG를 만든다. */
+export async function fetchPairPng(beforePath: string, afterPath: string): Promise<Blob> {
+  const urls = await Promise.all([fetchAssetObjectUrl(beforePath), fetchAssetObjectUrl(afterPath)]);
+  try {
+    const [b, a] = await Promise.all(urls.map(loadImage));
+    const targetH = 1000;
+    const bw = (b.naturalWidth * targetH) / b.naturalHeight;
+    const aw = (a.naturalWidth * targetH) / a.naturalHeight;
+    const gap = 16;
+    const band = 84;
+    let width = bw + gap + aw;
+    // 네이버 본문에 맞게 가로 2000px를 넘지 않게 전체를 줄인다.
+    const shrink = Math.min(1, 2000 / width);
+    width = Math.round(width * shrink);
+    const h = Math.round(targetH * shrink);
+    const g = Math.round(gap * shrink);
+    const bandH = Math.round(band * shrink);
+    const bW = Math.round(bw * shrink);
+    const aW = width - bW - g;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = h + bandH;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("이미지를 변환하지 못했습니다.");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(b, 0, bandH, bW, h);
+    ctx.drawImage(a, bW + g, bandH, aW, h);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = `bold ${Math.round(bandH * 0.5)}px sans-serif`;
+    ctx.fillStyle = "#64748b";
+    ctx.fillText("시공 전", bW / 2, bandH / 2);
+    ctx.fillStyle = "#03a94e";
+    ctx.fillText("시공 후 ✨", bW + g + aW / 2, bandH / 2);
+    return await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("이미지를 변환하지 못했습니다."))), "image/png")
+    );
+  } finally {
+    urls.forEach((u) => URL.revokeObjectURL(u));
+  }
+}
+
+/** 단계에 맞는 클립보드 PNG를 만든다. */
+export function buildStepPng(step: NaverStep): Promise<Blob> | null {
+  if (step.kind === "photo") return fetchClipboardPng(step.url);
+  if (step.kind === "pair") return fetchPairPng(step.before, step.after);
+  return null;
+}
+
 /** 단계 하나를 클립보드에 넣는다. 사진은 미리 만들어 둔 PNG(또는 만들어지는 중인
  *  Promise)를 받는다 — 버튼을 누른 그 순간에 쓰기 요청을 해야 브라우저가 허용한다. */
 export async function copyNaverStep(step: NaverStep, png?: Blob | Promise<Blob>): Promise<void> {
@@ -299,6 +389,20 @@ export async function copyNaverStep(step: NaverStep, png?: Blob | Promise<Blob>)
     }
     if (copyHtmlViaSelection(step.html)) return;
     await navigator.clipboard.writeText(step.plain);
+    return;
+  }
+  if (step.kind === "video") {
+    // 영상은 클립보드로 못 옮긴다 — 파일로 저장해 네이버 [동영상] 버튼으로 올린다.
+    const res = await fetch(resolveAssetUrl(step.url));
+    if (!res.ok) throw new Error("영상을 내려받지 못했습니다.");
+    const blobUrl = URL.createObjectURL(await res.blob());
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = "시공영상.mp4";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 30_000);
     return;
   }
   if (typeof ClipboardItem === "undefined" || !navigator.clipboard?.write || !png) {

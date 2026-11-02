@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ClipboardCopy, FileText, Loader2 } from "lucide-react";
+import { Check, ClipboardCopy, Download, FileText, Film, Loader2 } from "lucide-react";
 import AssetImage from "@/components/AssetImage";
 import {
   buildNaverSteps,
+  buildStepPng,
   copyNaverStep,
-  fetchClipboardPng,
+  stepImageKey,
   type NaverExportPost,
 } from "@/lib/naverBlogExport";
 
@@ -24,10 +25,12 @@ export default function NaverStepCopyPanel({ post }: { post: NaverExportPost }) 
 
   useEffect(() => {
     for (const step of steps) {
-      if (step.kind === "photo" && !pngs.current.has(step.url)) {
-        const p = fetchClipboardPng(step.url);
+      const key = stepImageKey(step);
+      if (key && !pngs.current.has(key)) {
+        const p = buildStepPng(step);
+        if (!p) continue;
         p.catch(() => undefined); // 실패는 그 단계를 누를 때 보여준다
-        pngs.current.set(step.url, p);
+        pngs.current.set(key, p);
       }
     }
   }, [steps]);
@@ -39,7 +42,8 @@ export default function NaverStepCopyPanel({ post }: { post: NaverExportPost }) 
     setCopying(index);
     setError(null);
     try {
-      await copyNaverStep(step, step.kind === "photo" ? pngs.current.get(step.url) : undefined);
+      const key = stepImageKey(step);
+      await copyNaverStep(step, key ? pngs.current.get(key) : undefined);
       setDone((prev) => new Set(prev).add(index));
     } catch (err) {
       setError(err instanceof Error ? err.message : "복사하지 못했습니다.");
@@ -51,9 +55,9 @@ export default function NaverStepCopyPanel({ post }: { post: NaverExportPost }) 
   return (
     <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3">
       <p className="text-xs leading-relaxed text-slate-600">
-        <b>사진까지 확실하게 넣는 방법</b> — 위에서부터 차례로 <b>[복사]</b>를 누르고, 네이버 블로그 글쓰기
-        화면에서 <b>Ctrl+V</b>. 그다음 줄의 [복사] → Ctrl+V … 를 반복하세요. 사진은 파일로 붙여넣어져 바로
-        올라갑니다.
+        네이버 블로그는 붙여넣은 글 속 사진을 받지 않아서, <b>글과 사진을 한 개씩</b> 옮깁니다. 위에서부터
+        <b>[복사]</b> → 네이버 글쓰기 화면에서 <b>Ctrl+V</b> → 다음 줄 [복사] → Ctrl+V … 를 반복하세요. 사진은
+        파일로 붙여넣어져 바로 올라갑니다. 영상은 [저장] 후 네이버의 <b>[동영상]</b> 버튼으로 올리세요.
       </p>
       <ol className="space-y-1.5">
         {steps.map((step, i) => {
@@ -69,6 +73,15 @@ export default function NaverStepCopyPanel({ post }: { post: NaverExportPost }) 
               <span className="w-5 shrink-0 text-center text-xs font-semibold text-slate-400">{i + 1}</span>
               {step.kind === "photo" ? (
                 <AssetImage src={step.url} alt={step.label} className="h-10 w-10 shrink-0 rounded object-cover" />
+              ) : step.kind === "video" ? (
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-slate-900">
+                  <Film className="h-4 w-4 text-white" />
+                </span>
+              ) : step.kind === "pair" ? (
+                <span className="flex h-10 w-10 shrink-0 gap-px overflow-hidden rounded">
+                  <AssetImage src={step.before} alt="시공 전" className="h-10 w-5 object-cover" />
+                  <AssetImage src={step.after} alt="시공 후" className="h-10 w-5 object-cover" />
+                </span>
               ) : (
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-slate-100">
                   <FileText className="h-4 w-4 text-slate-500" />
@@ -91,10 +104,12 @@ export default function NaverStepCopyPanel({ post }: { post: NaverExportPost }) 
                   <Loader2 className="h-3 w-3 animate-spin" />
                 ) : isDone ? (
                   <Check className="h-3 w-3" />
+                ) : step.kind === "video" ? (
+                  <Download className="h-3 w-3" />
                 ) : (
                   <ClipboardCopy className="h-3 w-3" />
                 )}
-                {isDone ? "복사함" : "복사"}
+                {step.kind === "video" ? (isDone ? "저장함" : "저장") : isDone ? "복사함" : "복사"}
               </button>
             </li>
           );

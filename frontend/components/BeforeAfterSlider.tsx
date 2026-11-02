@@ -10,6 +10,8 @@ interface Props {
   /** 시공 후(AI 합성) 사진. */
   afterSrc: string;
   className?: string;
+  /** 블로그처럼 크게 보여 줄 때 BEFORE/AFTER 라벨도 크게. */
+  bigLabels?: boolean;
 }
 
 /** 시공 전/후 사진을 좌우로 끌어보며 비교하는 슬라이더.
@@ -18,7 +20,7 @@ interface Props {
  *  못 싣는다(AssetImage 주석 참고 — ngrok 경고 페이지를 이미지로 잘못 읽는 문제).
  *  그래서 여기서 fetchAssetObjectUrl로 미리 blob URL을 받아온 뒤 그 blob URL만
  *  슬라이더에 넘긴다. */
-export default function BeforeAfterSlider({ beforeSrc, afterSrc, className = "" }: Props) {
+export default function BeforeAfterSlider({ beforeSrc, afterSrc, className = "", bigLabels = false }: Props) {
   const [beforeUrl, setBeforeUrl] = useState<string | null>(null);
   const [afterUrl, setAfterUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -73,12 +75,25 @@ export default function BeforeAfterSlider({ beforeSrc, afterSrc, className = "" 
         itemTwo={<ReactCompareSliderImage src={afterUrl} alt="시공 후" />}
         style={{ width: "100%", height: "100%" }}
       />
-      <span className="pointer-events-none absolute left-2 top-2 rounded-full bg-black/50 px-2.5 py-1 text-[11px] font-semibold text-white">
-        시공 전
-      </span>
-      <span className="pointer-events-none absolute right-2 top-2 rounded-full bg-black/50 px-2.5 py-1 text-[11px] font-semibold text-white">
-        시공 후
-      </span>
+      {bigLabels ? (
+        <>
+          <span className="pointer-events-none absolute left-3 top-3 rounded-lg bg-black/60 px-3 py-1.5 text-lg font-black tracking-wide text-white">
+            BEFORE
+          </span>
+          <span className="pointer-events-none absolute right-3 top-3 rounded-lg bg-amber-400 px-3 py-1.5 text-lg font-black tracking-wide text-slate-900">
+            AFTER
+          </span>
+        </>
+      ) : (
+        <>
+          <span className="pointer-events-none absolute left-2 top-2 rounded-full bg-black/50 px-2.5 py-1 text-[11px] font-semibold text-white">
+            시공 전
+          </span>
+          <span className="pointer-events-none absolute right-2 top-2 rounded-full bg-black/50 px-2.5 py-1 text-[11px] font-semibold text-white">
+            시공 후
+          </span>
+        </>
+      )}
     </div>
   );
 }

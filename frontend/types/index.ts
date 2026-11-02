@@ -426,6 +426,8 @@ export interface BlogDetail {
   work_photos: WorkPhoto[];
   line_item_names: string[];
   hashtags?: string[];
+  /** 홍보 영상을 만들어 둔 경우에만 있다. */
+  video_url?: string | null;
 }
 
 // ── AI 제안서(고객 발송용 상세페이지) — /blog와 분리된 비공개 공유 링크 ──

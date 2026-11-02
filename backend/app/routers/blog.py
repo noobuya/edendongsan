@@ -1,6 +1,8 @@
 """고객명으로 검색 가능한 공개 시공 후기 블로그.
 app/routers/quotes.py가 사장님(내부) 쪽 견적 관리/생성 API라면, 이 라우터는
 그중 블로그 글이 생성된 건만 골라 외부에 공개하는 조회 전용 API다."""
+import os
+
 from fastapi import APIRouter, HTTPException
 
 from app.quotes_store import list_quotes, load_quote
@@ -63,4 +65,9 @@ async def get_blog_detail(job_id: str):
         work_photos=[WorkPhoto(**p) for p in quote.get("work_photos", [])],
         line_item_names=[li.get("item_name", "") for li in estimate.get("line_items", [])],
         hashtags=post.get("hashtags") or [],
+        video_url=(
+            f"/static/results/{job_id}_blog_video.mp4"
+            if os.path.exists(f"storage/results/{job_id}_blog_video.mp4")
+            else None
+        ),
     )

@@ -575,6 +575,17 @@ export async function listBlogPosts(query = ""): Promise<BlogSummary[]> {
   return data.posts;
 }
 
+/** 현장 사진으로 블로그 홍보 영상(MP4)을 만든다 — 서버에서 20~40초 걸린다. */
+export async function createBlogVideo(jobId: string, ownerToken: string): Promise<string> {
+  const res = await apiFetch(`${API_BASE}/api/quotes/${jobId}/blog/video`, {
+    method: "POST",
+    headers: ownerHeaders(ownerToken),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "영상을 만들지 못했습니다."));
+  const data = await res.json();
+  return data.video_url as string;
+}
+
 export async function getBlogDetail(jobId: string): Promise<BlogDetail> {
   const res = await apiFetch(`${API_BASE}/api/blog/${jobId}`);
   if (!res.ok) throw new Error(await extractErrorMessage(res, "블로그 글을 찾을 수 없습니다."));

@@ -8,13 +8,15 @@ import {
   DRAW_LAYER_CLASS,
   MIN_POLYGON_POINTS,
   computeEdgeMap,
+  createEdgeSnapper,
   createHatchPattern,
   getClosestLineSegment,
   isBrush,
   isPolygon,
   simplifyFreehandPath,
-  snapToEdge,
+  smoothStroke,
   type EdgeMap,
+  type EdgeSnapper,
   type MaskShape,
   type PolygonShape,
   type Pt,
@@ -40,6 +42,8 @@ const TR_BORDER_PX = 1;
 /** 손가락으로 쓸어 그릴 때 점을 찍는 최소 간격(화면 기준 px). 너무 촘촘하면
  *  점이 수백 개씩 쌓이고, 너무 성기면 곡선이 각져 보인다. */
 const FREEHAND_MIN_DIST_PX = 6;
+/** 손 뗀 획을 곧게 펼 때 허용하는 흔들림(화면 기준 px) — 이보다 덜 휘면 직선으로 본다. */
+const STROKE_STRAIGHTEN_PX = 4;
 /** 꾹 누르기로 인정하는 시간(ms).
  *
  *  [550ms였다가 750ms로 늘렸다 — "손으로 그리기가 안 된다" 신고의 원인]
@@ -277,10 +281,14 @@ export default function ShapeCanvas({
   /** 가장자리 지도가 준비돼 있으면 그 위로 점을 당겨 붙인다. 아직 계산 중이면
    *  (사진을 막 불러온 직후) 손가락 위치를 그대로 쓴다 — 자석 효과만 빠지고
    *  그리기 자체는 끊기지 않는다. */
+  //  한 획마다 새 스내퍼를 만든다 — 앞 점이 붙은 선을 기억해 "이어서" 따라가게 하는
+  //  상태를 획 단위로 들고 있어야 한다(lib/maskShapes.ts createEdgeSnapper 주석).
+  const snapperRef = useRef<EdgeSnapper | null>(null);
   function snapIfPossible(pt: Pt): Pt {
     const map = edgeMapRef.current;
     if (!map) return pt;
-    return snapToEdge(map, pt, Math.min(naturalWidth, naturalHeight));
+    if (!snapperRef.current) snapperRef.current = createEdgeSnapper(map, Math.min(naturalWidth, naturalHeight));
+    return snapperRef.current.snap(pt);
   }
 
   function handleStagePointer(e: Konva.KonvaEventObject<PointerEvent | TouchEvent>) {
@@ -318,6 +326,7 @@ export default function ShapeCanvas({
     if (!stage || !pos) return;
     brushDrawingRef.current = true;
     longPressFiredRef.current = false;
+    snapperRef.current = null; // 새 획은 새 스내퍼로
     const start = snapIfPossible({ x: pos.x / displayScale, y: pos.y / displayScale });
     brushPathRef.current = [start];
     setBrushLivePoints(brushPathRef.current);
@@ -370,7 +379,12 @@ export default function ShapeCanvas({
     cancelLongPressTimer();
     if (tool !== "freehand" || !brushDrawingRef.current) return;
     brushDrawingRef.current = false;
-    const simplified = simplifyFreehandPath(brushPathRef.current, FREEHAND_MIN_DIST_PX * unit);
+    snapperRef.current = null;
+    // 손을 떼면 잔떨림을 없애고 거의 일직선인 구간은 곧게 편다(smoothStroke).
+    const simplified = smoothStroke(
+      simplifyFreehandPath(brushPathRef.current, FREEHAND_MIN_DIST_PX * unit),
+      STROKE_STRAIGHTEN_PX * unit
+    );
     brushPathRef.current = [];
     setBrushLivePoints([]);
     if (simplified.length >= 1) onBrushStrokeComplete(simplified);
