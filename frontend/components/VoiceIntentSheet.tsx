@@ -21,109 +21,208 @@ const EXAMPLES = [
   "문짝과 문틀을 시공할거다",
 ];
 
+// Web Speech API는 표준 TS lib에 타입이 없어(브라우저별 구현이라 미표준) 최소한만 직접 선언한다.
+interface SpeechRecognitionResultLike {
+  0: { transcript: string };
+}
+interface SpeechRecognitionEventLike {
+  results: SpeechRecognitionResultLike[];
+}
 interface SpeechRecognitionLike {
   lang: string;
   interimResults: boolean;
   maxAlternatives: number;
-  onresult: ((e: { results: { [i: number]: { [i: number]: { transcript: string } } } }) => void) | null;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: unknown) => void) | null;
   onend: (() => void) | null;
-  onerror: ((e: { error?: string }) => void) | null;
   start: () => void;
   stop: () => void;
 }
 type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
 
 const SPEECH_ERROR_MESSAGES: Record<string, string> = {
-  "not-allowed": "마이크 권한이 꺼져 있어요. 브라우저 주소창의 자물쇠 아이콘에서 마이크를 허용해 주세요.",
-  "service-not-allowed": "이 브라우저/앱에서는 음성 인식 서비스를 쓸 수 없어요. 아래 입력칸에서 키보드의 마이크 버튼을 눌러 말씀해 주세요.",
-  "no-speech": "말소리를 듣지 못했어요. 버튼을 다시 눌러 말씀해 주세요.",
+  "not-allowed": "마이크 권한이 꺼져 있어요. 브라우저/앱 설정에서 마이크 권한을 켜주세요.",
+  "service-not-allowed": "이 브라우저에서는 음성 인식 서비스를 쓸 수 없어요.",
+  "no-speech": "말소리를 듣지 못했어요. 다시 눌러서 말씀해 주세요.",
   "audio-capture": "마이크를 찾을 수 없어요. 기기의 마이크 연결을 확인해 주세요.",
-  "network": "네트워크 문제로 음성 인식에 실패했어요. 다시 시도해 주세요.",
+  network: "네트워크 문제로 음성 인식에 실패했어요. 다시 시도해 주세요.",
 };
 
-/** 안드로이드/아이폰 키보드에는 전부 마이크(받아쓰기) 버튼이 있어, 아래 입력칸에
- *  그대로 대고 말하면 된다 — 그게 이 화면의 기본 "마이크 기능"이고 추가 구현이
- *  필요 없다. Web Speech API를 지원하는 브라우저(데스크톱 크롬 등)에서만 "탭해서
- *  말하기" 보조 버튼을 하나 더 보여준다.
+const VOICE_TIMEOUT_MS = 12_000;
+
+/** [APK에서 음성 인식이 "눌러도 반응 없다"던 문제의 진짜 원인 — 2026-11]
+ *  설치된 앱은 capacitor.config.ts에서 이 서버 주소를 그대로 여는 안드로이드
+ *  웹뷰(WebView)다. 웹뷰는 일반 브라우저(Chrome 앱)와 달리 Web Speech API
+ *  (webkitSpeechRecognition)를 구현하지 않는다 — 생성자가 있어도(또는 없어서
+ *  버튼이 숨어도) 실제로 쓸 수 없다. 키보드 자체의 받아쓰기 마이크도 웹뷰
+ *  입력칸에서는 아이콘이 안 뜬다는 게 실측으로 확인됐다(이 화면만 그렇고
+ *  다른 앱에서는 정상 — 웹뷰 특유의 제약).
  *
- *  [버튼은 보이는데 눌러도 아무 반응이 없던 문제 — 2026-11]
- *  일부 브라우저/웹뷰는 webkitSpeechRecognition 생성자 자체는 있지만(그래서
- *  "지원함"으로 잘못 판정됨) 실제로 start()를 부르면 권한이 없거나 음성 인식
- *  서비스에 연결하지 못해 즉시 또는 조용히 실패한다. 예전엔 이 실패를 그냥
- *  삼키고 버튼만 원래 모양으로 되돌려서, 사용자 눈에는 "눌렀는데 아무 일도
- *  안 일어난다"로만 보였다. 이제 (1) start() 자체가 동기적으로 던지는 경우까지
- *  try/catch로 잡고, (2) onerror에서 실제 이유를 한국어 안내로 보여주고,
- *  (3) 10초 안에 끝나거나 결과가 없으면 "듣는 중" 표시를 강제로 풀어, 버튼이
- *  영원히 빨갛게 멈춰 있는 일이 없게 한다. */
-function useSpeechRecognition(onResult: (text: string) => void, onError: (message: string) => void) {
-  const [supported, setSupported] = useState(false);
+ *  그래서 OS 자체 SpeechRecognizer를 직접 쓰는 네이티브 플러그인
+ *  (@capacitor-community/speech-recognition — frontend/app/cutting/page.tsx의
+ *  스마트 재단 계산기에서 이미 같은 방식으로 검증된 패턴을 그대로 가져왔다)을
+ *  쓴다. 설치된 앱(Capacitor.isNativePlatform())에서는 이 플러그인을, 일반
+ *  웹 브라우저(PC 크롬 등)에서는 기존 Web Speech API 경로를 그대로 쓴다.
+ *
+ *  [주의] 이 네이티브 경로는 APK를 새로 빌드해 다시 설치해야만 실제로
+ *  동작한다 — 서버 코드만 바뀌는 다른 기능과 달리, 기존에 설치된 APK에는
+ *  이 플러그인이 들어있지 않다. */
+function useVoiceInput(onResult: (text: string) => void, onError: (message: string) => void) {
+  const [supported, setSupported] = useState(true);
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const stuckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isNativeRef = useRef(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const busyRef = useRef(false);
 
   useEffect(() => {
-    const w = window as unknown as { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor };
-    setSupported(!!(w.SpeechRecognition || w.webkitSpeechRecognition));
+    let active = true;
+    (async () => {
+      const { Capacitor } = await import("@capacitor/core");
+      if (Capacitor.isNativePlatform()) {
+        isNativeRef.current = true;
+        try {
+          const { SpeechRecognition } = await import("@capacitor-community/speech-recognition");
+          const { available } = await SpeechRecognition.available();
+          if (active) setSupported(available);
+        } catch {
+          if (active) setSupported(false);
+        }
+        return;
+      }
+      const w = window as unknown as { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor };
+      if (active) setSupported(!!(w.SpeechRecognition || w.webkitSpeechRecognition));
+    })();
     return () => {
-      if (stuckTimerRef.current) clearTimeout(stuckTimerRef.current);
+      active = false;
+      recognitionRef.current?.stop();
+      if (isNativeRef.current) {
+        void import("@capacitor-community/speech-recognition").then(({ SpeechRecognition }) =>
+          SpeechRecognition.stop().catch(() => {})
+        );
+      }
     };
   }, []);
 
-  function clearStuckTimer() {
-    if (stuckTimerRef.current) {
-      clearTimeout(stuckTimerRef.current);
-      stuckTimerRef.current = null;
+  function clearVoiceTimeout() {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
     }
+  }
+
+  async function startNative() {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    try {
+      const { SpeechRecognition } = await import("@capacitor-community/speech-recognition");
+      try {
+        const perm = await SpeechRecognition.checkPermissions();
+        if (perm.speechRecognition !== "granted") {
+          const requested = await SpeechRecognition.requestPermissions();
+          if (requested.speechRecognition !== "granted") {
+            onError("마이크 권한이 꺼져 있어요. 기기 설정 > 앱 권한에서 마이크를 켜주세요.");
+            return;
+          }
+        }
+      } catch {
+        onError("마이크 권한을 확인하지 못했어요.");
+        return;
+      }
+
+      setListening(true);
+      clearVoiceTimeout();
+      const timeoutPromise = new Promise<null>((resolve) => {
+        timeoutRef.current = setTimeout(() => resolve(null), VOICE_TIMEOUT_MS);
+      });
+      try {
+        const result = await Promise.race([
+          SpeechRecognition.start({ language: "ko-KR", popup: false, partialResults: false }),
+          timeoutPromise,
+        ]);
+        clearVoiceTimeout();
+        setListening(false);
+        if (result === null) {
+          await SpeechRecognition.stop().catch(() => {});
+          onError("음성 인식이 응답하지 않아요. 아래 입력칸에 직접 입력해 주세요.");
+          return;
+        }
+        const text = result.matches?.[0]?.trim();
+        if (text) onResult(text);
+        else onError("아무 말도 못 들었어요. 다시 눌러서 말씀해 주세요.");
+      } catch {
+        clearVoiceTimeout();
+        setListening(false);
+        onError("음성을 인식하지 못했어요. 다시 시도해 주세요.");
+      }
+    } finally {
+      busyRef.current = false;
+    }
+  }
+
+  async function stopNative() {
+    clearVoiceTimeout();
+    const { SpeechRecognition } = await import("@capacitor-community/speech-recognition");
+    await SpeechRecognition.stop().catch(() => {});
+    setListening(false);
+  }
+
+  function startWeb() {
+    const w = window as unknown as { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor };
+    const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition;
+    if (!Ctor) {
+      setSupported(false);
+      onError("이 브라우저는 음성 인식을 지원하지 않아요.");
+      return;
+    }
+    const recognition = new Ctor();
+    recognition.lang = "ko-KR";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onresult = (event) => {
+      clearVoiceTimeout();
+      const text = event.results[0]?.[0]?.transcript?.trim();
+      if (text) onResult(text);
+    };
+    recognition.onerror = (event) => {
+      clearVoiceTimeout();
+      setListening(false);
+      const code = (event as { error?: string } | undefined)?.error;
+      onError((code && SPEECH_ERROR_MESSAGES[code]) || "음성을 인식하지 못했어요. 다시 시도해 주세요.");
+    };
+    recognition.onend = () => {
+      clearVoiceTimeout();
+      setListening(false);
+    };
+    recognitionRef.current = recognition;
+    setListening(true);
+    clearVoiceTimeout();
+    timeoutRef.current = setTimeout(() => {
+      recognitionRef.current?.stop();
+      setListening(false);
+      onError("음성 인식이 응답하지 않아요 — 이 기기/앱에서는 음성 명령이 안 될 수 있어요. 아래 입력칸에 직접 입력해 주세요.");
+    }, VOICE_TIMEOUT_MS);
+    try {
+      recognition.start();
+    } catch {
+      clearVoiceTimeout();
+      setListening(false);
+      onError("음성 인식을 시작하지 못했어요.");
+    }
+  }
+  function stopWeb() {
+    clearVoiceTimeout();
+    recognitionRef.current?.stop();
+    setListening(false);
   }
 
   function start() {
-    const w = window as unknown as { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor };
-    const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition;
-    if (!Ctor) return;
-    try {
-      const recognition = new Ctor();
-      recognition.lang = "ko-KR";
-      recognition.interimResults = false;
-      recognition.maxAlternatives = 1;
-      recognition.onresult = (e) => {
-        const text = e.results?.[0]?.[0]?.transcript ?? "";
-        if (text) onResult(text);
-      };
-      recognition.onend = () => {
-        clearStuckTimer();
-        setListening(false);
-      };
-      recognition.onerror = (e) => {
-        clearStuckTimer();
-        setListening(false);
-        onError(
-          (e.error && SPEECH_ERROR_MESSAGES[e.error]) ||
-            "음성 인식에 실패했어요. 아래 입력칸에서 키보드의 마이크 버튼을 써 보세요."
-        );
-      };
-      recognitionRef.current = recognition;
-      setListening(true);
-      recognition.start();
-      // 권한 프롬프트가 뜨지도 않고 onend/onerror도 안 오는 경우(설치된 앱의
-      // 안드로이드 웹뷰에서 특히 흔하다 — 생성자는 있지만 실제로 응답이 오지
-      // 않는다)를 위한 안전장치. 이전엔 여기서 조용히 멈춤 상태만 풀어서,
-      // 사용자 눈에는 "눌러도 여전히 아무 반응 없음"으로만 보였다 — 반드시
-      // 이유를 알려준다.
-      stuckTimerRef.current = setTimeout(() => {
-        recognitionRef.current?.stop();
-        setListening(false);
-        onError("이 화면에서는 음성 인식이 응답하지 않아요. 아래 입력칸을 길게 눌러 키보드의 마이크 버튼을 써 주세요.");
-      }, 8_000);
-    } catch {
-      setListening(false);
-      onError("이 브라우저/앱에서는 음성 인식 버튼을 쓸 수 없어요. 아래 입력칸에서 키보드의 마이크 버튼을 써 보세요.");
-    }
+    if (isNativeRef.current) void startNative();
+    else startWeb();
   }
-
   function stop() {
-    recognitionRef.current?.stop();
-    clearStuckTimer();
-    setListening(false);
+    if (isNativeRef.current) void stopNative();
+    else stopWeb();
   }
 
   return { supported, listening, start, stop };
@@ -134,7 +233,7 @@ export default function VoiceIntentSheet({ open, onClose, onApply, onUsePickerIn
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const speech = useSpeechRecognition(
+  const speech = useVoiceInput(
     (heard) => setText((prev) => (prev ? `${prev} ${heard}` : heard)),
     (message) => setError(message)
   );
@@ -182,15 +281,14 @@ export default function VoiceIntentSheet({ open, onClose, onApply, onUsePickerIn
             autoFocus
             className="w-full resize-none rounded-2xl border border-slate-200 bg-white p-4 pr-14 text-[16px] text-slate-900 outline-none focus:border-indigo-500"
           />
-          {/* 지원 여부와 무관하게 버튼은 항상 보여준다 — 예전엔 지원하지 않는
-              환경(특히 설치된 앱의 안드로이드 웹뷰)에서 버튼 자체를 숨겼는데,
-              그러면 사용자 눈에는 "마이크가 아예 없다"로 보였다. 이제 지원하지
-              않으면 눌렀을 때 키보드 마이크를 쓰라는 안내를 바로 보여준다. */}
+          {/* 지원 여부와 무관하게 버튼은 항상 보여준다 — 숨기면 사용자 눈에는
+              "마이크가 아예 없다"로 보인다. 지원하지 않으면 눌렀을 때 바로
+              이유를 알려준다. */}
           <button
             type="button"
             onClick={() => {
               if (!speech.supported) {
-                setError("이 화면에서는 음성 버튼이 지원되지 않아요. 입력칸을 길게 눌러 키보드의 마이크 버튼을 써 주세요.");
+                setError("이 기기에서는 음성 인식을 쓸 수 없어요. 아래 입력칸에 직접 입력해 주세요.");
                 return;
               }
               speech.listening ? speech.stop() : speech.start();
@@ -204,7 +302,7 @@ export default function VoiceIntentSheet({ open, onClose, onApply, onUsePickerIn
           </button>
         </div>
         <p className="-mt-2 px-1 text-[12px] font-light text-slate-400">
-          입력칸을 누르고 키보드에 있는 마이크 버튼으로도 말할 수 있어요.
+          오른쪽 마이크 버튼을 눌러 말씀하시거나, 입력칸에 직접 타이핑해도 됩니다.
         </p>
 
         <div className="space-y-1.5">
