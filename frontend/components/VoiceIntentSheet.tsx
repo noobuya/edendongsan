@@ -104,11 +104,16 @@ function useSpeechRecognition(onResult: (text: string) => void, onError: (messag
       recognitionRef.current = recognition;
       setListening(true);
       recognition.start();
-      // 권한 프롬프트가 뜨지도 않고 onend/onerror도 안 오는 드문 경우를 대비한 안전장치.
+      // 권한 프롬프트가 뜨지도 않고 onend/onerror도 안 오는 경우(설치된 앱의
+      // 안드로이드 웹뷰에서 특히 흔하다 — 생성자는 있지만 실제로 응답이 오지
+      // 않는다)를 위한 안전장치. 이전엔 여기서 조용히 멈춤 상태만 풀어서,
+      // 사용자 눈에는 "눌러도 여전히 아무 반응 없음"으로만 보였다 — 반드시
+      // 이유를 알려준다.
       stuckTimerRef.current = setTimeout(() => {
         recognitionRef.current?.stop();
         setListening(false);
-      }, 10_000);
+        onError("이 화면에서는 음성 인식이 응답하지 않아요. 아래 입력칸을 길게 눌러 키보드의 마이크 버튼을 써 주세요.");
+      }, 8_000);
     } catch {
       setListening(false);
       onError("이 브라우저/앱에서는 음성 인식 버튼을 쓸 수 없어요. 아래 입력칸에서 키보드의 마이크 버튼을 써 보세요.");
@@ -177,18 +182,26 @@ export default function VoiceIntentSheet({ open, onClose, onApply, onUsePickerIn
             autoFocus
             className="w-full resize-none rounded-2xl border border-slate-200 bg-white p-4 pr-14 text-[16px] text-slate-900 outline-none focus:border-indigo-500"
           />
-          {speech.supported && (
-            <button
-              type="button"
-              onClick={speech.listening ? speech.stop : speech.start}
-              aria-label="탭해서 말하기"
-              className={`absolute bottom-3 right-3 flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
-                speech.listening ? "animate-pulse bg-rose-500 text-white" : "bg-indigo-50 text-indigo-600"
-              }`}
-            >
-              <Mic className="h-5 w-5" />
-            </button>
-          )}
+          {/* 지원 여부와 무관하게 버튼은 항상 보여준다 — 예전엔 지원하지 않는
+              환경(특히 설치된 앱의 안드로이드 웹뷰)에서 버튼 자체를 숨겼는데,
+              그러면 사용자 눈에는 "마이크가 아예 없다"로 보였다. 이제 지원하지
+              않으면 눌렀을 때 키보드 마이크를 쓰라는 안내를 바로 보여준다. */}
+          <button
+            type="button"
+            onClick={() => {
+              if (!speech.supported) {
+                setError("이 화면에서는 음성 버튼이 지원되지 않아요. 입력칸을 길게 눌러 키보드의 마이크 버튼을 써 주세요.");
+                return;
+              }
+              speech.listening ? speech.stop() : speech.start();
+            }}
+            aria-label="탭해서 말하기"
+            className={`absolute bottom-3 right-3 flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
+              speech.listening ? "animate-pulse bg-rose-500 text-white" : "bg-indigo-50 text-indigo-600"
+            }`}
+          >
+            <Mic className="h-5 w-5" />
+          </button>
         </div>
         <p className="-mt-2 px-1 text-[12px] font-light text-slate-400">
           입력칸을 누르고 키보드에 있는 마이크 버튼으로도 말할 수 있어요.
