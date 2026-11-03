@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 
 from app.quotes_store import list_quotes, load_quote
 from app.schemas import BlogDetailResponse, BlogListResponse, BlogSummary, WorkPhoto
+from app.services.blog_thumbnail import make_blog_thumbnail
 from app.services.blog_video import make_compare_gif, make_compare_mp4
 from app.services.brand_banner import make_brand_banner
 from app.business_info import BUSINESS_NAME, BUSINESS_PHONE, BUSINESS_SERVICE_AREA
@@ -19,7 +20,30 @@ router = APIRouter(prefix="/api/blog", tags=["blog"])
 EXCERPT_LENGTH = 120
 
 
+def _static_url_to_path(url: str) -> str:
+    return "storage/" + url.split("/static/", 1)[1] if "/static/" in url else url
+
+
+def _source_photo_path(quote: dict) -> str | None:
+    """목록 썸네일에 쓸 원본 사진 — AI가 그린 시공 후 사진을 우선한다(사장님 요청:
+    "AI사진으로 썸네일을"). AI 렌더가 없으면(사진만으로 만든 블로그 등) 실제 작업
+    사진으로, 그마저 없으면 원본 사진으로 폴백한다."""
+    rendered = quote.get("rendered_image_url")
+    if rendered:
+        return _static_url_to_path(rendered)
+    for photo in quote.get("work_photos", []):
+        if photo.get("stage") == "after":
+            return _static_url_to_path(photo["url"])
+    original = quote.get("original_image_url")
+    return _static_url_to_path(original) if original else None
+
+
 def _cover_image_url(quote: dict) -> str | None:
+    # 블로그 글이 있고 대표 사진도 있으면, 제목을 큰 글씨로 얹은 눈에 띄는 썸네일을
+    # 보여준다(아래 get_blog_thumbnail — 지연 생성 후 캐시). 둘 다 없을 때만(글 없이
+    # 견적만 있는 등) 예전처럼 사진 하나를 그대로 보여준다.
+    if quote.get("blog_post") and _source_photo_path(quote):
+        return f"/api/blog/{quote['job_id']}/thumbnail"
     for photo in quote.get("work_photos", []):
         if photo.get("stage") == "after":
             return photo["url"]
@@ -80,6 +104,27 @@ async def get_blog_detail(job_id: str):
     )
 
 
+@router.get("/{job_id}/thumbnail")
+async def get_blog_thumbnail(job_id: str):
+    """블로그 목록 맨 앞에 쓰는 눈에 띄는 썸네일 — AI 시공 사진 위에 제목을 큰 글씨로
+    올린다(services/blog_thumbnail.py). 사진이나 제목이 바뀌면 파일 이름이 바뀌어
+    자동으로 새로 만든다(get_brand_banner와 같은 지연 생성·캐시 방식)."""
+    quote = load_quote(job_id)
+    if quote is None or not quote.get("blog_post"):
+        raise HTTPException(status_code=404, detail="블로그 글을 찾을 수 없습니다.")
+    source_path = _source_photo_path(quote)
+    if not source_path or not os.path.exists(source_path):
+        raise HTTPException(status_code=404, detail="대표 사진을 찾을 수 없습니다.")
+    title = quote["blog_post"]["title"]
+    key = hashlib.md5(f"{source_path}|{os.path.getmtime(source_path)}|{title}".encode()).hexdigest()[:10]
+    out = f"storage/results/{job_id}_thumb_{key}.jpg"
+    if not os.path.exists(out):
+        tmp = out.replace(".jpg", ".tmp.jpg")
+        await run_in_threadpool(make_blog_thumbnail, source_path, title, tmp)
+        os.replace(tmp, out)
+    return FileResponse(out, media_type="image/jpeg")
+
+
 @router.get("/brand/{variant}")
 async def get_brand_banner(variant: str):
     """네이버 블로그에 넣을 업체 배너 이미지 — top(상단 상호 배너) / bottom(하단 전화 상담
@@ -116,8 +161,7 @@ async def get_compare_gif(job_id: str, index: int, fmt: str = "gif"):
     ext, maker, media = ("mp4", make_compare_mp4, "video/mp4") if fmt == "mp4" else ("gif", make_compare_gif, "image/gif")
     out = f"storage/results/{job_id}_compare_v2_{b['id']}_{a['id']}.{ext}"
     if not os.path.exists(out):
-        to_path = lambda url: "storage/" + url.split("/static/", 1)[1]  # noqa: E731
         tmp = out.replace(f".{ext}", f".tmp.{ext}")
-        await run_in_threadpool(maker, to_path(b["url"]), to_path(a["url"]), tmp)
+        await run_in_threadpool(maker, _static_url_to_path(b["url"]), _static_url_to_path(a["url"]), tmp)
         os.replace(tmp, out)
     return FileResponse(out, media_type=media)
