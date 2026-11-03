@@ -24,18 +24,22 @@ export default function BrandShowcase() {
 
   return (
     <div className="mb-6 flex items-center justify-center gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+      {/* 로고가 정사각형이란 보장이 없어(가로로 긴 명함형 로고도 올라온다) 너비를
+          칸에 가두지 않는다 — 높이만 정하고 object-contain이 원본 비율대로 너비를
+          정하게 두면, 가로로 긴 로고를 억지로 짜부라뜨려 거의 안 보이게 되는 일이
+          없다. */}
       {assets.logo && (
         <AssetImage
           src={assets.logo}
           alt={`${BUSINESS_NAME} 로고`}
-          className="h-16 w-16 shrink-0 rounded-xl object-contain"
+          className="h-16 w-auto max-w-[200px] shrink-0 rounded-xl object-contain"
         />
       )}
       {assets.card && (
         <AssetImage
           src={assets.card}
           alt={`${BUSINESS_NAME} 명함`}
-          className="h-16 max-w-[240px] flex-1 rounded-lg object-contain"
+          className="h-16 w-auto max-w-[280px] flex-1 rounded-lg object-contain"
         />
       )}
     </div>

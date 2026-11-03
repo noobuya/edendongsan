@@ -52,15 +52,21 @@ export function useBrandLogoSrc(): string | null {
 }
 
 /** 대표 사진 위 글씨 옆에 붙는 로고 배지. 로고를 올려두지 않았으면 아무것도
- *  그리지 않는다(빈 자리를 남기지 않고 글자만으로도 완성된 화면이어야 한다). */
+ *  그리지 않는다(빈 자리를 남기지 않고 글자만으로도 완성된 화면이어야 한다).
+ *
+ *  [정사각형으로 가두지 않는다]
+ *  사장님이 올리는 "로고"가 꼭 정사각형이란 보장이 없다(가로로 긴 명함형 로고를
+ *  올린 적이 있었다) — 가로세로를 고정 칸에 맞추면 object-contain이 옆으로 긴
+ *  그림을 실 가닥처럼 짜부라뜨려서, 올렸는데도 거의 안 보이는 것처럼 느껴진다.
+ *  높이만 정하고 너비는 원본 비율대로 자연스럽게 늘어나게 둔다. */
 export function BrandLogoMark({ className = "" }: { className?: string }) {
   const logo = useBrandLogoSrc();
   if (!logo) return null;
   return (
     <span
-      className={`inline-flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white/90 shadow-sm ${className}`}
+      className={`inline-flex h-10 max-w-[200px] shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white/90 px-1.5 shadow-sm ${className}`}
     >
-      <AssetImage src={logo} alt="" className="h-full w-full object-contain p-1" />
+      <AssetImage src={logo} alt="" className="h-full w-auto max-w-full object-contain" />
     </span>
   );
 }
