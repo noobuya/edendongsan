@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronRight, Plus, X } from "lucide-react";
-import type { JobOptionsState, WorkItemId } from "@/types";
+import { ChevronRight, Mic, Plus, X } from "lucide-react";
+import type { ConstructionIntentResult, JobOptionsState, WorkItemId } from "@/types";
 import ItemPickerSheet from "@/components/ItemPickerSheet";
 import ItemOptionsSheet from "@/components/ItemOptionsSheet";
-import { ALL_WORK_ITEMS, WORK_ITEM_META, summarizeItem, visibleWorkGroups } from "@/lib/workItems";
+import VoiceIntentSheet from "@/components/VoiceIntentSheet";
+import { ALL_WORK_ITEMS, WORK_ITEM_META, mergeParsedPanels, summarizeItem, visibleWorkGroups } from "@/lib/workItems";
 
 interface Props {
   selectedItems: WorkItemId[];
@@ -20,6 +21,10 @@ interface Props {
    *  내려받아도 또 열리지 않게 한다(1회성 명령 패턴). */
   openItem?: WorkItemId | null;
   onOpenItemHandled?: () => void;
+  /** 말로 설명해 항목을 채웠을 때 "자동" 모드로 바꿔 달라고 부모에 알린다 —
+   *  시공 영역은 항상 사진 자동 인식(segmentation.py)이 찾아야 하므로, 수동
+   *  손그림 모드가 켜져 있으면 자동으로 꺼 준다. */
+  onVoiceApplied?: () => void;
 }
 
 /** 2단계 — 시공 항목 세팅. 고른 항목만 카드로 쌓이고, 상세 입력은 시트에서 한다. */
@@ -31,8 +36,10 @@ export default function StepItems({
   isOwner,
   openItem,
   onOpenItemHandled,
+  onVoiceApplied,
 }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [voiceOpen, setVoiceOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<WorkItemId | null>(null);
   // [항목 추가 -> 완료 -> 다시 들어가기 번거로움 해소]
   // 예전에는 "항목 추가" 시트에서 켜고 완료를 누르면 시트가 그냥 닫히기만 해서,
@@ -57,8 +64,29 @@ export default function StepItems({
   );
 
   function openPicker() {
+    setVoiceOpen(false);
     setPendingDetailQueue([]);
     setPickerOpen(true);
+  }
+
+  function openVoice() {
+    setPickerOpen(false);
+    setVoiceOpen(true);
+  }
+
+  /** 말/텍스트로 해석된 항목·초안 치수를 받아 selectedItems/options에 반영하고,
+   *  기존 "항목 추가 -> 치수 확인"과 같은 흐름(pendingDetailQueue)으로 이어 붙인다
+   *  — 제출 전에 사장님이 AI가 채운 기본값을 훑어보고 고칠 수 있게 하기 위함이다. */
+  function applyParsedIntent(result: ConstructionIntentResult) {
+    const newItems = result.items.filter((item) => !selectedItems.includes(item));
+    if (newItems.length > 0) {
+      onSelectedItemsChange([...selectedItems, ...newItems]);
+    }
+    onOptionsChange(mergeParsedPanels(options, result.panels));
+    onVoiceApplied?.();
+    setVoiceOpen(false);
+    setEditingItem(result.items[0] ?? null);
+    setPendingDetailQueue(result.items.slice(1));
   }
 
   function toggleItem(item: WorkItemId) {
@@ -103,18 +131,27 @@ export default function StepItems({
       {ordered.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-5 py-14 text-center">
           <span className="flex h-16 w-16 items-center justify-center rounded-full border border-slate-900/[0.06] bg-white/60">
-            <Plus className="h-7 w-7 text-indigo-500" strokeWidth={2} />
+            <Mic className="h-7 w-7 text-indigo-500" strokeWidth={2} />
           </span>
           <div>
-            <p className="text-[17px] font-semibold tracking-tight text-slate-900">아직 추가한 항목이 없습니다</p>
-            <p className="mt-1.5 text-[13px] font-light text-slate-500">필름, 조명, 유리 썬팅 등을 골라주세요</p>
+            <p className="text-[17px] font-semibold tracking-tight text-slate-900">어떤 시공인지 말씀해 주세요</p>
+            <p className="mt-1.5 text-[13px] font-light text-slate-500">
+              "싱크대 상하부장과 아일랜드를 시공할거다"처럼요
+            </p>
           </div>
           <button
             type="button"
-            onClick={openPicker}
+            onClick={openVoice}
             className="h-12 rounded-full bg-indigo-600 px-7 text-[15px] font-semibold text-white shadow-[0_8px_30px_rgba(79,70,229,0.4)] transition-transform active:scale-[0.98]"
           >
-            항목 추가하기
+            말로 설명하기
+          </button>
+          <button
+            type="button"
+            onClick={openPicker}
+            className="text-[13px] font-semibold text-slate-400 underline underline-offset-2"
+          >
+            직접 선택할게요
           </button>
         </div>
       ) : (
@@ -183,7 +220,7 @@ export default function StepItems({
       {ordered.length > 0 && (
         <button
           type="button"
-          onClick={openPicker}
+          onClick={openVoice}
           aria-label="시공 항목 추가"
           className="fixed bottom-32 right-8 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600 text-white shadow-[0_10px_40px_rgba(79,70,229,0.5)] transition-transform active:scale-90 foldLandscape:bottom-28 foldLandscape:right-12"
         >
@@ -191,6 +228,12 @@ export default function StepItems({
         </button>
       )}
 
+      <VoiceIntentSheet
+        open={voiceOpen}
+        onClose={() => setVoiceOpen(false)}
+        onApply={applyParsedIntent}
+        onUsePickerInstead={openPicker}
+      />
       <ItemPickerSheet
         open={pickerOpen}
         selected={selectedItems}

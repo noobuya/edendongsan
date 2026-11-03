@@ -794,6 +794,7 @@ export default function HomePage() {
                     isOwner={!!ownerToken}
                     openItem={openItemRequest}
                     onOpenItemHandled={() => setOpenItemRequest(null)}
+                    onVoiceApplied={() => setRenderMode("auto")}
                   />
                 </div>
               </div>

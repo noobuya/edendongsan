@@ -516,6 +516,15 @@ export interface MappedRegion {
 
 export type RenderMode = "auto" | "manual";
 
+/** 말/텍스트로 설명한 시공 범위를 해석한 결과 (POST /api/jobs/intent 응답).
+ *  panels는 각 항목의 "초안" 치수 — 사진 실측이 아니라 업계 평균 참고치라
+ *  제출 전 확인 화면에서 그대로 쓰거나 고칠 수 있다. */
+export interface ConstructionIntentResult {
+  items: WorkItemId[];
+  panels: Partial<Record<WorkItemId, Record<string, PanelItem[]>>>;
+  unclear_note: string | null;
+}
+
 /** 단가 설정 화면의 항목 한 줄 (백엔드 app/pricing_store.py의 PRICING_FIELDS와 1:1). */
 export interface PricingField {
   key: string;

@@ -1,5 +1,5 @@
 import { Armchair, Blinds, DoorOpen, Droplets, Fan, Grid2x2, Layers, Lightbulb, Rows3, Shirt, Sparkles, Toilet, Wand2 } from "lucide-react";
-import type { JobOptionsState, WorkItemId } from "@/types";
+import type { ConstructionIntentResult, JobOptionsState, WorkItemId } from "@/types";
 
 /** 시공 항목 정의 한 곳. 항목 선택 시트, 항목 카드, 옵션 시트가 모두 여기를 본다. */
 export const WORK_ITEM_META: Record<
@@ -324,6 +324,23 @@ export const REGION_COLORS = [
   { name: "퍼플", stroke: "#7c3aed", fill: "rgba(139, 92, 246, 0.38)" },
   { name: "시안", stroke: "#0891b2", fill: "rgba(6, 182, 212, 0.38)" },
 ];
+
+/** 말/텍스트로 받은 "초안" 패널 치수(POST /api/jobs/intent 응답)를 기존 옵션
+ *  상태에 덮어 머지한다. 응답의 panels 키는 항목 id(film 등), 그 안의 키는
+ *  JobOptionsState의 해당 하위 필드명(upperCabinets 등)과 1:1로 맞춰져 있어
+ *  그대로 얹으면 된다(intent_parser.py의 _to_camel 참고) — 항목마다 필드 모양이
+ *  달라 제네릭하게 다루려고 여기서만 느슨한 타입을 쓴다. */
+export function mergeParsedPanels(
+  options: JobOptionsState,
+  panels: ConstructionIntentResult["panels"]
+): JobOptionsState {
+  const next = { ...options } as unknown as Record<string, Record<string, unknown>>;
+  for (const [item, fields] of Object.entries(panels)) {
+    if (!fields) continue;
+    next[item] = { ...next[item], ...fields };
+  }
+  return next as unknown as JobOptionsState;
+}
 
 /** 항목 카드에 "무엇을 입력했는지" 한 줄로 요약해 보여준다 — 카드를 열지 않고도
  *  빠진 항목을 알아볼 수 있어야 상담 중에 되돌아가는 일이 줄어든다. */

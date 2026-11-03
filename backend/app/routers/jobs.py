@@ -30,6 +30,8 @@ from app.quotes_store import (
 )
 from app.schemas import (
     ChangeOrderSignatureRequest,
+    ConstructionIntentRequest,
+    ConstructionIntentResponse,
     IllustrationRequest,
     InpaintAcceptedResponse,
     InpaintRequest,
@@ -37,12 +39,20 @@ from app.schemas import (
     SignatureRequest,
     SiteConditionsRequest,
 )
+from app.services.intent_parser import parse_construction_intent
 
 # 손가락으로 그린 서명치고 지나치게 큰 데이터(악의적으로 큰 이미지를 밀어넣는 경우)를
 # 막는다. 실제 서명 PNG는 보통 수십 KB대라 여유 있게 잡았다.
 MAX_SIGNATURE_BYTES = 500_000
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
+
+
+@router.post("/intent", response_model=ConstructionIntentResponse)
+async def post_construction_intent(body: ConstructionIntentRequest):
+    """말(키보드 받아쓰기)이나 텍스트로 설명한 시공 범위를 항목·초안 치수로 바꾼다.
+    사진이나 인증이 필요 없는 가벼운 공개 호출 — intent_parser.py 참고."""
+    return ConstructionIntentResponse(**parse_construction_intent(body.text))
 
 
 @router.get("/{job_id}", response_model=JobStatusResponse)

@@ -211,6 +211,26 @@ class JobOptions(BaseModel):
     furniture: Optional[FurnitureOptions] = None
 
 
+class ConstructionIntentRequest(BaseModel):
+    """음성(키보드 받아쓰기)이나 텍스트로 말한 시공 범위를 그대로 받는다.
+    예: "30평대 싱크대 상하부장과 아일랜드를 시공할거다"."""
+
+    text: str = ""
+
+
+class ConstructionIntentResponse(BaseModel):
+    """intent_parser.parse_construction_intent의 결과 — 프런트 JobOptionsState와
+    같은 모양(camelCase 패널 필드명)으로 돌려줘서, 받은 값을 그대로 옵션 상태에
+    머지하면 끝나게 한다. 실제 시공 영역은 이 응답과 무관하게 사진에서 자동 인식
+    (segmentation.py)이 찾으므로, 여기 panels는 견적 계산용 "초안" 치수일 뿐이다."""
+
+    items: list[WorkItemId] = Field(default_factory=list)
+    panels: dict[str, dict[str, list[PanelItem]]] = Field(default_factory=dict)
+    # 말을 이해하지 못했거나 시공 범위와 무관하면 원문을 그대로 담는다 — 프런트가
+    # "이해하지 못했어요, 직접 선택해 주세요"로 안내하고 기존 선택 화면으로 돌린다.
+    unclear_note: Optional[str] = None
+
+
 class ManualRegion(BaseModel):
     """수동 모드에서 사용자가 사진 위에 직접 칠해 만든 시공 영역 한 개.
 

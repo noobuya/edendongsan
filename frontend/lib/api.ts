@@ -3,6 +3,7 @@ import type {
   BlogPost,
   BlogSummary,
   ChangeOrder,
+  ConstructionIntentResult,
   CreateJobParams,
   JobStatusResponse,
   JournalEntry,
@@ -83,6 +84,18 @@ function panelItemsPayload(items: PanelItem[]) {
     count: i.count,
     door_type: i.doorType ?? "flat",
   }));
+}
+
+/** 말(받아쓰기)이나 텍스트로 설명한 시공 범위를 서버가 항목·초안 치수로 바꿔
+ *  돌려준다. 사진이 아직 없어도, 인증 없이도 부를 수 있는 가벼운 호출이다. */
+export async function parseConstructionIntent(text: string): Promise<ConstructionIntentResult> {
+  const res = await apiFetch(`${API_BASE}/api/jobs/intent`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "말씀하신 내용을 이해하지 못했습니다."));
+  return res.json();
 }
 
 export async function createJob(
