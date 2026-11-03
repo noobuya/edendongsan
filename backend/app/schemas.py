@@ -222,10 +222,15 @@ class ConstructionIntentResponse(BaseModel):
     """intent_parser.parse_construction_intent의 결과 — 프런트 JobOptionsState와
     같은 모양(camelCase 패널 필드명)으로 돌려줘서, 받은 값을 그대로 옵션 상태에
     머지하면 끝나게 한다. 실제 시공 영역은 이 응답과 무관하게 사진에서 자동 인식
-    (segmentation.py)이 찾으므로, 여기 panels는 견적 계산용 "초안" 치수일 뿐이다."""
+    (segmentation.py)이 찾으므로, 여기 panels는 견적 계산용 "초안" 치수일 뿐이다.
+
+    panels 값을 PanelItem(백엔드 내부 스키마, snake_case 필드)으로 선언하면
+    pydantic이 intent_parser가 만든 camelCase 키(widthMm 등)를 모르는 필드로
+    보고 조용히 버려 가로·세로가 전부 0으로 나간다(실측: 2026-11-04) — 그래서
+    여기서는 재검증 없이 dict를 그대로 통과시킨다."""
 
     items: list[WorkItemId] = Field(default_factory=list)
-    panels: dict[str, dict[str, list[PanelItem]]] = Field(default_factory=dict)
+    panels: dict[str, dict[str, list[dict]]] = Field(default_factory=dict)
     # 말을 이해하지 못했거나 시공 범위와 무관하면 원문을 그대로 담는다 — 프런트가
     # "이해하지 못했어요, 직접 선택해 주세요"로 안내하고 기존 선택 화면으로 돌린다.
     unclear_note: Optional[str] = None
