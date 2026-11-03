@@ -31,6 +31,7 @@ from app.services.rendering import (
     draw_downlights,
     erase_ceiling_light,
     is_plausible_ceiling,
+    recolor_regions,
     recolor_surface,
     tint_fixture_png,
 )
@@ -315,24 +316,32 @@ def run_pipeline(
             # 가전처럼 문짝이 아닌 것까지 색이 바뀌지 않게 한다. 판정된 게 하나도
             # 없으면(특이한 사진) 인식된 부위 전체로 폴백해 결과가 원본과 똑같이
             # 나오는 상황은 피한다.
-            panels = [r["mask_path"] for r in regions_internal.values() if r.get("is_panel")]
-            film_mask_paths = (panels or [r["mask_path"] for r in regions_internal.values()])[
+            # category == "other"("~추정")는 뺀다 — Gemini가 분류하지 못해 화면
+            # 위치만으로 이름 붙인 추측일 뿐이다. SAM은 천장도 "평평한 패널"로
+            # 보므로(is_panel=True), 천장이 ceiling 변수로 못 잡히고 낱개 후보로
+            # 새면 "상부장 추정"이라는 이름만 붙은 채 문짝 취급을 받는다 — 실측:
+            # 2026-11-04 하태경 고객님 싱크대·아일랜드장 시공 건에서 이 추정
+            # 영역(전체 선택 면적의 65%)이 사실 천장이었고, 그 어두운 구석이
+            # "필름 색이 덜 입혀졌다"는 오판을 일으켜 멀쩡한 AI 결과를 덮어썼다.
+            confirmed = [r for r in regions_internal.values() if r.get("category") != "other"]
+            panels = [r["mask_path"] for r in confirmed if r.get("is_panel")]
+            film_mask_paths = (panels or [r["mask_path"] for r in confirmed])[
                 :MAX_AUTO_FILM_REGIONS
             ]
 
             if film_mask_paths:
                 _stage(job_id, "시트지 색 입히는 중")
-                film_mask_path = f"storage/results/{job_id}_film_mask.png"
-                combine_masks(film_mask_paths).save(film_mask_path)
 
                 pattern_applied_path = f"storage/results/{job_id}_pattern.png"
                 # 색 변경은 디퓨전 인페인팅이 아니라 결정적 리컬러로 처리한다.
                 # (이유는 rendering.recolor_surface의 주석 참고 — 인페인팅은
                 # 마스크 안 원본 픽셀을 버리고 새로 그리기 때문에 요청한 색이
                 # 반영되지 않고 결과가 원본과 거의 같게 나오는 문제가 있었다.)
+                # 마스크를 미리 하나로 합치지 않고 영역별로 따로 넘긴다 — 이유는
+                # _recolor_for_category/recolor_regions 주석 참고.
                 _recolor_for_category(
                     current_path,
-                    film_mask_path,
+                    film_mask_paths,
                     pattern_meta,
                     (item_swatch_paths or {}).get("film"),
                     pattern_applied_path,
@@ -970,7 +979,12 @@ def _ensure_film_applied(
     candidates = [
         r
         for r in masks.get("regions", [])
-        if r.get("is_panel", True) and (doors_requested or r.get("category") not in ("door", "doorframe"))
+        if r.get("is_panel", True)
+        and r.get("category") != "other"  # "~추정"은 Gemini가 분류 못 한 추측일 뿐이다 —
+        # run_pipeline의 film_mask_paths 주석(2026-11-04) 참고. 색 검증·보정
+        # 둘 다에서 뺀다 — 포함하면 천장 같은 엉뚱한 영역이 "색이 안 맞다"는
+        # 오판을 일으키거나, 실제로 색이 덧칠된다.
+        and (doors_requested or r.get("category") not in ("door", "doorframe"))
     ]
     film_mask_paths = [r["mask_path"] for r in candidates][:MAX_AUTO_FILM_REGIONS]
     if not film_mask_paths:
@@ -984,9 +998,12 @@ def _ensure_film_applied(
 
     print(f"[pipeline] AI 장면의 필름 색이 목표와 {delta:.0f} 차이 — 리컬러로 보정")
     corrected_path = f"storage/results/{job_id}_film_corrected.png"
+    # 색 판정은 전체를 합친 film_mask_path로 하되(평균 색 하나만 보면 되므로
+    # 합쳐도 무방하다), 실제로 다시 칠할 때는 합치지 않은 개별 마스크를 그대로
+    # 넘긴다 — 이유는 _recolor_for_category/recolor_regions 주석 참고.
     _recolor_for_category(
         image_path,
-        film_mask_path,
+        film_mask_paths,
         pattern_meta,
         swatch_path,
         corrected_path,
@@ -1022,7 +1039,7 @@ def _ensure_wall_film_applied(
     corrected_path = f"storage/results/{job_id}_wall_corrected.png"
     _recolor_for_category(
         image_path,
-        wall_mask_path,
+        [wall_mask_path],
         pattern_meta,
         swatch_path,
         corrected_path,
@@ -1063,7 +1080,7 @@ def _effective_color_hex(pattern_meta: dict, swatch_path: str | None) -> str:
 
 def _recolor_for_category(
     image_path: str,
-    mask_path: str,
+    mask_paths: list[str],
     pattern_meta: dict,
     swatch_path: str | None,
     output_path: str,
@@ -1071,19 +1088,23 @@ def _recolor_for_category(
     grain_horizontal: bool = True,
 ) -> None:
     """이 항목에 실제 견본 사진이 있으면 그 사진의 질감(색 얼룩·나뭇결 등)을
-    그대로 거울 타일링해 입히고(recolor_surface_with_swatch), 없으면 카탈로그
-    색 하나로 단색 리컬러한다(recolor_surface) — MaterialPicker(수동 모드)·
+    그대로 거울 타일링해 입히고(recolor_regions_with_swatch), 없으면 카탈로그
+    색 하나로 단색 리컬러한다(recolor_regions) — MaterialPicker(수동 모드)·
     ai_service.render_region과 같은 "견본 사진이 있으면 색상 칩보다 현실감 있게
-    우선한다"는 원칙을 자동 모드의 리컬러 폴백에도 그대로 적용한다."""
+    우선한다"는 원칙을 자동 모드의 리컬러 폴백에도 그대로 적용한다.
+
+    mask_paths를 하나로 합친 마스크가 아니라 리스트로 받는 이유는
+    recolor_regions 주석 참고 — 상부장(광택)·하부장(짙은 우드)처럼 서로 다른
+    자재를 한 마스크로 합쳐 명암 통계를 내면 밝은 쪽이 허옇게 날아간다."""
     if swatch_path:
-        from app.services.rendering import recolor_surface_with_swatch
+        from app.services.rendering import recolor_regions_with_swatch
 
         with Image.open(swatch_path) as img:
-            recolor_surface_with_swatch(image_path, mask_path, img.convert("RGB"), output_path)
+            recolor_regions_with_swatch(image_path, mask_paths, img.convert("RGB"), output_path)
         return
-    recolor_surface(
+    recolor_regions(
         image_path,
-        mask_path,
+        mask_paths,
         pattern_meta["color_hex"],
         output_path,
         wood_grain=wood_grain,

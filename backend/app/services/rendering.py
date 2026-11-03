@@ -67,6 +67,22 @@ _TARGET_SHADING_SPREAD = 26.0
 # 강한 반사(스포트 하이라이트)는 색을 입혀도 살아있어야 자연스럽다.
 _HIGHLIGHT_THRESHOLD_SIGMA = 1.5
 _HIGHLIGHT_GAIN = 0.6
+# [흰색 계열에서 하이라이트가 "번져 보이는" 문제]
+# 위 _HIGHLIGHT_GAIN은 목표색이 짙은 네이비 같은 어두운 색일 때는 잘 맞는다 —
+# 255까지 여유(헤드룸)가 넉넉해 반사가 살짝 떠도 자연스러운 하이라이트 한 점으로
+# 보인다. 그런데 목표가 매트 화이트처럼 이미 밝은 색이면 255까지 남은 여유가
+# 거의 없어서, 광택 문짝의 넓은 반사 줄무늬(조명 기구가 길게 비치는 자리)
+# 전체가 금세 255에 들러붙어(clip) 하이라이트 한 점이 아니라 안개 낀 것처럼
+# 뿌옇게 번진 면으로 보인다(실측: 2026-11-04 하태경 고객님 싱크대 시공 건,
+# 광택 상부장 문짝). 목표색이 흰색에 가까울수록(여유가 적을수록) 하이라이트
+# 보정량 자체를 비례해서 줄여, 짙은 색은 그대로 두고 흰색 계열만 보수적으로
+# 만든다.
+_HIGHLIGHT_HEADROOM_SCALE = 80.0
+
+
+def _highlight_gain_for_target(target_l: float) -> float:
+    headroom = max(0.0, 255.0 - target_l)
+    return _HIGHLIGHT_GAIN * min(1.0, headroom / _HIGHLIGHT_HEADROOM_SCALE)
 # 우드 패턴은 색만으로는 표현되지 않으므로 결(grain)을 명암에 얹는다.
 # assets/patterns의 우드 텍스처는 실제 나뭇결이 아니라 굵은 가로 줄무늬라
 # 타일링하면 이음매가 그대로 띠처럼 드러나므로 쓰지 않고, 아래에서 절차적으로
@@ -92,6 +108,25 @@ _TEXTURE_KEEP_WOOD = 0.45
 _FILM_MICROTEXTURE_AMPLITUDE = 1.6
 
 
+def _soft_clip(values: np.ndarray, low: float = 0.0, high: float = 255.0, knee: float = 14.0) -> np.ndarray:
+    """0·255 끝에서 뚝 자르지 않고(hard clip) 완만하게 눌러(soft-knee) 압축한다.
+
+    [왜 — 하드 클립이 "안개 낀 듯 뿌옇게 번진 면"을 만든다]
+    끝단에서 그냥 잘라 버리면, 255를 10 넘는 픽셀과 60 넘는 픽셀이 전부 255
+    하나로 뭉개진다 — 원래는 밝기 차이가 있어 입체감 있는 반사였던 영역이
+    평평한 흰 면 하나로 보인다. 목표색이 매트 화이트처럼 이미 밝으면(255까지
+    여유가 얼마 없으면) 이렇게 뭉개지는 영역이 넓어져 광택 문짝 전체가 안개
+    낀 것처럼 허옇게 번져 보였다(실측: 2026-11-04 하태경 고객님 싱크대·
+    아일랜드장 시공 건, 광택 상부장 문짝). 니(knee) 구간 안에서는 넘친 만큼을
+    지수적으로 눌러 압축하므로, 많이 넘친 픽셀과 조금 넘친 픽셀 사이에 여전히
+    밝기 차이가 남아 "하이라이트"로 보이지, 평면으로 뭉개지지 않는다."""
+    over = np.clip(values - (high - knee), 0, None)
+    out = np.where(values > high - knee, (high - knee) + knee * (1 - np.exp(-over / knee)), values)
+    under = np.clip((low + knee) - out, 0, None)
+    out = np.where(out < low + knee, (low + knee) - knee * (1 - np.exp(-under / knee)), out)
+    return out
+
+
 def _recolor_pixels(
     base: Image.Image, mask: Image.Image, color_hex: str, wood_grain: bool, grain_horizontal: bool = True
 ) -> Image.Image:
@@ -110,9 +145,10 @@ def _recolor_pixels(
 
     gain = min(_SHADING_GAIN, _TARGET_SHADING_SPREAD / std_l)
     new_l = target[0] + (lightness - mean_l) * gain
-    # 평균보다 훨씬 밝은 픽셀(창/조명 반사)은 추가로 더 밝게 남긴다.
+    # 평균보다 훨씬 밝은 픽셀(창/조명 반사)은 추가로 더 밝게 남긴다 — 단, 목표색이
+    # 이미 흰색에 가까우면 그 양을 줄인다(_highlight_gain_for_target 주석 참고).
     excess = np.clip(lightness - (mean_l + _HIGHLIGHT_THRESHOLD_SIGMA * std_l), 0, None)
-    new_l = new_l + excess * _HIGHLIGHT_GAIN
+    new_l = new_l + excess * _highlight_gain_for_target(float(target[0]))
 
     # 잔무늬(고주파)만 골라 눌러 원본 무늬가 비치지 않게 한다.
     # 저주파(큰 굴곡·조명)는 그대로 두므로 입체감은 살아 있다.
@@ -134,7 +170,7 @@ def _recolor_pixels(
     new_l = new_l + _film_microtexture_layer(base.size) * _FILM_MICROTEXTURE_AMPLITUDE
 
     out = lab.copy()
-    out[..., 0] = np.clip(new_l, 0, 255)
+    out[..., 0] = _soft_clip(new_l)
     out[..., 1] = target[1]
     out[..., 2] = target[2]
     return Image.fromarray(out.astype(np.uint8), mode="LAB").convert("RGB")
@@ -175,6 +211,40 @@ def recolor_surface_with_swatch(
     soft_mask = mask.filter(ImageFilter.GaussianBlur(feather))
 
     Image.composite(recolored, base, soft_mask).save(output_path)
+    return output_path
+
+
+def recolor_regions(
+    base_image_path: str,
+    mask_paths: list[str],
+    color_hex: str,
+    output_path: str,
+    wood_grain: bool = False,
+    grain_horizontal: bool = True,
+) -> str:
+    """recolor_surface와 목적은 같지만, 넘겨준 마스크 여럿을 하나로 합쳐 명암
+    통계를 내지 않고 마스크 하나하나 따로 계산해 합성한다.
+
+    [왜 — 광택 상부장과 짙은 우드 하부장을 한 통계로 묶으면 생기는 문제]
+    recolor_surface(와 그 안의 _recolor_pixels)는 마스크 영역의 평균·표준편차
+    (LAB L)를 기준으로 "평균보다 훨씬 밝은 픽셀(창·조명 반사)"을 더 밝게
+    남긴다(_HIGHLIGHT_GAIN). 서로 자재가 다른 면(광택 아이보리 상부장 vs 짙은
+    우드 하부장·아일랜드)을 한 마스크로 합쳐 버리면, 짙은 우드 픽셀이 전체
+    평균을 끌어내려 상부장의 정상적인 조명 반사까지 "평균보다 훨씬 밝다"로
+    오판되고, 그 결과 상부장만 허옇게 날아간 안개처럼 번져 보였다(실측:
+    2026-11-04 싱크대·아일랜드장 시공 건 — 문짝·장 24개를 한 마스크로 합쳐
+    발생). 영역마다 따로 통계를 내면 서로의 밝기에 영향을 주지 않는다."""
+    base = Image.open(base_image_path).convert("RGB")
+    result = base.copy()
+    feather = max(1.0, base.width * 0.0025)
+    for mask_path in mask_paths:
+        mask = Image.open(mask_path).convert("L")
+        if mask.size != base.size:
+            mask = mask.resize(base.size, Image.NEAREST)
+        recolored = _recolor_pixels(base, mask, color_hex, wood_grain, grain_horizontal)
+        soft_mask = mask.filter(ImageFilter.GaussianBlur(feather))
+        result = Image.composite(recolored, result, soft_mask)
+    result.save(output_path)
     return output_path
 
 
@@ -266,15 +336,40 @@ def _recolor_pixels_with_texture(base: Image.Image, mask: Image.Image, swatch: I
     new_l = tile_mean_low + deviation * gain
     # 그 위에 견본 사진 고유의 무늬를 더한다 — 이게 없으면 결국 단색 리컬러와 같다.
     new_l = new_l + tile_detail * _SWATCH_TEXTURE_KEEP
-    # 원본의 강한 반사(스포트 하이라이트)는 색을 입혀도 살아있어야 자연스럽다.
+    # 원본의 강한 반사(스포트 하이라이트)는 색을 입혀도 살아있어야 자연스럽다 — 단,
+    # 견본 사진 자체가 이미 흰색에 가까우면 그 양을 줄인다(_highlight_gain_for_target
+    # 주석 참고 — 흰 계열은 255까지 여유가 적어, 그대로 두면 반사가 안개처럼 번진다).
     excess = np.clip(base_l - (base_mean_low + _HIGHLIGHT_THRESHOLD_SIGMA * std_low), 0, None)
-    new_l = new_l + excess * _HIGHLIGHT_GAIN
+    new_l = new_l + excess * _highlight_gain_for_target(tile_mean_low)
 
     out = base_lab.copy()
-    out[..., 0] = np.clip(new_l, 0, 255)
+    out[..., 0] = _soft_clip(new_l)
     out[..., 1] = tile_lab[..., 1]
     out[..., 2] = tile_lab[..., 2]
     return Image.fromarray(out.astype(np.uint8), mode="LAB").convert("RGB")
+
+
+def recolor_regions_with_swatch(
+    base_image_path: str,
+    mask_paths: list[str],
+    swatch_image: Image.Image,
+    output_path: str,
+) -> str:
+    """recolor_surface_with_swatch의 다중 마스크 버전 — recolor_regions와 같은
+    이유(서로 다른 자재를 한 통계로 묶지 않는다)로, 마스크를 하나씩 따로 처리한다."""
+    base = Image.open(base_image_path).convert("RGB")
+    result = base.copy()
+    feather = max(1.0, base.width * 0.0025)
+    swatch_rgb = swatch_image.convert("RGB")
+    for mask_path in mask_paths:
+        mask = Image.open(mask_path).convert("L")
+        if mask.size != base.size:
+            mask = mask.resize(base.size, Image.NEAREST)
+        recolored = _recolor_pixels_with_texture(base, mask, swatch_rgb)
+        soft_mask = mask.filter(ImageFilter.GaussianBlur(feather))
+        result = Image.composite(recolored, result, soft_mask)
+    result.save(output_path)
+    return output_path
 
 
 def _hex_to_rgb(color_hex: str) -> tuple[int, int, int]:
