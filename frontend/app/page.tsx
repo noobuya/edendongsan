@@ -10,7 +10,6 @@ import FeatureIntroDialog from "@/components/FeatureIntroDialog";
 import PricingSheet from "@/components/PricingSheet";
 import QuoteListDialog from "@/components/QuoteListDialog";
 import SimulationPanel from "@/components/SimulationPanel";
-import ManualMaskStage, { type MaskStageHandle } from "@/components/ManualMaskStage";
 import StepItems from "@/components/steps/StepItems";
 import StepMapping from "@/components/steps/StepMapping";
 import StepSite from "@/components/steps/StepSite";
@@ -25,8 +24,8 @@ import {
 import { registerForPush } from "@/lib/pushRegistration";
 import { clearOwnerToken, readOwnerToken, saveOwnerToken } from "@/lib/ownerToken";
 import { useAndroidBack } from "@/lib/useAndroidBack";
-import { DEFAULT_OPTIONS, DEFAULT_WORK_ITEMS, MATERIAL_OPTIONS, taskTypeOf } from "@/lib/workItems";
-import type { JobOptionsState, JobStatusResponse, MappedRegion, RenderMode, WorkItemId } from "@/types";
+import { DEFAULT_OPTIONS, DEFAULT_WORK_ITEMS } from "@/lib/workItems";
+import type { JobOptionsState, JobStatusResponse, RenderMode, WorkItemId } from "@/types";
 
 const POLL_INTERVAL_MS = 2000;
 // [왜 "총 소요 시간"으로 실패를 판정하지 않는가]
@@ -49,19 +48,6 @@ const STALL_MESSAGE =
 
 type Step = 1 | 2 | 3;
 
-// 손그림(MaterialPicker)에서 고른 색상/견본 사진을 "시공 항목"(StepItems)의 컬러
-// 칸에도 그대로 옮겨 적을 수 있는 항목들 — lib/workItems.ts의 MATERIAL_OPTIONS와
-// JobOptionsState의 patternId가 완전히 같은 카탈로그 id 체계를 쓰고,
-// swatchImageDataUrl 필드도 가진 항목만 여기 둔다. (옷장도 수동 모드 렌더링은
-// 처음부터 지원했는데 StepItems 쪽 폼에 견본 사진 UI가 없어 "장롱/옷장을 고르면
-// 견본 사진 찍는 화면이 없다"는 신고가 있었다 — WardrobeForm에 추가하며 여기도 같이 넣었다.)
-const FILM_FAMILY_SYNC_ITEMS = ["film", "door_frame", "wall_film", "sash", "furniture", "wardrobe"] as const;
-type FilmFamilySyncItem = (typeof FILM_FAMILY_SYNC_ITEMS)[number];
-
-function isFilmFamilySyncItem(category: WorkItemId): category is FilmFamilySyncItem {
-  return (FILM_FAMILY_SYNC_ITEMS as readonly string[]).includes(category);
-}
-
 export default function HomePage() {
   const router = useRouter();
   const [step, setStep] = useState<Step>(1);
@@ -78,25 +64,17 @@ export default function HomePage() {
   const [quoteDialogOpen, setQuoteDialogOpen] = useState(false);
   const [serverOnline, setServerOnline] = useState<boolean | null>(null);
   const [pricingOpen, setPricingOpen] = useState(false);
-  // 기본값을 "수동"으로 바꿨다(2026-10-15) — 자동 AI 영역 인식이 엉뚱한 곳에
-  // 색을 입히는 사고가 반복돼, 기공이 사진에서 직접 도형으로 짚은 자리만
-  // 정확히 시공되는 수동 모드를 기본으로 쓰기로 했다. 조명/실링팬은 수동
-  // 모드에서도 원형(타원) 도구로 자리를 짚으면 기존 자동 생성 방식
-  // (object_creation, 원본 없이 새로 그림) 그대로 렌더링돼 똑같이 동작한다 —
-  // 바뀌는 건 "어디에"를 AI가 추정하지 않고 사람이 짚는다는 것뿐이다.
-  const [renderMode, setRenderMode] = useState<RenderMode>("manual");
-  // [도형 -> 자재 고르기 -> 치수 입력을 한 흐름으로]
-  // "적용하기"를 누른 그 자리에서 바로 치수 입력 시트를 연다(commitRegion) —
-  // 전에는 "추가됐어요" 확인 카드를 띄우고 그 카드의 버튼을 또 눌러야 들어갈
-  // 수 있어서, 도형 그리기 -> 자재 고르기 -> (카드 확인) -> (카드 버튼 클릭) ->
-  // 치수 입력으로 단계가 하나 더 많았다("이중으로 또 선택해야 하는 번거로움"
-  // 문의). 이제 카드 없이 곧장 다음 시트가 열린다.
-  const [openItemRequest, setOpenItemRequest] = useState<WorkItemId | null>(null);
+  // [손그림을 그만 쓰기로 함 — 2026-11]
+  // "수동"(손으로 영역을 그려 자재를 지정)은 2026-10-15에 한 번 기본값이 됐었다
+  // — 그때는 자동 AI 영역 인식이 엉뚱한 곳에 색을 입히는 사고가 반복됐기
+  // 때문이다. 그런데 손그림도 "영역을 못 잡고 엉뚱하게 시공한다"는 신고가
+  // 똑같이 반복됐고(연필로 그린 선이 실제 물체 경계와 안 맞음), 그 사이
+  // 자동 인식 쪽의 진짜 원인 두 가지(천장을 캐비닛으로 오인식, 서로 다른
+  // 재질을 한 통계로 묶어 하얗게 날아가던 문제)를 찾아 고쳤다. 이제 항상
+  // 자동 인식만 쓴다 — 치수(가로·세로·개수) 입력은 그대로 StepItems에서 받고,
+  // "어디에 시공할지"만 사람이 그리지 않고 segmentation.py가 사진에서 찾는다.
+  const renderMode: RenderMode = "auto";
   const [autoDescription, setAutoDescription] = useState("");
-  const [mappedRegions, setMappedRegions] = useState<MappedRegion[]>([]);
-  const [hasShape, setHasShape] = useState(false);
-  // 수동 마스킹 중 조작 패널을 접어둔 상태 — 사진을 화면 가득 쓰기 위한 것.
-  const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [exitHint, setExitHint] = useState(false);
   // 처음 켜봤을 때만 "이런 기능도 있어요" 안내를 한 번 띄운다 — 기기에 본 적이
   // 있다고 적어두면 다시는 안 띄운다. SSR에서는 localStorage가 없으니 항상 false로
@@ -105,8 +83,6 @@ export default function HomePage() {
   // 카메라 시트도 "떠 있는 것"이라 뒤로 가기가 먼저 닫아야 한다 — 그래서 여기서 든다.
   const [cameraOpen, setCameraOpen] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const maskStageRef = useRef<MaskStageHandle>(null);
-  const regionIdRef = useRef(1);
   // 사장님 기기 표시(관리자 토큰). 서버 렌더링 때는 모르므로 mount 후에 이 기기에서 읽는다.
   const [ownerToken, setOwnerTokenState] = useState<string | null>(null);
   // 저장된 값만 믿지 않는다. 서버가 토큰을 맞다고 할 때만 사장님 기기로 연다.
@@ -142,82 +118,6 @@ export default function HomePage() {
     }
   }, []);
 
-  // 맞춰둔 도형 + 고른 자재를 한 세트(Region)로 묶어 저장하고, 캔버스를 비워
-  // 다음 영역을 지정할 수 있게 한다.
-  const commitRegion = useCallback(
-    (
-      category: WorkItemId,
-      option: string,
-      optionLabel: string,
-      customDesign: string,
-      doorMaterial?: "wood" | "steel",
-      swatchImageDataUrl?: string
-    ) => {
-      const shape = maskStageRef.current?.extractShape();
-      if (!shape) return;
-      // 도형에 자재를 지정하는 순간 "시공 항목"에도 자동으로 올려 둔다 — 전에는
-      // 도형을 그려 자재까지 골라도 견적 계산용 "시공 항목"에는 전혀 반영이
-      // 안 돼서, 아래로 내려가 같은 항목을 +버튼으로 또 찾아 추가해야 했다
-      // ("사진 찍고 시공 지정도 하고 시공 항목도 또 해야 하는 번거로움" 문의).
-      const isNewItem = !selectedItems.includes(category);
-      if (isNewItem) setSelectedItems((prev) => [...prev, category]);
-
-      // [여기서 고른 색상/견본 사진을 "시공 항목"의 컬러 칸에도 그대로 반영
-      //  — "이중으로 또 컬러를 골라야 하는 번거로움" 문의]
-      // 카탈로그 색상 id 체계가 완전히 같은 "필름 계열" 항목(FILM_FAMILY_SYNC_ITEMS
-      // — lib/workItems.ts의 MATERIAL_OPTIONS와 JobOptionsState의 patternId가
-      // 같은 id를 쓴다)은 여기서 고른 값을 options에도 옮겨 적는다. 아래에서
-      // 치수 입력 시트가 열렸을 때 컬러/패턴 칸이 이미 채워져 있어 다시 고를
-      // 필요가 없다 — 색상 칩이 아니라 견본 사진을 찍었으면 그 사진이 그대로
-      // 넘어가(swatchImageDataUrl), FilmForm 등도 색상 칩 없이 그 사진만 보여준다.
-      if (isFilmFamilySyncItem(category)) {
-        setOptions((prev) => ({
-          ...prev,
-          [category]: { ...prev[category], patternId: option, swatchImageDataUrl },
-        }));
-      }
-
-      setMappedRegions((prev) => [
-        ...prev,
-        {
-          id: regionIdRef.current++,
-          maskDataUrl: shape.maskDataUrl,
-          labelAt: shape.labelAt,
-          shapes: shape.shapes,
-          category,
-          option,
-          optionLabel,
-          taskType: taskTypeOf(category),
-          // 백엔드가 마스터 프롬프트(극사실 카메라 설정 등)를 앞뒤로 덧붙이므로,
-          // 여기서는 "무엇을 시공하는지"만 사람 말로 담는다.
-          prompt: optionLabel,
-          // 문구·로고는 프롬프트에 미리 섞지 않고 따로 보낸다 — 백엔드가 이 값이
-          // 있을 때만 렌더링 방식을 글자 쪽에 맞게 바꾸기 때문이다(ai_service).
-          customDesign: customDesign || undefined,
-          // 문짝/문틀에서만 의미 있음 — 나무 문(기본)인지 현관문·방화문 같은 스틸
-          // 문인지. AI 편집 지시문이 문 재질에 맞는 문장을 쓰도록 갈라 준다.
-          doorMaterial,
-          // 실제 필름 견본을 찍었으면 카탈로그 색상 대신 이 사진으로 AI가 자재를 맞춘다.
-          swatchImageDataUrl,
-          colorIndex: prev.length,
-        },
-      ]);
-      maskStageRef.current?.clearShape();
-
-      // [클릭 한 번으로 바로 치수 입력까지 이어지게 — "또다시 시공 항목을
-      //  골라야 된다" 신고]
-      // isNewItem일 때만 열면, 사용자가 전에 같은 항목을 추가한 적이 있을 때
-      // (또는 한 번 닫았다가 다시 그릴 때) 자동으로 안 열려서 결국 "시공 항목"
-      // 목록까지 스스로 내려가 그 카드를 직접 찾아 눌러야 했다 — 이게 바로
-      // "중복으로 또 선택해야 한다"로 느껴진 지점이다. isNewItem과 무관하게
-      // 매번 곧바로 치수 입력 시트를 열어, 손으로 그 항목을 다시 찾아 들어갈
-      // 일이 전혀 없게 한다. 색상/견본 사진은 위에서 이미 옮겨 적었으니 이
-      // 시트에서는 치수만 확인·조정하고 [입력 완료]를 누르면 끝난다.
-      setOpenItemRequest(category);
-    },
-    [selectedItems]
-  );
-
   // "한 번 더 누르면 종료" 안내 (useAndroidBack이 쏘는 이벤트)
   useEffect(() => {
     const onHint = () => {
@@ -227,12 +127,6 @@ export default function HomePage() {
     window.addEventListener("app:exit-hint", onHint);
     return () => window.removeEventListener("app:exit-hint", onHint);
   }, []);
-
-  // 수동 마스킹은 화면 전체를 사진에 내준다.
-  const masking = step === 2 && renderMode === "manual" && !!previewUrl;
-  // 그리는 동안에는 조작 패널을 접어 사진을 가리지 않게 한다. 도형을 다 만들면
-  // 자재를 골라야 하므로 다시 펴진다(ManualMaskStage의 onDrawFocus).
-  const panelOpen = !masking || !panelCollapsed;
 
   /** 뒤로 가기 한 번이 "무엇을 되돌릴지" 정하는 곳. 폰 하드웨어 버튼과 웹 브라우저
    *  뒤로 가기가 똑같이 이 함수를 쓴다 — 두 군데에 따로 쓰면 반드시 어긋난다.
@@ -253,11 +147,6 @@ export default function HomePage() {
       setCameraOpen(false);
       return true;
     }
-    // 수동 마스킹 중 자재 패널이 올라와 있으면 사진으로 먼저 돌아간다.
-    if (masking && !panelCollapsed) {
-      setPanelCollapsed(true);
-      return true;
-    }
     // 2순위: 단계 내리기 (3 -> 2 -> 1)
     if (step > 1) {
       setStep((prev) => (prev === 3 ? 2 : 1));
@@ -265,7 +154,7 @@ export default function HomePage() {
     }
     // 3순위: 1단계 + 열린 것 없음 -> 그때만 이탈을 허용한다.
     return false;
-  }, [pricingOpen, quoteDialogOpen, cameraOpen, masking, panelCollapsed, step]);
+  }, [pricingOpen, quoteDialogOpen, cameraOpen, step]);
 
   // 폰 하드웨어 뒤로 가기
   useAndroidBack(goBack);
@@ -307,12 +196,6 @@ export default function HomePage() {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
-
-  // 수동 마스킹에 들어가면 패널을 접고 시작한다. 첫 동작이 "사진에 도형 그리기"라
-  // 패널이 사진을 덮고 있으면 그릴 곳부터 안 보인다.
-  useEffect(() => {
-    if (step === 2 && renderMode === "manual") setPanelCollapsed(true);
-  }, [step, renderMode]);
 
   useEffect(() => {
     if (!photo) {
@@ -408,53 +291,6 @@ export default function HomePage() {
     const submitItems = ownerToken ? selectedItems : selectedItems.filter((i) => i !== "illustration");
     if (!photo || submitItems.length === 0) return;
 
-    // [손그림이 말없이 버려지던 문제 — 연습22]
-    // 영역을 그려 놓고 자재 "적용"을 안 누른 채 시공을 누르면 그 영역은 버려지고,
-    // 영역이 0개인 채로 서버가 자동 모드(사진 전체를 AI가 추측)로 돌았다. 그린 게
-    // 남아 있으면 지금 선택된 필름 계열 항목의 자재로 자동 적용하고, 그래도 영역이
-    // 없으면 자동 모드로 갈지 먼저 묻는다.
-    let regions = mappedRegions;
-    if (renderMode === "manual") {
-      const pending = maskStageRef.current?.extractShape();
-      if (pending) {
-        const category = (submitItems.find(
-          (i) => isFilmFamilySyncItem(i) && !!options[i as FilmFamilySyncItem]?.swatchImageDataUrl
-        ) ?? submitItems.find((i) => isFilmFamilySyncItem(i))) as FilmFamilySyncItem | undefined;
-        if (category) {
-          const opt = options[category];
-          const optionLabel = opt.swatchImageDataUrl
-            ? "견본 사진 자재"
-            : MATERIAL_OPTIONS[category].find((m) => m.id === opt.patternId)?.label ?? opt.patternId;
-          regions = [
-            ...regions,
-            {
-              id: regionIdRef.current++,
-              maskDataUrl: pending.maskDataUrl,
-              labelAt: pending.labelAt,
-              shapes: pending.shapes,
-              category,
-              option: opt.patternId,
-              optionLabel,
-              taskType: taskTypeOf(category),
-              prompt: optionLabel,
-              swatchImageDataUrl: opt.swatchImageDataUrl,
-              colorIndex: regions.length,
-            },
-          ];
-          setMappedRegions(regions);
-          maskStageRef.current?.clearShape();
-        }
-      }
-      if (
-        regions.length === 0 &&
-        !window.confirm(
-          "그려서 '적용'한 시공 영역이 없습니다.\n\nAI가 사진 전체를 보고 자동으로 시공할까요?\n(원하는 곳만 시공하려면 '취소' 후 영역을 그리고 자재를 적용하세요)"
-        )
-      ) {
-        return;
-      }
-    }
-
     setSubmitting(true);
     setSubmitError(null);
     setStep(3);
@@ -470,7 +306,7 @@ export default function HomePage() {
         ownerToken,
         renderMode,
         autoDescription,
-        manualRegions: renderMode === "manual" ? regions : [],
+        manualRegions: [],
       });
       setJob({
         job_id,
@@ -512,10 +348,7 @@ export default function HomePage() {
     setCustomerName("");
     setSelectedItems(DEFAULT_WORK_ITEMS);
     setOptions(DEFAULT_OPTIONS);
-    setRenderMode("manual");
     setAutoDescription("");
-    setMappedRegions([]);
-    setHasShape(false);
     setSubmitError(null);
     setStep(1);
     router.replace(window.location.pathname);
@@ -527,34 +360,15 @@ export default function HomePage() {
 
   return (
     <main className="relative h-dvh overflow-hidden">
-      {/* 무대 — 화면 전체가 뷰파인더이자 사진 뷰어다.
-          수동 마스킹 중에는 무대에서 사진을 빼고 바탕만 남긴다. 안 그러면 화면을
-          꽉 채운 무대 사진(object-cover)과 마스킹용 사진(object-contain)이 서로 다른
-          배율로 동시에 보여서, 사진 위에 사진이 떠 있는 것처럼 보인다. */}
+      {/* 무대 — 화면 전체가 뷰파인더이자 사진 뷰어다. */}
       <CanvasStage
-        photoUrl={masking ? null : stagePhotoUrl}
+        photoUrl={stagePhotoUrl}
         onCapture={setPhoto}
         onRetake={() => setPhoto(null)}
         showCapture={step === 1}
         cameraOpen={cameraOpen}
         onCameraOpenChange={setCameraOpen}
       />
-
-      {/* 수동 모드의 사진은 화면 전체를 쓴다. 사진과 드로잉 캔버스가 한 덩어리로
-          묶여 있어(ManualMaskStage 주석), 확대해도 둘이 어긋나지 않는다. */}
-      {masking && previewUrl && (
-        <div className="absolute inset-0 z-0">
-          <ManualMaskStage
-            ref={maskStageRef}
-            photoUrl={previewUrl}
-            regions={mappedRegions}
-            onShapeChange={setHasShape}
-            onDrawFocus={(focused) => setPanelCollapsed(focused)}
-            panelOpen={panelOpen}
-            onOpenPanel={() => setPanelCollapsed(false)}
-          />
-        </div>
-      )}
 
       {/* 떠 있는 앱 바 */}
       <header className="absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-3 p-4">
@@ -729,31 +543,12 @@ export default function HomePage() {
           </div>
         </section>
       ) : (
-        /* 조작 패널 — 화면을 반으로 가르지 않고, 여백을 두고 떠 있다.
-           수동 마스킹 중에는 접혀서 사진에 자리를 내준다(접힘 상태는 아래 손잡이 바). */
+        /* 조작 패널 — 화면을 반으로 가르지 않고, 여백을 두고 떠 있다. */
         <section
-          className={`glass-panel absolute inset-x-3 bottom-3 top-[38%] z-10 flex flex-col transition-transform duration-300
-                     foldLandscape:inset-y-4 foldLandscape:left-auto foldLandscape:right-4 foldLandscape:top-20 foldLandscape:w-[420px] ${
-                       panelOpen
-                         ? ""
-                         : "pointer-events-none translate-y-full foldLandscape:pointer-events-auto foldLandscape:translate-y-0"
-                     }`}
+          className="glass-panel absolute inset-x-3 bottom-3 top-[38%] z-10 flex flex-col
+                     foldLandscape:inset-y-4 foldLandscape:left-auto foldLandscape:right-4 foldLandscape:top-20 foldLandscape:w-[420px]"
         >
-          {/* 접기 손잡이 — 세로 화면에서 수동 마스킹일 때만.
-              펼친 화면은 패널이 오른쪽에만 있어 사진을 가리지 않으므로 접을 필요가 없다.
-              (다시 펴는 버튼은 사진 아래 도구 막대에 있다 — 패널이 사진을 덮은 채로는
-              그릴 곳이 안 보이므로 접었을 때는 화면에서 완전히 내려간다.) */}
-          {masking && (
-            <button
-              type="button"
-              onClick={() => setPanelCollapsed(true)}
-              className="flex shrink-0 items-center justify-center gap-2 rounded-t-3xl px-7 py-4 text-[12px] font-semibold text-slate-600 foldLandscape:hidden"
-            >
-              <span className="h-1 w-9 rounded-full bg-slate-900/15" />
-              접고 사진 보기
-            </button>
-          )}
-          <div className={`min-h-0 flex-1 overflow-y-auto px-7 pb-20 ${masking ? "pt-1" : "pt-8"}`}>
+          <div className="min-h-0 flex-1 overflow-y-auto px-7 pb-20 pt-8">
             {submitError && <ErrorNote message={submitError} />}
             {step === 1 && (
               <StepSite
@@ -772,19 +567,8 @@ export default function HomePage() {
             )}
             {step === 2 && (
               <div className="space-y-9">
-                <StepMapping
-                  mode={renderMode}
-                  onModeChange={setRenderMode}
-                  autoDescription={autoDescription}
-                  onAutoDescriptionChange={setAutoDescription}
-                  regions={mappedRegions}
-                  onRemoveRegion={(id) =>
-                    setMappedRegions((prev) => prev.filter((r) => r.id !== id))
-                  }
-                  hasShape={hasShape}
-                  onPickMaterial={commitRegion}
-                />
-                {/* 견적 금액은 어느 모드에서든 항목별 수량으로 계산되므로 항상 받는다. */}
+                <StepMapping autoDescription={autoDescription} onAutoDescriptionChange={setAutoDescription} />
+                {/* 견적 금액은 항목별 수량으로 계산되므로 항상 받는다. */}
                 <div className="border-t border-slate-900/[0.06] pt-7">
                   <StepItems
                     selectedItems={selectedItems}
@@ -792,9 +576,6 @@ export default function HomePage() {
                     options={options}
                     onOptionsChange={setOptions}
                     isOwner={!!ownerToken}
-                    openItem={openItemRequest}
-                    onOpenItemHandled={() => setOpenItemRequest(null)}
-                    onVoiceApplied={() => setRenderMode("auto")}
                   />
                 </div>
               </div>

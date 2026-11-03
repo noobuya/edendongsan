@@ -27,49 +27,97 @@ interface SpeechRecognitionLike {
   maxAlternatives: number;
   onresult: ((e: { results: { [i: number]: { [i: number]: { transcript: string } } } }) => void) | null;
   onend: (() => void) | null;
-  onerror: (() => void) | null;
+  onerror: ((e: { error?: string }) => void) | null;
   start: () => void;
   stop: () => void;
 }
 type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
 
+const SPEECH_ERROR_MESSAGES: Record<string, string> = {
+  "not-allowed": "마이크 권한이 꺼져 있어요. 브라우저 주소창의 자물쇠 아이콘에서 마이크를 허용해 주세요.",
+  "service-not-allowed": "이 브라우저/앱에서는 음성 인식 서비스를 쓸 수 없어요. 아래 입력칸에서 키보드의 마이크 버튼을 눌러 말씀해 주세요.",
+  "no-speech": "말소리를 듣지 못했어요. 버튼을 다시 눌러 말씀해 주세요.",
+  "audio-capture": "마이크를 찾을 수 없어요. 기기의 마이크 연결을 확인해 주세요.",
+  "network": "네트워크 문제로 음성 인식에 실패했어요. 다시 시도해 주세요.",
+};
+
 /** 안드로이드/아이폰 키보드에는 전부 마이크(받아쓰기) 버튼이 있어, 아래 입력칸에
  *  그대로 대고 말하면 된다 — 그게 이 화면의 기본 "마이크 기능"이고 추가 구현이
- *  필요 없다. Web Speech API를 지원하는 데스크톱 브라우저(크롬 등)에서만 "탭해서
- *  말하기" 보조 버튼을 하나 더 보여준다 — 지원하지 않는 환경(설치된 앱의 WebView,
- *  iOS Safari 등)에서는 조용히 숨긴다(BrandHero.useBrandImageSrc와 같은 "있으면
- *  쓰고 없으면 티 안 내고 빠진다" 패턴). */
-function useSpeechRecognition(onResult: (text: string) => void) {
+ *  필요 없다. Web Speech API를 지원하는 브라우저(데스크톱 크롬 등)에서만 "탭해서
+ *  말하기" 보조 버튼을 하나 더 보여준다.
+ *
+ *  [버튼은 보이는데 눌러도 아무 반응이 없던 문제 — 2026-11]
+ *  일부 브라우저/웹뷰는 webkitSpeechRecognition 생성자 자체는 있지만(그래서
+ *  "지원함"으로 잘못 판정됨) 실제로 start()를 부르면 권한이 없거나 음성 인식
+ *  서비스에 연결하지 못해 즉시 또는 조용히 실패한다. 예전엔 이 실패를 그냥
+ *  삼키고 버튼만 원래 모양으로 되돌려서, 사용자 눈에는 "눌렀는데 아무 일도
+ *  안 일어난다"로만 보였다. 이제 (1) start() 자체가 동기적으로 던지는 경우까지
+ *  try/catch로 잡고, (2) onerror에서 실제 이유를 한국어 안내로 보여주고,
+ *  (3) 10초 안에 끝나거나 결과가 없으면 "듣는 중" 표시를 강제로 풀어, 버튼이
+ *  영원히 빨갛게 멈춰 있는 일이 없게 한다. */
+function useSpeechRecognition(onResult: (text: string) => void, onError: (message: string) => void) {
   const [supported, setSupported] = useState(false);
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const stuckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const w = window as unknown as { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor };
     setSupported(!!(w.SpeechRecognition || w.webkitSpeechRecognition));
+    return () => {
+      if (stuckTimerRef.current) clearTimeout(stuckTimerRef.current);
+    };
   }, []);
+
+  function clearStuckTimer() {
+    if (stuckTimerRef.current) {
+      clearTimeout(stuckTimerRef.current);
+      stuckTimerRef.current = null;
+    }
+  }
 
   function start() {
     const w = window as unknown as { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor };
     const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition;
     if (!Ctor) return;
-    const recognition = new Ctor();
-    recognition.lang = "ko-KR";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    recognition.onresult = (e) => {
-      const text = e.results?.[0]?.[0]?.transcript ?? "";
-      if (text) onResult(text);
-    };
-    recognition.onend = () => setListening(false);
-    recognition.onerror = () => setListening(false);
-    recognitionRef.current = recognition;
-    setListening(true);
-    recognition.start();
+    try {
+      const recognition = new Ctor();
+      recognition.lang = "ko-KR";
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      recognition.onresult = (e) => {
+        const text = e.results?.[0]?.[0]?.transcript ?? "";
+        if (text) onResult(text);
+      };
+      recognition.onend = () => {
+        clearStuckTimer();
+        setListening(false);
+      };
+      recognition.onerror = (e) => {
+        clearStuckTimer();
+        setListening(false);
+        onError(
+          (e.error && SPEECH_ERROR_MESSAGES[e.error]) ||
+            "음성 인식에 실패했어요. 아래 입력칸에서 키보드의 마이크 버튼을 써 보세요."
+        );
+      };
+      recognitionRef.current = recognition;
+      setListening(true);
+      recognition.start();
+      // 권한 프롬프트가 뜨지도 않고 onend/onerror도 안 오는 드문 경우를 대비한 안전장치.
+      stuckTimerRef.current = setTimeout(() => {
+        recognitionRef.current?.stop();
+        setListening(false);
+      }, 10_000);
+    } catch {
+      setListening(false);
+      onError("이 브라우저/앱에서는 음성 인식 버튼을 쓸 수 없어요. 아래 입력칸에서 키보드의 마이크 버튼을 써 보세요.");
+    }
   }
 
   function stop() {
     recognitionRef.current?.stop();
+    clearStuckTimer();
     setListening(false);
   }
 
@@ -81,7 +129,10 @@ export default function VoiceIntentSheet({ open, onClose, onApply, onUsePickerIn
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const speech = useSpeechRecognition((heard) => setText((prev) => (prev ? `${prev} ${heard}` : heard)));
+  const speech = useSpeechRecognition(
+    (heard) => setText((prev) => (prev ? `${prev} ${heard}` : heard)),
+    (message) => setError(message)
+  );
 
   useEffect(() => {
     if (open) return;
@@ -139,6 +190,9 @@ export default function VoiceIntentSheet({ open, onClose, onApply, onUsePickerIn
             </button>
           )}
         </div>
+        <p className="-mt-2 px-1 text-[12px] font-light text-slate-400">
+          입력칸을 누르고 키보드에 있는 마이크 버튼으로도 말할 수 있어요.
+        </p>
 
         <div className="space-y-1.5">
           {EXAMPLES.map((ex) => (
