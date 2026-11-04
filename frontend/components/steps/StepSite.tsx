@@ -1,7 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { adminListStudents } from "@/lib/api";
+import OwnerUnlock from "@/components/OwnerUnlock";
 
 interface Props {
   customerName: string;
@@ -35,29 +34,6 @@ export default function StepSite({
   onSaveOwnerToken,
   onClearOwnerToken,
 }: Props) {
-  const [tokenOpen, setTokenOpen] = useState(false);
-  const [tokenInput, setTokenInput] = useState("");
-  const [tokenBusy, setTokenBusy] = useState(false);
-  const [tokenError, setTokenError] = useState<string | null>(null);
-
-  // 입력한 토큰을 서버에 한 번 물어본다. 관리자 목록 조회가 통과하면 올바른 토큰이다.
-  async function handleSaveToken() {
-    const token = tokenInput.trim();
-    if (!token) return;
-    setTokenBusy(true);
-    setTokenError(null);
-    try {
-      await adminListStudents(token);
-      onSaveOwnerToken(token);
-      setTokenInput("");
-      setTokenOpen(false);
-    } catch {
-      setTokenError("토큰이 맞지 않거나 서버에 연결할 수 없어요.");
-    } finally {
-      setTokenBusy(false);
-    }
-  }
-
   return (
     <div className="space-y-5 animate-[step-in_0.35s_ease-out]">
       <label className="block">
@@ -81,35 +57,8 @@ export default function StepSite({
           <button type="button" onClick={onClearOwnerToken} className="rounded-full px-1 py-1 underline underline-offset-4">
             이 기기 사장님 설정 해제
           </button>
-        ) : tokenOpen ? (
-          <div className="space-y-3">
-            <input
-              type="password"
-              value={tokenInput}
-              onChange={(e) => setTokenInput(e.target.value)}
-              placeholder="관리자 토큰"
-              autoComplete="off"
-              className={FIELD}
-            />
-            {tokenError && <p className="text-[12px] font-semibold text-rose-600">{tokenError}</p>}
-            <div className="flex gap-4">
-              <button
-                type="button"
-                onClick={handleSaveToken}
-                disabled={tokenBusy || !tokenInput.trim()}
-                className="underline underline-offset-4 disabled:opacity-40"
-              >
-                {tokenBusy ? "확인 중…" : "이 기기에 저장"}
-              </button>
-              <button type="button" onClick={() => setTokenOpen(false)} className="underline underline-offset-4">
-                닫기
-              </button>
-            </div>
-          </div>
         ) : (
-          <button type="button" onClick={() => setTokenOpen(true)} className="rounded-full px-1 py-1 underline underline-offset-4">
-            사장님 기기 설정
-          </button>
+          <OwnerUnlock onUnlocked={onSaveOwnerToken} />
         )}
       </div>
     </div>

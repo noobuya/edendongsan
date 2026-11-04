@@ -8,6 +8,7 @@ import AssetImage from "@/components/AssetImage";
 import BeforeAfterSlider from "@/components/BeforeAfterSlider";
 import BusinessBanner from "@/components/BusinessBanner";
 import CallBanner from "@/components/CallBanner";
+import OwnerUnlock from "@/components/OwnerUnlock";
 import ShareLinkButton from "@/components/ShareLinkButton";
 import CopyToNaverButton from "@/components/blog/CopyToNaverButton";
 import { readOwnerToken } from "@/lib/ownerToken";
@@ -202,6 +203,24 @@ export default function BlogDetailPage() {
               photos: post.work_photos,
               videoUrl: post.video_url,
               jobId: jobId ?? undefined,
+            }}
+          />
+        </div>
+      )}
+
+      {/* [왜 — 2026-11-05 "웹에는 영상 다시 만들기·글 다시 쓰기가 있는데 앱에는
+          없다"] 이 버튼들은 이 기기(=WebView 인스턴스)에 사장님 토큰이 저장돼
+          있을 때만 보인다(isOwner). 설치된 앱과 일반 브라우저는 저장소가 서로
+          분리돼 있어, 브라우저에서 설정해도 앱에는 따로 설정해야 한다
+          (lib/ownerToken.ts 참고) — 이 페이지는 누구나 볼 수 있는 공개 링크라
+          평소엔 작은 글씨로만 둔다. */}
+      {!isOwner && (
+        <div className="mb-6 text-right">
+          <OwnerUnlock
+            label="사장님이신가요? 기기 설정"
+            onUnlocked={(token) => {
+              setOwnerToken(token);
+              setIsOwner(true);
             }}
           />
         </div>

@@ -7,6 +7,7 @@ import { AlertCircle, Loader2, Search, Sparkles } from "lucide-react";
 import AssetImage from "@/components/AssetImage";
 import BrandShowcase from "@/components/BrandShowcase";
 import BusinessBanner from "@/components/BusinessBanner";
+import OwnerUnlock from "@/components/OwnerUnlock";
 import { listBlogPosts } from "@/lib/api";
 import type { BlogSummary } from "@/types";
 import { readOwnerToken } from "@/lib/ownerToken";
@@ -56,7 +57,7 @@ export default function BlogListPage() {
         <p className="mt-2 text-sm text-slate-500">
           실제로 진행한 인테리어 시공 현장을 사진과 함께 기록합니다
         </p>
-        {isOwner && (
+        {isOwner ? (
           <Link
             href="/blog/new"
             className="mt-5 inline-flex items-center gap-1.5 rounded-full bg-[#03c75a] px-5 py-2.5 text-[14px] font-bold text-white shadow-sm transition active:scale-95"
@@ -64,6 +65,14 @@ export default function BlogListPage() {
             <Sparkles className="h-4 w-4" />
             사진으로 블로그 만들기
           </Link>
+        ) : (
+          // [왜 — 2026-11-05 "웹에는 있는데 앱에는 없다"] "사진으로 블로그
+          // 만들기"는 이 기기에 사장님 토큰이 저장돼 있을 때만 보인다. 앱과
+          // 브라우저는 저장소가 분리돼 있어 따로 설정해야 한다 — 그 설정을
+          // 여기서 바로 할 수 있게 둔다(OwnerUnlock 주석 참고).
+          <div className="mt-4">
+            <OwnerUnlock label="사장님이신가요? 기기 설정" onUnlocked={() => setIsOwner(true)} />
+          </div>
         )}
       </header>
 
