@@ -723,7 +723,11 @@ function PillButton({
       onClick={onClick}
       className={`flex h-14 w-full items-center justify-center gap-2 rounded-full text-[16px] tracking-tight transition-all duration-300 active:scale-[0.98] ${
         disabled
-          ? "bg-slate-900/[0.04] font-light text-slate-400"
+          ? // [왜 2026-11-05에 text-slate-400 → text-black으로 바꿨는가] 패널이
+            // 더 투명해지면서(globals.css) 원래도 옅었던 비활성 글씨("다음")가
+            // 거의 안 보일 정도로 흐려졌다는 요청이 있었다. 사진을 찍기 전에도
+            // "다음" 글씨 자체는 또렷하게 읽혀야 한다.
+            "bg-black/5 font-bold text-black"
           : "bg-indigo-600 font-semibold text-white shadow-[0_10px_40px_rgba(79,70,229,0.45)]"
       }`}
     >

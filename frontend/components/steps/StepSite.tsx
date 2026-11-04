@@ -22,7 +22,7 @@ interface Props {
 const crisp = "[text-shadow:0_1px_3px_rgba(255,255,255,0.7)]";
 
 const FIELD =
-  `w-full min-w-0 border-0 border-b-[1.5px] border-slate-900/15 bg-transparent px-0 pb-3 pt-2 text-[18px] font-semibold text-slate-900 outline-none transition-colors placeholder:font-normal placeholder:text-slate-500/70 focus:border-indigo-600 focus:ring-0 ${crisp}`;
+  `w-full min-w-0 border-0 border-b-[1.5px] border-black/20 bg-transparent px-0 pb-3 pt-2 text-[18px] font-bold text-black outline-none transition-colors placeholder:font-normal placeholder:text-slate-600/70 focus:border-indigo-600 focus:ring-0 ${crisp}`;
 
 /** 1단계 — 현장 등록. 사진은 배경 무대에서 찍으므로, 이 패널은 사람이 적는 정보만
  *  받는다. 큰 제목 없이 고객명 한 줄만 받는 작은 카드다 — 바로 위 무대에 이미
@@ -61,7 +61,7 @@ export default function StepSite({
   return (
     <div className="space-y-5 animate-[step-in_0.35s_ease-out]">
       <label className="block">
-        <span className={`block text-[11px] font-bold uppercase tracking-wider text-slate-600 ${crisp}`}>
+        <span className={`block text-[11px] font-bold uppercase tracking-wider text-black ${crisp}`}>
           고객명 · 선택
         </span>
         <input

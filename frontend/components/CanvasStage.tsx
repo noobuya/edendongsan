@@ -81,16 +81,20 @@ export default function CanvasStage({
         )}
       </div>
 
-      {/* 촬영 UI는 패널이 덮지 않는 무대 영역의 한가운데에 놓는다.
+      {/* 촬영 UI는 패널이 덮지 않는 무대 영역에 놓는다.
           (세로: 1단계 패널이 이제 고객명 한 줄만큼의 작은 카드로 줄어(page.tsx 참고)
-          화면 아래쪽 약 15rem만 차지하므로 그 위는 전부 비어 있다 / 가로: 패널이
-          오른쪽 아래 작은 카드이므로 왼쪽 전체가 비어 있다)
+          화면 아래쪽 약 15rem만 차지하므로 그 위는 전부 비어 있다 — 그 넓은 빈
+          공간 가운데(items-center)에 둔다 / 가로: 패널이 오른쪽 아래 작은 카드라
+          왼쪽 전체가 비어 있는데, 위아래로도 넓은 이 공간 가운데에 두면 상호
+          문구가 화면 중간까지 처져 내려가 상단 앱 바와 멀어진다 — "상단 UI
+          앞으로"(2026-11-05 요청) 보이도록 가로에서는 맨 위(top-24, 앱 바 바로
+          밑)에 붙인다.)
           [왜 2026-11-05에 %에서 고정 길이(rem)로 바꿨는가] 1단계 패널이 더 이상
           "화면의 몇 %"가 아니라 "내용 높이만큼"만 차지해, 사진이 보이는 경계도
           화면 비율이 아니라 패널의 실제 높이(대략 15rem)에 맞춰 고정값으로 잡아야
           어느 화면 크기에서도 패널과 겹치지 않는다. */}
       {showCapture && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-60 top-[8.75rem] z-10 flex items-center justify-center px-6 foldLandscape:bottom-0 foldLandscape:right-[452px] foldLandscape:top-24">
+        <div className="pointer-events-none absolute inset-x-0 bottom-60 top-[8.75rem] z-10 flex items-center justify-center px-6 foldLandscape:bottom-0 foldLandscape:right-[452px] foldLandscape:top-24 foldLandscape:items-start">
           {photoUrl ? (
             <button
               type="button"
