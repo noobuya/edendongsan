@@ -25,6 +25,22 @@ AI가 그린 시공 후 사진 위에 큰 글씨로 얹는다.
 있을 때는(사진으로 블로그 만들기 등) 사진을 억지로 잘라내지 않고(ImageOps.contain)
 같은 사진을 확대·블러한 배경으로 빈 자리를 채워, 어떤 비율의 사진이 와도 내용이
 잘려 나가지 않는다.
+
+[왜 — 2026-11-05 사장님 요청 "글자가 너무 평범하다 — 색을 입히고 글자체를 더
+멋지게, 크기도 다양하게, 강조 문구는 색도 크기도 크게. 블로그 작성할 때마다
+적용해줘"]
+예전엔 제목 전체를 흰색·한 가지 크기로만 썼다(Noto Sans Bold, 본문용 글꼴을
+그대로 재탕). 두 가지를 바꾼다.
+(1) 글꼴: 본문은 가독성이 우선이라 계속 Noto Sans를 쓰지만, 이 썸네일은 "눈에
+확 띄는" 게 우선이라 유튜브 썸네일·배너에 흔히 쓰이는 임팩트 있는 전용 디스플레이
+글꼴(Black Han Sans, SIL OFL 라이선스 — assets/fonts/)을 따로 쓴다.
+(2) 2단 크기·색 — 제목을 (일반 구절, 강조 구절) 둘로 가른다. 이 블로그 제목들은
+"상황 설명, 임팩트 있는 결과" 두 구절 구조가 많아서(예: "칙칙했던 주방의 대변신,
+그레이와 조명이 만든 기적") 쉼표 뒤 마지막 구절을 강조 문구로 자동 고른다(AI가
+**이렇게** 명시적으로 감싸 주면 그걸 우선한다 — blog_writer.py가 지금은 본문에만
+이 표기를 쓰지만, 제목에 써도 그대로 반영된다). 일반 구절은 작고 흰 글씨, 강조
+구절은 더 크고 쨍한 노란색으로 — "다시 쓰기"를 포함해 썸네일이 만들어질 때마다
+항상 이 규칙을 탄다(이 함수 자체가 바뀐 것이라 사람이 매번 따로 적용할 게 없다).
 """
 import re
 
@@ -39,6 +55,14 @@ HALF_W = W // 2
 ACCENT = (79, 70, 229)
 BEFORE_BADGE = (28, 34, 43)
 
+# 제목용 임팩트 글꼴 — 한글 전용 디스플레이 서체라 영문/숫자 글리프가 없을 수 있어,
+# 로드에 실패하면 기존 Noto Sans Bold(_font)로 조용히 대체한다(BEFORE/AFTER
+# 배지처럼 영문이 섞인 곳은 계속 _font를 쓴다).
+_DISPLAY_FONT_PATH = "assets/fonts/BlackHanSans-Regular.ttf"
+NORMAL_COLOR = (255, 255, 255)
+# 강조 문구 전용 — 유튜브 썸네일에서 가장 흔히 쓰는 쨍한 옐로.
+EMPHASIS_COLOR = (255, 209, 10)
+
 # 제목 앞에 붙는 "[대구 인테리어 필름]" 같은 SEO용 고정 접두사는 썸네일에서는 빼고
 # 뒤의 핵심 문장만 큼직하게 보여준다 — 글자 수를 줄여야 더 크고 읽기 쉽게 들어간다.
 _PREFIX_RE = re.compile(r"^\[[^\]]+\]\s*")
@@ -48,18 +72,54 @@ _PREFIX_RE = re.compile(r"^\[[^\]]+\]\s*")
 _EMOJI_RE = re.compile(
     "[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF\U00002B00-\U00002BFF️]+"
 )
+# 제목을 (일반 구절, 강조 구절)로 가르는 명시 표기 — blog_writer.py의 본문 **강조**
+# 표기와 같은 문법.
+_EMPHASIS_MARK_RE = re.compile(r"\*\*(.+?)\*\*")
 
-_MAX_LINES = 3
 _SIDE_MARGIN = 72
 _BOTTOM_MARGIN = 64
-_START_SIZE = 96
-_MIN_SIZE = 52
+# 일반 구절 — 강조 문구를 돋보이게 하는 작은 쪽. 한 줄로만 둔다(강조 쪽에 공간을
+# 더 내주려고).
+_NORMAL_START_SIZE = 70
+_NORMAL_MIN_SIZE = 42
+_NORMAL_MAX_LINES = 1
+# 강조 구절 — 가장 크고 눈에 띄는 쪽.
+_EMPHASIS_START_SIZE = 118
+_EMPHASIS_MIN_SIZE = 64
+_EMPHASIS_MAX_LINES = 2
+
+
+def _display_font(size: int) -> ImageFont.FreeTypeFont:
+    try:
+        return ImageFont.truetype(_DISPLAY_FONT_PATH, size)
+    except OSError:
+        return _font(size)
 
 
 def _headline_text(title: str) -> str:
     stripped = _PREFIX_RE.sub("", title).strip() or title.strip()
     cleaned = re.sub(r"\s+", " ", _EMOJI_RE.sub("", stripped)).strip()
     return cleaned or stripped
+
+
+def _split_emphasis(text: str) -> tuple[str, str]:
+    """제목을 (일반 구절, 강조 구절)로 가른다. **...**로 명시적으로 감싼 구간이
+    있으면 그걸 쓰고, 없으면 쉼표 뒤 마지막 구절을 강조 문구로 자동 고른다 — 이
+    블로그 제목들은 "상황 설명, 임팩트 있는 결과" 두 구절 구조가 많다. 둘 다 없으면
+    제목 전체를 강조 구절 하나로 본다(짧은 제목에 굳이 작은 줄을 따로 만들지
+    않는다)."""
+    m = _EMPHASIS_MARK_RE.search(text)
+    if m:
+        emphasis = m.group(1).strip()
+        rest = (text[: m.start()] + text[m.end() :]).strip(" ,")
+        if emphasis:
+            return rest, emphasis
+    if "," in text:
+        rest, _, emphasis = text.rpartition(",")
+        rest, emphasis = rest.strip(), emphasis.strip()
+        if rest and emphasis:
+            return rest, emphasis
+    return "", text
 
 
 def _wrap_lines(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, max_width: int) -> list[str]:
@@ -83,17 +143,19 @@ def _wrap_lines(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFo
     return lines
 
 
-def _fit_lines(draw: ImageDraw.ImageDraw, text: str, max_width: int) -> tuple[list[str], ImageFont.FreeTypeFont]:
-    """가로 폭 안에서 줄 수가 _MAX_LINES 이하가 될 때까지 글자 크기를 줄여 나간다."""
-    size = _START_SIZE
-    while size >= _MIN_SIZE:
-        font = _font(size)
+def _fit_lines(
+    draw: ImageDraw.ImageDraw, text: str, max_width: int, start_size: int, min_size: int, max_lines: int
+) -> tuple[list[str], ImageFont.FreeTypeFont]:
+    """가로 폭 안에서 줄 수가 max_lines 이하가 될 때까지 글자 크기를 줄여 나간다."""
+    size = start_size
+    while size >= min_size:
+        font = _display_font(size)
         lines = _wrap_lines(draw, text, font, max_width)
-        if len(lines) <= _MAX_LINES:
+        if len(lines) <= max_lines:
             return lines, font
         size -= 6
-    font = _font(_MIN_SIZE)
-    return _wrap_lines(draw, text, font, max_width)[:_MAX_LINES], font
+    font = _display_font(min_size)
+    return _wrap_lines(draw, text, font, max_width)[:max_lines], font
 
 
 def _load_photo(path: str) -> Image.Image:
@@ -174,22 +236,32 @@ def make_blog_thumbnail(after_path: str, title: str, out_path: str, before_path:
 
     draw = ImageDraw.Draw(base)
     max_width = W - _SIDE_MARGIN * 2
-    lines, font = _fit_lines(draw, _headline_text(title), max_width)
+    rest, emphasis = _split_emphasis(_headline_text(title))
 
-    ascent, descent = font.getmetrics()
-    line_height = ascent + descent
-    gap = int(line_height * 0.3)
-    total_h = len(lines) * line_height + (len(lines) - 1) * gap
+    # (줄 텍스트, 글꼴, 색) 한 줄씩 — 일반 구절(있으면) 먼저, 강조 구절이 뒤를 잇는다.
+    # 강조 구절이 더 크고 쨍한 색이라 자연스럽게 "아래로 갈수록 강해지는" 흐름이 된다.
+    runs: list[tuple[str, ImageFont.FreeTypeFont, tuple[int, int, int]]] = []
+    if rest:
+        rest_lines, rest_font = _fit_lines(draw, rest, max_width, _NORMAL_START_SIZE, _NORMAL_MIN_SIZE, _NORMAL_MAX_LINES)
+        runs += [(line, rest_font, NORMAL_COLOR) for line in rest_lines]
+    emphasis_lines, emphasis_font = _fit_lines(
+        draw, emphasis, max_width, _EMPHASIS_START_SIZE, _EMPHASIS_MIN_SIZE, _EMPHASIS_MAX_LINES
+    )
+    runs += [(line, emphasis_font, EMPHASIS_COLOR) for line in emphasis_lines]
+
+    line_heights = [sum(font.getmetrics()) for _, font, _ in runs]
+    gaps = [int(h * 0.25) for h in line_heights]
+    total_h = sum(line_heights) + sum(gaps[:-1])
     y = H - _BOTTOM_MARGIN - total_h
 
-    for line in lines:
+    for (line, font, color), line_height, gap in zip(runs, line_heights, gaps):
         draw.text(
             (_SIDE_MARGIN, y),
             line,
             font=font,
-            fill=(255, 255, 255),
-            stroke_width=max(3, font.size // 16),
-            stroke_fill=(0, 0, 0, 235),
+            fill=color,
+            stroke_width=max(3, font.size // 14),
+            stroke_fill=(0, 0, 0),
         )
         y += line_height + gap
 
