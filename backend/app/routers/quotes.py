@@ -19,12 +19,15 @@ from app.quotes_store import (
     load_quote,
     remove_work_photo,
     set_blog_post,
+    set_negotiated_total,
     set_payment_status,
 )
 from app.schemas import (
     BlogPost,
     ChangeOrder,
+    EstimateBreakdown,
     PaymentStatusRequest,
+    PriceAdjustmentRequest,
     QuoteListResponse,
     QuoteSummary,
     WorkPhoto,
@@ -223,6 +226,16 @@ async def delete_blog_post(job_id: str):
         raise HTTPException(status_code=404, detail="견적서를 찾을 수 없습니다.")
     clear_blog_post(job_id)
     return {"ok": True}
+
+
+@router.post("/{job_id}/adjust-total", response_model=EstimateBreakdown)
+async def adjust_quote_total(job_id: str, payload: PriceAdjustmentRequest):
+    """고객과 협의한 최종 금액으로 견적 총액을 직접 바꾼다 — 현장에서 가격을
+    조율하는 일이 많아, AI가 처음 산출한 금액에 매번 묶이지 않게 한다."""
+    quote = set_negotiated_total(job_id, payload.total_cost, payload.note.strip())
+    if quote is None:
+        raise HTTPException(status_code=404, detail="견적서를 찾을 수 없습니다.")
+    return EstimateBreakdown(**quote["estimate"])
 
 
 @router.post("/{job_id}/payment-status", response_model=QuoteSummary)

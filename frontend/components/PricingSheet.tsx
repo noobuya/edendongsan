@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ImagePlus, KeyRound, Loader2, Radar, RotateCcw } from "lucide-react";
+import { BookText, ImagePlus, KeyRound, Loader2, Radar, RotateCcw, TrendingUp } from "lucide-react";
 import type { PricingField } from "@/types";
 import BottomSheet from "@/components/ui/BottomSheet";
 import { getPricing, savePricing } from "@/lib/api";
@@ -153,6 +153,30 @@ export default function PricingSheet({
             <span className="flex items-center gap-2">
               <Radar className="h-4 w-4" />
               현장 실습 매칭 관리
+            </span>
+            <span className="text-slate-400">→</span>
+          </Link>
+
+          <Link
+            href="/admin/ledger"
+            onClick={onClose}
+            className="flex h-14 items-center justify-between rounded-2xl bg-slate-100 px-4 text-[15px] font-semibold text-slate-800 transition-transform active:scale-[0.98]"
+          >
+            <span className="flex items-center gap-2">
+              <BookText className="h-4 w-4" />
+              가게부
+            </span>
+            <span className="text-slate-400">→</span>
+          </Link>
+
+          <Link
+            href="/admin/finance"
+            onClick={onClose}
+            className="flex h-14 items-center justify-between rounded-2xl bg-slate-100 px-4 text-[15px] font-semibold text-slate-800 transition-transform active:scale-[0.98]"
+          >
+            <span className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4" />
+              수익 대시보드
             </span>
             <span className="text-slate-400">→</span>
           </Link>

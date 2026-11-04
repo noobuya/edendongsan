@@ -266,6 +266,17 @@ export interface EstimateBreakdown {
   deposit: DepositInfo | null;
   sales_pitch: string;
   roi_comparison: RoiComparison | null;
+  /** AI가 처음 산출한 총액 — total_cost를 협의가로 바꾼 뒤에도 비교용으로 남는다.
+   *  한 번도 조정하지 않았으면 null(= total_cost와 같다는 뜻). */
+  original_total_cost: number | null;
+  price_adjustments: PriceAdjustment[];
+}
+
+export interface PriceAdjustment {
+  from_amount: number;
+  to_amount: number;
+  note: string;
+  adjusted_at: string;
 }
 
 export interface Region {

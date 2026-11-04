@@ -375,6 +375,8 @@ export default function SimulationPanel({
           onSecretHold={onSecretHold}
           signature={liveJob.signature}
           onSign={handleSign}
+          ownerToken={ownerToken}
+          onAdjusted={(estimate) => setLiveJob((prev) => ({ ...prev, estimate }))}
         />
 
         {/* 실무 퀵메뉴 — 발주 전 롤 수·로스·금액을 현장에서 바로 계산하고,

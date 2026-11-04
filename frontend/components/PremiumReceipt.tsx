@@ -7,6 +7,7 @@ import QuoteIcon, { toneOfWorkItem } from "@/components/quote/QuoteIcon";
 import BusinessStamp from "@/components/BusinessStamp";
 import SignaturePad from "@/components/SignaturePad";
 import { BUSINESS_NAME, BUSINESS_PHONE } from "@/lib/businessInfo";
+import { adjustQuoteTotal } from "@/lib/api";
 import ROIBarChart from "@/components/ROIBarChart";
 import type { EstimateBreakdown, MaterialOrderLine, RoiComparison, Signature, WorkItemId } from "@/types";
 
@@ -151,6 +152,12 @@ interface ReceiptViewProps {
    *  jobId가 없는 화면(빠른 견적 등)에서는 onSign을 안 넘기면 서명 UI 자체가 안 뜬다. */
   signature?: Signature | null;
   onSign?: (dataUrl: string) => Promise<void>;
+  /** 고객과 협의한 금액으로 견적을 실제로 바꾼다. jobId가 없는 화면(빠른 견적 등)에서는
+   *  넘기지 않으면 "이 금액으로 확정" 버튼 자체가 안 뜬다(저장할 대상이 없으므로). */
+  onAdjustTotal?: (totalCost: number, note: string) => Promise<void>;
+  /** AI가 처음 산출한 총액 — 한 번이라도 조정했으면 total과 함께 비교해 보여준다. */
+  originalTotal?: number | null;
+  adjustmentCount?: number;
 }
 
 /** 견적 API(메인 백엔드)의 EstimateBreakdown을 영수증으로 그린다. */
@@ -160,12 +167,19 @@ export default function PremiumReceipt({
   onSecretHold,
   signature,
   onSign,
+  ownerToken,
+  onAdjusted,
 }: {
   estimate: EstimateBreakdown;
   jobId: string;
   onSecretHold?: () => void;
   signature?: Signature | null;
   onSign?: (dataUrl: string) => Promise<void>;
+  /** 사장님 기기의 관리자 토큰 — 있을 때만 "이 금액으로 확정" 버튼이 뜬다. */
+  ownerToken?: string | null;
+  /** 금액을 실제로 바꾼 뒤 갱신된 estimate를 돌려준다 — 부모가 화면에 쓰는 estimate
+   *  상태를 갱신해, 저장 직후 새로고침 없이 바뀐 총액이 보이게 한다. */
+  onAdjusted?: (estimate: EstimateBreakdown) => void;
 }) {
   const rows: ReceiptRow[] = estimate.line_items.map((li) => ({
     key: li.item_id,
@@ -174,6 +188,13 @@ export default function PremiumReceipt({
     note: FILM_FAMILY.includes(li.item_id) ? FILM_NOTE : GENERIC_NOTE,
     amount: li.subtotal,
   }));
+
+  async function handleAdjustTotal(totalCost: number, note: string) {
+    if (!ownerToken) return;
+    const updated = await adjustQuoteTotal(jobId, totalCost, note, ownerToken);
+    onAdjusted?.(updated);
+  }
+
   return (
     <PremiumReceiptView
       rows={rows}
@@ -192,6 +213,9 @@ export default function PremiumReceipt({
       deposit={estimate.deposit}
       salesPitch={estimate.sales_pitch}
       roiComparison={estimate.roi_comparison}
+      onAdjustTotal={ownerToken ? handleAdjustTotal : undefined}
+      originalTotal={estimate.original_total_cost}
+      adjustmentCount={estimate.price_adjustments?.length ?? 0}
     />
   );
 }
@@ -213,13 +237,20 @@ export function PremiumReceiptView({
   deposit,
   salesPitch,
   roiComparison,
+  onAdjustTotal,
+  originalTotal,
+  adjustmentCount,
 }: ReceiptViewProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [stealthOpen, setStealthOpen] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  // 협의 공급가액: 고객과 가격을 조정할 때 사장님이 입력하는 값(견적서에는 반영되지 않는다).
+  // 협의 공급가액: 고객과 가격을 조정할 때 사장님이 입력하는 값 — 아래 "확정" 버튼을
+  // 누르기 전까지는 미리보기일 뿐 실제 견적서(estimate.total_cost)에는 반영되지 않는다.
   const [negotiated, setNegotiated] = useState<string>("");
+  const [adjustNote, setAdjustNote] = useState("");
+  const [adjusting, setAdjusting] = useState(false);
+  const [adjustError, setAdjustError] = useState<string | null>(null);
 
   // navigator.share가 없거나 실패했을 때의 안전한 대안 — 캡처한 이미지를 화면에 먼저
   // 보여주고, "갤러리에 저장" → "전화번호 입력" → "문자 앱 열기" 순서로 이어간다.
@@ -356,6 +387,29 @@ export function PremiumReceiptView({
     negotiatedNum && negotiatedNum > 0 && negotiatedMargin !== null ? (negotiatedMargin / negotiatedNum) * 100 : null;
   const discountRate =
     negotiatedNum !== null && supplyAmount > 0 ? ((supplyAmount - negotiatedNum) / supplyAmount) * 100 : null;
+
+  // 협의 공급가액 입력칸은 "부가세 전" 금액이라, 실제로 저장할 총액(부가세 포함)은
+  // 지금 견적의 공급가액:부가세 비율을 그대로 적용해 역산한다 — 부가세 구분이 없는
+  // 견적(vat === null)이면 공급가액이 곧 총액이다. 서버가 실제 부가세율로 다시
+  // 정확히 맞춰 저장하므로, 여기서는 버튼에 보여줄 미리보기 총액이면 충분하다.
+  const impliedVatRate = vat !== null && supplyAmount > 0 ? vat / supplyAmount : 0;
+  const negotiatedTotal = negotiatedNum === null ? null : Math.round(negotiatedNum * (1 + impliedVatRate));
+
+  async function handleConfirmAdjust() {
+    if (!onAdjustTotal || negotiatedTotal === null) return;
+    setAdjusting(true);
+    setAdjustError(null);
+    try {
+      await onAdjustTotal(negotiatedTotal, adjustNote.trim());
+      setNegotiated("");
+      setAdjustNote("");
+      showToast("견적 금액을 수정했습니다");
+    } catch (e) {
+      setAdjustError(e instanceof Error ? e.message : "금액을 수정하지 못했습니다.");
+    } finally {
+      setAdjusting(false);
+    }
+  }
 
   return (
     <div className="space-y-3">
@@ -626,6 +680,42 @@ export function PremiumReceiptView({
               </p>
             )}
           </div>
+
+          {/* 협의가로 실제 견적서를 바꾸는 버튼 — onAdjustTotal이 없으면(권한 없는
+              기기, 또는 jobId 없는 빠른 견적 화면) 아예 렌더링하지 않는다. */}
+          {onAdjustTotal && (
+            <div className="mt-5 border-t border-dashed border-[#d1d6db] pt-4">
+              {originalTotal != null && originalTotal !== total && (
+                <p className="mb-2.5 text-[12.5px] text-[#8b95a1]">
+                  원래 AI 견적 <span className="line-through">{won(originalTotal)}</span> → 현재{" "}
+                  <span className="font-semibold text-[#191f28]">{won(total)}</span>
+                  {adjustmentCount ? ` (조정 ${adjustmentCount}회)` : ""}
+                </p>
+              )}
+              {negotiatedTotal !== null && (
+                <p className="mb-2.5 text-[13px] text-[#5b6573]">
+                  이 공급가액으로 확정하면 견적 총액이{" "}
+                  <span className="font-bold tabular-nums text-[#191f28]">{won(negotiatedTotal)}</span>으로 바뀝니다
+                  (부가세 포함).
+                </p>
+              )}
+              <input
+                value={adjustNote}
+                onChange={(e) => setAdjustNote(e.target.value)}
+                placeholder="조정 메모(선택) — 예: 현금 결제 할인"
+                className="h-11 w-full rounded-xl border border-[#d1d6db] bg-white px-3.5 text-[14px] text-[#191f28] outline-none placeholder:text-[#a8afb8] focus:border-indigo-500"
+              />
+              {adjustError && <p className="mt-2 text-[12.5px] font-semibold text-red-600">{adjustError}</p>}
+              <button
+                type="button"
+                disabled={negotiatedTotal === null || adjusting}
+                onClick={handleConfirmAdjust}
+                className="mt-2.5 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-orange-600 text-[14.5px] font-bold text-white transition-transform active:scale-[0.98] disabled:bg-[#e5e8eb] disabled:text-[#a8afb8]"
+              >
+                {adjusting ? "저장 중..." : "이 금액으로 견적서 수정"}
+              </button>
+            </div>
+          )}
         </section>
       )}
 

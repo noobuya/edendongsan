@@ -7,7 +7,10 @@ app/jobs_store.py의 JOBS는 인메모리 딕셔너리라 서버 프로세스가
 이 문제를 해결한다.
 """
 import json
+from datetime import datetime, timezone
 from pathlib import Path
+
+from app import pricing_store
 
 QUOTES_DIR = Path("storage/quotes")
 
@@ -78,6 +81,53 @@ def set_site_conditions(job_id: str, conditions: dict) -> dict | None:
     if quote is None:
         return None
     quote["site_conditions"] = conditions
+    save_quote(job_id, quote)
+    return quote
+
+
+def set_negotiated_total(job_id: str, new_total_cost: int, note: str = "") -> dict | None:
+    """고객과 조율한 최종 금액(부가세 포함)으로 견적의 총액을 덮어쓴다.
+
+    AI가 산출한 원래 금액은 estimate.original_total_cost에 처음 한 번만 저장돼
+    이후 몇 번을 더 조정해도 "원래 얼마였는지"는 그대로 남는다. 조정 한 건 한
+    건은 price_adjustments에 쌓여(PriceAdjustment) 사장님이 나중에 왜 이
+    금액이 됐는지 되짚어볼 수 있다 — 서명·현장조건과 달리 영업상 협의일 뿐
+    법적 분쟁 기록이 아니므로, 몇 번이든 다시 조정할 수 있게 덮어쓰기를 막지
+    않는다.
+
+    공급가액·부가세는 estimator.py의 계산(vat = round(supply * rate), total =
+    supply + vat)을 거꾸로 풀어 다시 채운다 — 영수증이 두 숫자를 따로 보여주는
+    경우(vat가 있는 견적) 새 총액과 어긋나지 않게 하기 위해서다. 자재비/인건비/
+    경비(원가 쪽)와 개별 line_items는 그대로 둔다 — 협의는 "얼마를 받을지"만
+    바꾸는 것이고, 실제로 들어간 원가나 품목 구성이 바뀌는 건 아니다."""
+    quote = load_quote(job_id)
+    if quote is None or not quote.get("estimate"):
+        return None
+    estimate = quote["estimate"]
+
+    current_total = estimate.get("total_cost", 0)
+    if "original_total_cost" not in estimate or estimate["original_total_cost"] is None:
+        estimate["original_total_cost"] = current_total
+
+    vat_rate = pricing_store.effective()["vat_rate_percent"] / 100
+    supply_amount = round(new_total_cost / (1 + vat_rate)) if vat_rate else new_total_cost
+    vat = new_total_cost - supply_amount
+
+    estimate.setdefault("price_adjustments", []).append(
+        {
+            "from_amount": current_total,
+            "to_amount": new_total_cost,
+            "note": note,
+            "adjusted_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    estimate["total_cost"] = new_total_cost
+    estimate["supply_amount"] = supply_amount
+    estimate["vat"] = vat
+    if estimate.get("deposit"):
+        rate = estimate["deposit"]["rate_percent"]
+        estimate["deposit"]["amount"] = round(new_total_cost * rate / 100)
+
     save_quote(job_id, quote)
     return quote
 

@@ -359,6 +359,18 @@ class RoiComparison(BaseModel):
     highlights: list[str]
 
 
+class PriceAdjustment(BaseModel):
+    """고객과 협의해 견적 총액을 직접 바꾼 기록 한 건. 한 견적에 여러 번
+    쌓일 수 있다(계약금 받을 때 한 번 조정하고, 잔금 받을 때 또 조정하는
+    식) — 나중에 "왜 이 금액이 됐는지" 사장님이 스스로 추적할 수 있게
+    남긴다. 고객 화면에는 노출되지 않는다(사장님 전용 내부 분석에서만 씀)."""
+
+    from_amount: int
+    to_amount: int
+    note: str = ""
+    adjusted_at: str
+
+
 class EstimateBreakdown(BaseModel):
     line_items: list[LineItem]
     ceiling_area_m2: float
@@ -369,6 +381,11 @@ class EstimateBreakdown(BaseModel):
     vat: int
     total_cost: int
     material_orders: list[MaterialOrderLine] = Field(default_factory=list)
+    # AI가 처음 산출한 총액 — total_cost를 협의가로 바꾼 뒤에도 "원래 견적이
+    # 얼마였는지" 비교할 수 있게 한 번 저장되면 바뀌지 않는다. 한 번도 조정한
+    # 적이 없으면 None(= total_cost와 같다는 뜻).
+    original_total_cost: Optional[int] = None
+    price_adjustments: list[PriceAdjustment] = Field(default_factory=list)
     # ── 오야 견적 방어 로직 (estimator.py의 calculate_estimate 참고) ──
     # 보정 전 실제 산출 공급가액. 최소 출장비가 적용되지 않았으면 supply_amount와 같다.
     raw_supply_amount: int = 0
@@ -548,6 +565,66 @@ class QuoteSummary(BaseModel):
 
 class PaymentStatusRequest(BaseModel):
     payment_status: PaymentStatus
+
+
+class PriceAdjustmentRequest(BaseModel):
+    """협의로 바뀐 최종 금액(부가세 포함 총액)을 그대로 받는다 — 공급가액·부가세는
+    서버가 현재 부가세율로 역산해 다시 채운다(estimator.py의 계산과 같은 공식)."""
+
+    total_cost: int = Field(ge=0)
+    note: str = ""
+
+
+# ── 가게부(장부) — app/ledger_store.py, routers/ledger.py 설계 메모 참고 ──────
+LedgerEntryType = Literal["income", "expense"]
+
+
+class LedgerEntry(BaseModel):
+    id: str
+    date: str  # "YYYY-MM-DD"
+    type: LedgerEntryType
+    category: str
+    counterparty: str = ""
+    amount: int
+    memo: str = ""
+    created_at: float
+    updated_at: float
+
+
+class LedgerEntryRequest(BaseModel):
+    date: str
+    type: LedgerEntryType
+    category: str = Field(min_length=1, max_length=40)
+    counterparty: str = Field(default="", max_length=60)
+    amount: int = Field(gt=0)
+    memo: str = Field(default="", max_length=400)
+
+
+# 매출(완료 견적)·인건비(현장 지원 완료)처럼 이 앱에 이미 있는 사실에서 자동으로
+# 만들어지는 항목과, 사장님이 직접 입력한 항목(LedgerEntry)을 한 화면에 날짜순으로
+# 같이 보여주기 위한 공통 모양. source로 구분해 수동 항목만 수정·삭제 버튼을 보여준다.
+LedgerSource = Literal["quote", "labor", "manual"]
+
+
+class LedgerTransaction(BaseModel):
+    id: str
+    date: str
+    type: LedgerEntryType
+    category: str
+    counterparty: str = ""
+    amount: int
+    memo: str = ""
+    source: LedgerSource
+    # source="quote"일 때만 채워진다 — 프론트가 견적 상세로 바로 이동할 수 있게.
+    job_id: Optional[str] = None
+
+
+class LedgerSummaryResponse(BaseModel):
+    month: str
+    income_total: int
+    expense_total: int
+    net: int
+    transactions: list[LedgerTransaction]
 
 
 # ── 자동 정산 및 수익 통계 (routers/finance.py 설계 메모 참고) ──────────

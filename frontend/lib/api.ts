@@ -5,6 +5,7 @@ import type {
   ChangeOrder,
   ConstructionIntentResult,
   CreateJobParams,
+  EstimateBreakdown,
   JobStatusResponse,
   JournalEntry,
   LineItem,
@@ -511,6 +512,22 @@ export async function updatePaymentStatus(
   return res.json();
 }
 
+/** 고객과 협의한 최종 금액(부가세 포함 총액)으로 견적을 직접 바꾼다. */
+export async function adjustQuoteTotal(
+  jobId: string,
+  totalCost: number,
+  note: string,
+  ownerToken: string
+): Promise<EstimateBreakdown> {
+  const res = await apiFetch(`${API_BASE}/api/quotes/${jobId}/adjust-total`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...ownerHeaders(ownerToken) },
+    body: JSON.stringify({ total_cost: totalCost, note }),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "금액을 수정하지 못했습니다."));
+  return res.json();
+}
+
 /* ---- 자동 정산 및 수익 통계(/admin/finance) ---- */
 export interface FinanceMonthRow {
   month: string;
@@ -532,6 +549,91 @@ export async function getFinanceSummary(month: string, ownerToken: string): Prom
   });
   if (!res.ok) throw new Error(await extractErrorMessage(res, "재무 요약을 불러오지 못했습니다."));
   return res.json();
+}
+
+/* ---- 가게부(장부, /admin/ledger) ---- */
+export type LedgerEntryType = "income" | "expense";
+export type LedgerSource = "quote" | "labor" | "manual";
+
+export interface LedgerTransaction {
+  id: string;
+  date: string;
+  type: LedgerEntryType;
+  category: string;
+  counterparty: string;
+  amount: number;
+  memo: string;
+  source: LedgerSource;
+  job_id: string | null;
+}
+
+export interface LedgerSummary {
+  month: string;
+  income_total: number;
+  expense_total: number;
+  net: number;
+  transactions: LedgerTransaction[];
+}
+
+export interface LedgerEntry {
+  id: string;
+  date: string;
+  type: LedgerEntryType;
+  category: string;
+  counterparty: string;
+  amount: number;
+  memo: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface LedgerEntryInput {
+  date: string;
+  type: LedgerEntryType;
+  category: string;
+  counterparty: string;
+  amount: number;
+  memo: string;
+}
+
+export async function getLedgerSummary(month: string, ownerToken: string): Promise<LedgerSummary> {
+  const res = await apiFetch(`${API_BASE}/api/ledger/summary?month=${encodeURIComponent(month)}`, {
+    headers: ownerHeaders(ownerToken),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "가게부를 불러오지 못했습니다."));
+  return res.json();
+}
+
+export async function createLedgerEntry(input: LedgerEntryInput, ownerToken: string): Promise<LedgerEntry> {
+  const res = await apiFetch(`${API_BASE}/api/ledger/entries`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...ownerHeaders(ownerToken) },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "항목을 추가하지 못했습니다."));
+  return res.json();
+}
+
+export async function updateLedgerEntry(
+  entryId: string,
+  input: LedgerEntryInput,
+  ownerToken: string
+): Promise<LedgerEntry> {
+  const res = await apiFetch(`${API_BASE}/api/ledger/entries/${entryId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...ownerHeaders(ownerToken) },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "항목을 수정하지 못했습니다."));
+  return res.json();
+}
+
+export async function deleteLedgerEntry(entryId: string, ownerToken: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/ledger/entries/${entryId}`, {
+    method: "DELETE",
+    headers: ownerHeaders(ownerToken),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "항목을 삭제하지 못했습니다."));
 }
 
 export async function uploadWorkPhoto(
