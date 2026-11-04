@@ -25,7 +25,7 @@ def _static_url_to_path(url: str) -> str:
 
 
 def _source_photo_path(quote: dict) -> str | None:
-    """목록 썸네일에 쓸 원본 사진 — AI가 그린 시공 후 사진을 우선한다(사장님 요청:
+    """목록 썸네일의 "시공 후" 사진 — AI가 그린 시공 후 사진을 우선한다(사장님 요청:
     "AI사진으로 썸네일을"). AI 렌더가 없으면(사진만으로 만든 블로그 등) 실제 작업
     사진으로, 그마저 없으면 원본 사진으로 폴백한다."""
     rendered = quote.get("rendered_image_url")
@@ -36,6 +36,19 @@ def _source_photo_path(quote: dict) -> str | None:
             return _static_url_to_path(photo["url"])
     original = quote.get("original_image_url")
     return _static_url_to_path(original) if original else None
+
+
+def _before_photo_path(quote: dict) -> str | None:
+    """목록 썸네일의 "시공 전" 사진 — 전/후를 나란히 보여주는 분할 구도에 쓴다
+    (services/blog_thumbnail.py 설계 메모 참고). 실제 업로드된 원본 사진을
+    우선하고, 없으면 현장에서 찍은 before 단계 작업 사진으로 폴백한다."""
+    original = quote.get("original_image_url")
+    if original:
+        return _static_url_to_path(original)
+    for photo in quote.get("work_photos", []):
+        if photo.get("stage") == "before":
+            return _static_url_to_path(photo["url"])
+    return None
 
 
 def _cover_image_url(quote: dict) -> str | None:
@@ -106,21 +119,29 @@ async def get_blog_detail(job_id: str):
 
 @router.get("/{job_id}/thumbnail")
 async def get_blog_thumbnail(job_id: str):
-    """블로그 목록 맨 앞에 쓰는 눈에 띄는 썸네일 — AI 시공 사진 위에 제목을 큰 글씨로
-    올린다(services/blog_thumbnail.py). 사진이나 제목이 바뀌면 파일 이름이 바뀌어
-    자동으로 새로 만든다(get_brand_banner와 같은 지연 생성·캐시 방식)."""
+    """블로그 목록 맨 앞에 쓰는 눈에 띄는 썸네일 — 시공 전/후를 나란히 보여주고 제목을
+    큰 글씨로 올린다(services/blog_thumbnail.py). 사진이나 제목이 바뀌면 파일 이름이
+    바뀌어 자동으로 새로 만든다(get_brand_banner와 같은 지연 생성·캐시 방식) —
+    "글 다시 쓰기"로 제목이 바뀌면 다음에 이 주소를 열 때 새 제목으로 다시 만들어진다."""
     quote = load_quote(job_id)
     if quote is None or not quote.get("blog_post"):
         raise HTTPException(status_code=404, detail="블로그 글을 찾을 수 없습니다.")
     source_path = _source_photo_path(quote)
     if not source_path or not os.path.exists(source_path):
         raise HTTPException(status_code=404, detail="대표 사진을 찾을 수 없습니다.")
+    before_path = _before_photo_path(quote)
+    if before_path and not os.path.exists(before_path):
+        before_path = None
     title = quote["blog_post"]["title"]
-    key = hashlib.md5(f"{source_path}|{os.path.getmtime(source_path)}|{title}".encode()).hexdigest()[:10]
+
+    key_parts = [source_path, str(os.path.getmtime(source_path)), title]
+    if before_path:
+        key_parts += [before_path, str(os.path.getmtime(before_path))]
+    key = hashlib.md5("|".join(key_parts).encode()).hexdigest()[:10]
     out = f"storage/results/{job_id}_thumb_{key}.jpg"
     if not os.path.exists(out):
         tmp = out.replace(".jpg", ".tmp.jpg")
-        await run_in_threadpool(make_blog_thumbnail, source_path, title, tmp)
+        await run_in_threadpool(make_blog_thumbnail, source_path, title, tmp, before_path)
         os.replace(tmp, out)
     return FileResponse(out, media_type="image/jpeg")
 
