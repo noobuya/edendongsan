@@ -562,25 +562,37 @@ export default function HomePage() {
         </section>
       ) : (
         /* 조작 패널 — 화면을 반으로 가르지 않고, 여백을 두고 떠 있다.
-           [왜 1단계만 top-[55%]인가 — 2026-11-05 "현장등록 UI가 메인사진을 덮는다"]
+           [왜 1단계만 완전히 다른 모양인가 — 2026-11-05 "현장등록 UI가 메인사진을
+           덮는다" / "비율을 더 줄여줘"]
            1단계(현장 등록)는 고객명 한 줄만 받는 가벼운 패널인데도 2단계(품목·옵션
-           선택, 내용이 훨씬 많아 스크롤이 필요한 단계)와 같은 top-[38%]를 써서 화면의
-           62%를 덮었다 — 사장님이 고른 대표 사진이 거의 안 보이는 원인이었다. 1단계만
-           패널을 줄여(top-[55%], 사진이 보이는 영역 38%→55%) 사진이 주인공으로
-           보이게 하고, 내용이 많은 2단계는 그대로 둔다. transition으로 단계를
-           넘어갈 때 패널이 자연스럽게 늘어난다. */
+           선택, 내용이 훨씬 많아 스크롤이 필요한 단계)와 같은 "화면의 몇 %" 높이
+           고정 방식을 썼다 — 내용이 적어도 항상 그만큼 사진을 덮었다. 1단계는
+           아예 높이를 %로 고정하지 않고 top을 비워 내용 높이만큼만 차지하게
+           한다(bottom만 지정된 절대 위치는 콘텐츠 높이에 맞춰 줄어든다) — 고객명
+           한 줄 + 버튼만큼의 작은 카드로 줄어, 화면 대부분이 사진으로 남는다.
+           가로(펼친 화면)에서도 같은 원칙으로 오른쪽 아래에 작게 떠 있게 해서,
+           세로·가로 어느 쪽이든 "필요한 만큼만 차지하는 카드"라는 같은 디자인
+           언어를 쓴다(예전엔 가로에서만 항상 전체 높이 패널이라 두 화면이 서로
+           다른 제품처럼 보였다). 2단계는 내용이 많아 그대로 둔다. */
         <section
-          className={`glass-panel absolute inset-x-3 bottom-3 z-10 flex flex-col transition-[top] duration-300 ease-out
-                     foldLandscape:inset-y-4 foldLandscape:left-auto foldLandscape:right-4 foldLandscape:top-20 foldLandscape:w-[420px] ${
-                       step === 1 ? "top-[55%]" : "top-[38%]"
-                     }`}
+          className={
+            step === 1
+              ? "glass-panel absolute inset-x-4 bottom-4 z-10 flex flex-col " +
+                "foldLandscape:inset-x-auto foldLandscape:right-6 foldLandscape:bottom-8 foldLandscape:w-[380px]"
+              : "glass-panel absolute inset-x-3 bottom-3 top-[38%] z-10 flex flex-col " +
+                "foldLandscape:inset-y-4 foldLandscape:left-auto foldLandscape:right-4 foldLandscape:top-20 foldLandscape:w-[420px]"
+          }
         >
-          {/* 유리 패널이라는 신호 — BottomSheet와 같은 손잡이 표시로 전체 UI의
-              시각 언어를 통일한다. */}
-          <div className="flex shrink-0 justify-center pb-1 pt-3">
-            <div className="h-1.5 w-11 rounded-full bg-slate-900/15" />
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-7 pb-5 pt-3">
+          {/* 유리 패널이라는 신호 — BottomSheet와 같은 손잡이 표시. 내용 높이만큼만
+              차지하는 1단계 작은 카드(세로·가로 모두)에는 "쓸어내려 닫는 시트"라는
+              손짓 신호가 어울리지 않고, 빈 자리만큼 카드가 커져 버리므로 2단계
+              세로 화면에서만 보인다. */}
+          {step === 2 && (
+            <div className="flex shrink-0 justify-center pb-1 pt-3 foldLandscape:hidden">
+              <div className="h-1.5 w-11 rounded-full bg-slate-900/20" />
+            </div>
+          )}
+          <div className={`min-h-0 flex-1 overflow-y-auto ${step === 1 ? "px-6 pb-1 pt-6" : "px-7 pb-5 pt-3"}`}>
             {submitError && <ErrorNote message={submitError} />}
             {step === 1 && (
               <StepSite
@@ -615,7 +627,7 @@ export default function HomePage() {
           </div>
 
           {/* CTA는 패널 맨 아래에 붙는다. 비활성일 땐 글씨만, 활성이면 은은한 빛. */}
-          <div className="shrink-0 px-7 pb-7 pt-2">
+          <div className={`shrink-0 ${step === 1 ? "px-6 pb-6 pt-3" : "px-7 pb-7 pt-2"}`}>
             {step === 1 ? (
               <PillButton disabled={!photo} onClick={() => setStep(2)}>
                 다음 <ArrowRight className="h-[18px] w-[18px]" />

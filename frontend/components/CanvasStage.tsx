@@ -82,13 +82,15 @@ export default function CanvasStage({
       </div>
 
       {/* 촬영 UI는 패널이 덮지 않는 무대 영역의 한가운데에 놓는다.
-          (세로: 패널이 아래쪽 45%만 쓰므로 그 위 공간 / 가로: 패널이 오른쪽이므로 왼쪽)
-          [왜 2026-11-05에 bottom-[62%] → bottom-[45%]로 늘렸는가] 현장 등록(1단계)
-          패널이 화면의 62%를 덮어 대표 사진이 거의 안 보인다는 제보가 있었다 —
-          page.tsx의 glass-panel 쪽 경계(top-[55%])와 짝을 맞춰, 사진이 보이는
-          영역을 38% → 55%로 넓혔다. */}
+          (세로: 1단계 패널이 이제 고객명 한 줄만큼의 작은 카드로 줄어(page.tsx 참고)
+          화면 아래쪽 약 15rem만 차지하므로 그 위는 전부 비어 있다 / 가로: 패널이
+          오른쪽 아래 작은 카드이므로 왼쪽 전체가 비어 있다)
+          [왜 2026-11-05에 %에서 고정 길이(rem)로 바꿨는가] 1단계 패널이 더 이상
+          "화면의 몇 %"가 아니라 "내용 높이만큼"만 차지해, 사진이 보이는 경계도
+          화면 비율이 아니라 패널의 실제 높이(대략 15rem)에 맞춰 고정값으로 잡아야
+          어느 화면 크기에서도 패널과 겹치지 않는다. */}
       {showCapture && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-[45%] top-[8.75rem] z-10 flex items-center justify-center px-6 foldLandscape:bottom-0 foldLandscape:right-[452px] foldLandscape:top-24">
+        <div className="pointer-events-none absolute inset-x-0 bottom-60 top-[8.75rem] z-10 flex items-center justify-center px-6 foldLandscape:bottom-0 foldLandscape:right-[452px] foldLandscape:top-24">
           {photoUrl ? (
             <button
               type="button"
