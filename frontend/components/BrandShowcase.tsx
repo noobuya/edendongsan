@@ -14,7 +14,7 @@ export default function BrandShowcase() {
     let active = true;
     getBrandAssets()
       .then((a) => active && setAssets(a))
-      .catch(() => active && setAssets({ logo: null, card: null }));
+      .catch(() => active && setAssets({ logo: null, card: null, hero: null }));
     return () => {
       active = false;
     };

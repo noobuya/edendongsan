@@ -462,9 +462,12 @@ export async function checkServerHealth(): Promise<boolean> {
 export interface BrandAssets {
   logo: string | null;
   card: string | null;
+  /** 앱 첫 화면·견적 화면 맨 위의 대표 사진. 올린 적 없으면 null(이때는 코드에
+   *  미리 넣어둔 기본 사진으로 대체된다 — BrandHero.tsx 참고). */
+  hero: string | null;
 }
 
-/** 로고·명함 주소를 돌려준다 — 올려둔 적 없으면 null. 공개 핑이라 인증이 필요 없다. */
+/** 로고·명함·대표 사진 주소를 돌려준다 — 올려둔 적 없으면 null. 공개 핑이라 인증이 필요 없다. */
 export async function getBrandAssets(): Promise<BrandAssets> {
   const res = await apiFetch(`${API_BASE}/api/brand`);
   if (!res.ok) throw new Error(await extractErrorMessage(res, "로고·명함 정보를 불러오지 못했습니다."));
@@ -472,7 +475,7 @@ export async function getBrandAssets(): Promise<BrandAssets> {
 }
 
 export async function uploadBrandImage(
-  kind: "logo" | "card",
+  kind: "logo" | "card" | "hero",
   file: File,
   ownerToken: string
 ): Promise<BrandAssets> {

@@ -5,28 +5,47 @@ import AssetImage from "@/components/AssetImage";
 import { getBrandAssets } from "@/lib/api";
 import { BUSINESS_SERVICE_AREA } from "@/lib/businessInfo";
 
-/** 대표 시공 사진이 놓이는 자리. 실제 사진은 public/images/eden_main.jpg 로 넣으면 된다.
- *  (권장: 가로형 1600×900 이상. 파일 이름만 같으면 코드는 건드리지 않아도 된다.) */
+/** 대표 시공 사진이 놓이는 자리. 사장님이 /admin/brand에서 올린 사진이 최우선이고,
+ *  아직 한 번도 안 올렸으면 코드에 미리 넣어둔 public/images/eden_main.jpg로
+ *  대체된다(권장: 가로형 1600×900 이상). */
 export const BRAND_HERO_SRC = "/images/eden_main.jpg";
 export const BRAND_HERO_ALT = "대한인테리어 필름 프리미엄 시공";
 // public/ 바로 아래(/eden_main.jpg)에 넣어도 찾아 쓴다.
 const BRAND_HERO_CANDIDATES = [BRAND_HERO_SRC, "/eden_main.jpg"];
 
-/** 대표 사진이 실제로 있는지 미리 불러 보고, 있는 첫 경로를 돌려준다(없으면 null).
+/** 코드에 미리 넣어둔 기본 사진 후보 중 실제로 있는 첫 경로를 돌려준다(없으면 null).
  *  사진이 없을 때 깨진 이미지가 화면에 잠깐도 뜨지 않게 하려는 것이다. */
+function probeStaticFallback(onFound: (src: string) => void, isCancelled: () => boolean) {
+  (function tryNext(i: number) {
+    if (i >= BRAND_HERO_CANDIDATES.length) return;
+    const probe = new window.Image();
+    probe.onload = () => {
+      if (!isCancelled()) onFound(BRAND_HERO_CANDIDATES[i]);
+    };
+    probe.onerror = () => tryNext(i + 1);
+    probe.src = BRAND_HERO_CANDIDATES[i];
+  })(0);
+}
+
+/** 대표 사진 주소를 돌려준다 — 사장님이 /admin/brand에서 올린 사진을 최우선으로
+ *  쓰고, 없거나(또는 서버에 못 닿으면) 코드에 미리 넣어둔 기본 사진으로 조용히
+ *  대체된다. 둘 다 없으면 null(사진 없이 글자만 보이는 화면). */
 export function useBrandImageSrc(): string | null {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
-    (function tryNext(i: number) {
-      if (i >= BRAND_HERO_CANDIDATES.length) return;
-      const probe = new window.Image();
-      probe.onload = () => {
-        if (!cancelled) setSrc(BRAND_HERO_CANDIDATES[i]);
-      };
-      probe.onerror = () => tryNext(i + 1);
-      probe.src = BRAND_HERO_CANDIDATES[i];
-    })(0);
+    getBrandAssets()
+      .then((assets) => {
+        if (cancelled) return;
+        if (assets.hero) {
+          setSrc(assets.hero);
+          return;
+        }
+        probeStaticFallback(setSrc, () => cancelled);
+      })
+      .catch(() => {
+        if (!cancelled) probeStaticFallback(setSrc, () => cancelled);
+      });
     return () => {
       cancelled = true;
     };

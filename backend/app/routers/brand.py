@@ -1,4 +1,4 @@
-"""업체 로고·명함 이미지 — 사장님이 앱에서 직접 올리고 바꾼다.
+"""업체 로고·명함·대표 사진 — 사장님이 앱에서 직접 올리고 바꾼다.
 
 [왜 — 2026-11-03 사장님 요청 "블로그 메인에 명함, 로고를 잘 보이게, 앱 첫 화면 사진의
 에덴인테리어 글자 대신 로고와 명함"]
@@ -6,7 +6,13 @@
 없었다. 사장님 전용 화면(/admin/brand)에서 올리면 storage/brand에 저장되고, 블로그
 상단·네이버 배너·앱 첫 화면이 이 파일을 쓴다. 바꾸면 주소의 v(수정 시각)가 바뀌어
 브라우저가 예전 그림을 보여 주지 않는다.
-"""
+
+[왜 — 2026-11-05 사장님 요청 "앱 안의 전체 사진을 (관리자 화면에서) 바꿀 수 있게"]
+앱 첫 화면·견적 화면 맨 위의 대표 사진(components/BrandHero.tsx)은 그동안
+frontend/public/images/eden_main.jpg로 코드에 박혀 있어, 바꾸려면 파일을 덮어쓰고
+다시 빌드·배포해야 했다. "hero"를 로고·명함과 같은 종류로 추가해 같은 화면
+(/admin/brand)에서 사진 한 장으로 바로 바꿀 수 있게 한다 — 새 코드를 더 만들
+필요 없이 기존 로고·명함 업로드 로직을 그대로 탄다."""
 import io
 import os
 from pathlib import Path
@@ -20,7 +26,7 @@ from app.owner_auth import is_owner
 
 router = APIRouter(prefix="/api/brand", tags=["brand"])
 
-KINDS = {"logo": "로고", "card": "명함"}
+KINDS = {"logo": "로고", "card": "명함", "hero": "대표 사진"}
 MAX_SIDE = 2000
 
 

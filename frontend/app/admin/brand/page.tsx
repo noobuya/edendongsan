@@ -26,7 +26,8 @@ function writeToken(value: string) {
 const input =
   "h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-[15px] text-slate-900 outline-none focus:border-indigo-500";
 
-const KINDS: { kind: "logo" | "card"; label: string; hint: string }[] = [
+const KINDS: { kind: "logo" | "card" | "hero"; label: string; hint: string }[] = [
+  { kind: "hero", label: "대표 사진", hint: "앱 첫 화면·견적 화면 맨 위에 크게 보여요. 가로형 사진이 잘 어울립니다" },
   { kind: "logo", label: "로고", hint: "정사각형에 가까운 사진이 잘 어울립니다" },
   { kind: "card", label: "명함", hint: "가로로 긴 사진이 잘 어울립니다" },
 ];
@@ -39,7 +40,7 @@ function UploadCard({
   token,
   onUploaded,
 }: {
-  kind: "logo" | "card";
+  kind: "logo" | "card" | "hero";
   label: string;
   hint: string;
   current: string | null;
@@ -97,7 +98,7 @@ export default function AdminBrandPage() {
   const [token, setToken] = useState("");
   const [tokenInput, setTokenInput] = useState("");
   const [authorized, setAuthorized] = useState(false);
-  const [assets, setAssets] = useState<BrandAssets>({ logo: null, card: null });
+  const [assets, setAssets] = useState<BrandAssets>({ logo: null, card: null, hero: null });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -127,7 +128,7 @@ export default function AdminBrandPage() {
   if (!authorized) {
     return (
       <main className="mx-auto max-w-md space-y-4 px-4 py-10">
-        <h1 className="text-xl font-bold text-slate-900">로고·명함 관리</h1>
+        <h1 className="text-xl font-bold text-slate-900">로고·명함·대표 사진 관리</h1>
         <section className="space-y-3 rounded-2xl bg-white p-5 shadow-sm">
           <p className="text-[14px] text-slate-600">서버에 설정된 관리자 토큰을 입력하세요.</p>
           <input
@@ -155,7 +156,7 @@ export default function AdminBrandPage() {
   return (
     <main className="mx-auto max-w-xl space-y-4 px-4 py-6">
       <header className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-slate-900">로고·명함 관리</h1>
+        <h1 className="text-xl font-bold text-slate-900">로고·명함·대표 사진 관리</h1>
         <button
           onClick={() => {
             writeToken("");
@@ -168,7 +169,7 @@ export default function AdminBrandPage() {
         </button>
       </header>
       <p className="px-1 text-[13px] text-slate-500">
-        여기서 올린 로고·명함은 블로그 메인과 앱 첫 화면에 바로 반영됩니다.
+        여기서 올린 사진은 블로그 메인과 앱 첫 화면에 바로 반영됩니다.
       </p>
 
       {KINDS.map(({ kind, label, hint }) => (
