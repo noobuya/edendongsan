@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 
 from app.quotes_store import list_quotes, load_quote
 from app.schemas import BlogDetailResponse, BlogListResponse, BlogSummary, WorkPhoto
-from app.services.blog_thumbnail import make_blog_thumbnail
+from app.services.blog_thumbnail import LAYOUT_VERSION, make_blog_thumbnail
 from app.services.blog_video import make_compare_gif, make_compare_mp4
 from app.services.brand_banner import make_brand_banner
 from app.business_info import BUSINESS_NAME, BUSINESS_PHONE, BUSINESS_SERVICE_AREA
@@ -134,7 +134,7 @@ async def get_blog_thumbnail(job_id: str):
         before_path = None
     title = quote["blog_post"]["title"]
 
-    key_parts = [source_path, str(os.path.getmtime(source_path)), title]
+    key_parts = [LAYOUT_VERSION, source_path, str(os.path.getmtime(source_path)), title]
     if before_path:
         key_parts += [before_path, str(os.path.getmtime(before_path))]
     key = hashlib.md5("|".join(key_parts).encode()).hexdigest()[:10]

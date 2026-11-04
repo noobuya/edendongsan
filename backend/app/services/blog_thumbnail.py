@@ -50,6 +50,11 @@ from app.services.blog_video import _font
 
 # 블로그 목록 카드의 aspect-[4/3](frontend/app/blog/page.tsx)과 맞춘다.
 W, H = 1200, 900
+# routers/blog.py의 캐시 키에 넣는 디자인 버전 — 사진·제목이 그대로여도 이 모듈의
+# 렌더링 로직 자체가 바뀌면(이번처럼 글꼴·색 개편) 캐시 키가 같아 예전에 만들어 둔
+# 파일을 계속 돌려주는 문제가 있었다. 레이아웃을 바꿀 때마다 이 값을 올리면 그
+# 즉시 전체 썸네일이 새로 만들어진다.
+LAYOUT_VERSION = "v3"
 HALF_W = W // 2
 # 앱 전체에서 쓰는 브랜드 인디고 — AFTER 배지·구분선에 쓴다.
 ACCENT = (79, 70, 229)
