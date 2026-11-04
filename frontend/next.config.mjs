@@ -55,6 +55,24 @@ const nextConfig = {
             { source: "/estimator/api/:path*", destination: `${backend}/estimator/api/:path*` },
           ];
         },
+        // [왜 — 2026-11-04 "설치된 앱을 열면 흰 화면만 뜬다" 사고]
+        // 설치된 앱(APK)은 로컬에 아무것도 담지 않고 capacitor.config.ts의 server.url을
+        // 그대로 열어 쓴다. 이 HTML 문서(페이지 틀)는 Next가 정적 페이지라고 기본으로
+        // 길게 캐시해 버리는데(s-maxage=1년), 배포할 때마다 JS 청크 파일 이름이 새
+        // 해시로 바뀌고 예전 파일은 지워진다 — 웹뷰가 배포 전에 받아둔 옛 문서를 들고
+        // 있으면 그 문서가 가리키는 옛 청크가 전부 404가 되어, 리액트가 아예 뜨지도
+        // 못한 채 흰 화면만 남는다(앱을 지웠다 새로 설치하면 캐시도 같이 비워져서
+        // "그때는 됐다"로 보였다). 문서/페이지 응답은 항상 새로 받아오게 못 박는다 —
+        // 콘텐츠 해시가 파일명에 이미 박혀 있는 /_next/static(불변 파일)은 그대로
+        // 길게 캐시해도 안전하니 건드리지 않는다.
+        async headers() {
+          return [
+            {
+              source: "/((?!_next/static|_next/image|favicon.ico|icons|manifest.json).*)",
+              headers: [{ key: "Cache-Control", value: "no-store, must-revalidate" }],
+            },
+          ];
+        },
       }),
   // 개발은 .next, 빌드는 별도 폴더 (위 isDevServer 주석 참고).
   distDir,
