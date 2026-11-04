@@ -438,6 +438,24 @@ export default function HomePage() {
           >
             <Users className="h-5 w-5" />
           </Link>
+          {/* 자동화 작업·현장 실습 매칭 — 예전에는 1단계(사진 찍기 전) 패널 맨
+              아래에만 있던 바로가기였다. 패널이 사진을 덮지 않게 줄이면서(아래
+              glass-panel 경계 참고) 그 자리가 사라졌으니, 다른 아이콘들과 같은
+              줄로 올려 화면 상태와 무관하게 항상 닿을 수 있게 한다. */}
+          <Link
+            href="/automation"
+            aria-label="자동화 작업"
+            className="glass-pill flex h-11 w-11 shrink-0 items-center justify-center text-slate-700 transition-transform active:scale-90"
+          >
+            <Bot className="h-5 w-5" />
+          </Link>
+          <Link
+            href="/recruiting"
+            aria-label="현장 실습 매칭"
+            className="glass-pill flex h-11 w-11 shrink-0 items-center justify-center text-slate-700 transition-transform active:scale-90"
+          >
+            <Briefcase className="h-5 w-5" />
+          </Link>
           {/* 견적서 목록은 고객 이름·금액이 들어 있는 사장님 전용 자료라 사장님
               기기에만 보여준다. */}
           {ownerToken && (
@@ -543,12 +561,26 @@ export default function HomePage() {
           </div>
         </section>
       ) : (
-        /* 조작 패널 — 화면을 반으로 가르지 않고, 여백을 두고 떠 있다. */
+        /* 조작 패널 — 화면을 반으로 가르지 않고, 여백을 두고 떠 있다.
+           [왜 1단계만 top-[55%]인가 — 2026-11-05 "현장등록 UI가 메인사진을 덮는다"]
+           1단계(현장 등록)는 고객명 한 줄만 받는 가벼운 패널인데도 2단계(품목·옵션
+           선택, 내용이 훨씬 많아 스크롤이 필요한 단계)와 같은 top-[38%]를 써서 화면의
+           62%를 덮었다 — 사장님이 고른 대표 사진이 거의 안 보이는 원인이었다. 1단계만
+           패널을 줄여(top-[55%], 사진이 보이는 영역 38%→55%) 사진이 주인공으로
+           보이게 하고, 내용이 많은 2단계는 그대로 둔다. transition으로 단계를
+           넘어갈 때 패널이 자연스럽게 늘어난다. */
         <section
-          className="glass-panel absolute inset-x-3 bottom-3 top-[38%] z-10 flex flex-col
-                     foldLandscape:inset-y-4 foldLandscape:left-auto foldLandscape:right-4 foldLandscape:top-20 foldLandscape:w-[420px]"
+          className={`glass-panel absolute inset-x-3 bottom-3 z-10 flex flex-col transition-[top] duration-300 ease-out
+                     foldLandscape:inset-y-4 foldLandscape:left-auto foldLandscape:right-4 foldLandscape:top-20 foldLandscape:w-[420px] ${
+                       step === 1 ? "top-[55%]" : "top-[38%]"
+                     }`}
         >
-          <div className="min-h-0 flex-1 overflow-y-auto px-7 pb-20 pt-8">
+          {/* 유리 패널이라는 신호 — BottomSheet와 같은 손잡이 표시로 전체 UI의
+              시각 언어를 통일한다. */}
+          <div className="flex shrink-0 justify-center pb-1 pt-3">
+            <div className="h-1.5 w-11 rounded-full bg-slate-900/15" />
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-7 pb-5 pt-3">
             {submitError && <ErrorNote message={submitError} />}
             {step === 1 && (
               <StepSite
@@ -603,37 +635,16 @@ export default function HomePage() {
                 )}
               </PillButton>
             )}
+            {/* [왜 2026-11-05에 "사진 없이 빠른 견적 보기"·"자동화 작업"·"현장 실습
+                매칭" 세 바로가기를 뺐는가] 이 패널이 1단계에서 화면의 62%를 덮어
+                대표 사진을 가리는 원인이었다(위 top-[55%] 메모 참고). 셋 다 위
+                앱 바 아이콘 줄로 옮겨(빠른 견적은 이미 Calculator 아이콘으로
+                있었다 — 중복이었던 것) 패널에는 꼭 필요한 "현장 등록" 흐름만
+                남긴다. */}
             {step === 1 && !photo && (
               <p className="pt-3 text-center text-[12px] font-light text-slate-400">
                 현장 사진을 촬영하면 다음으로 넘어갑니다
               </p>
-            )}
-            {step === 1 && !photo && (
-              <Link
-                href="/quote"
-                className="mt-3 flex h-12 items-center justify-center gap-2 rounded-2xl bg-white/80 text-[14px] font-semibold text-indigo-700 transition-transform active:scale-[0.98]"
-              >
-                <Calculator className="h-4 w-4" />
-                사진 없이 빠른 견적 보기
-              </Link>
-            )}
-            {step === 1 && !photo && (
-              <Link
-                href="/automation"
-                className="mt-2 flex h-12 items-center justify-center gap-2 rounded-2xl bg-white/80 text-[14px] font-semibold text-indigo-700 transition-transform active:scale-[0.98]"
-              >
-                <Bot className="h-4 w-4" />
-                자동화 작업
-              </Link>
-            )}
-            {step === 1 && !photo && (
-              <Link
-                href="/recruiting"
-                className="mt-2 flex h-12 items-center justify-center gap-2 rounded-2xl bg-white/80 text-[14px] font-semibold text-indigo-700 transition-transform active:scale-[0.98]"
-              >
-                <Briefcase className="h-4 w-4" />
-                현장 실습 매칭
-              </Link>
             )}
           </div>
         </section>

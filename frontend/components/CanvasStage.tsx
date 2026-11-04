@@ -71,8 +71,10 @@ export default function CanvasStage({
             {heroSrc && (
               <img src={heroSrc} alt={BRAND_HERO_ALT} decoding="async" className="absolute inset-0 h-full w-full object-cover" />
             )}
-            {/* 위(앱 바)와 아래(조작 패널·버튼) 글씨가 사진 위에서도 읽히도록 어두운 그라데이션을 깐다. */}
-            <div aria-hidden className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/25 to-black/65" />
+            {/* 위(앱 바)와 아래(조작 패널·버튼) 글씨가 사진 위에서도 읽히도록 어두운
+                그라데이션을 깐다 — 사장님이 직접 고른 대표 사진이 잘 보여야 하므로,
+                가독성을 지키는 최소한으로만 어둡게 한다(2026-11-05, 전보다 옅게). */}
+            <div aria-hidden className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/5 to-black/55" />
           </div>
         ) : (
           <div className="canvas-stage h-full w-full" />
@@ -80,9 +82,13 @@ export default function CanvasStage({
       </div>
 
       {/* 촬영 UI는 패널이 덮지 않는 무대 영역의 한가운데에 놓는다.
-          (세로: 패널이 아래 절반을 쓰므로 위쪽 / 가로: 패널이 오른쪽이므로 왼쪽) */}
+          (세로: 패널이 아래쪽 45%만 쓰므로 그 위 공간 / 가로: 패널이 오른쪽이므로 왼쪽)
+          [왜 2026-11-05에 bottom-[62%] → bottom-[45%]로 늘렸는가] 현장 등록(1단계)
+          패널이 화면의 62%를 덮어 대표 사진이 거의 안 보인다는 제보가 있었다 —
+          page.tsx의 glass-panel 쪽 경계(top-[55%])와 짝을 맞춰, 사진이 보이는
+          영역을 38% → 55%로 넓혔다. */}
       {showCapture && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-[62%] top-[8.75rem] z-10 flex items-start justify-center px-6 foldLandscape:bottom-0 foldLandscape:right-[452px] foldLandscape:top-24">
+        <div className="pointer-events-none absolute inset-x-0 bottom-[45%] top-[8.75rem] z-10 flex items-center justify-center px-6 foldLandscape:bottom-0 foldLandscape:right-[452px] foldLandscape:top-24">
           {photoUrl ? (
             <button
               type="button"
