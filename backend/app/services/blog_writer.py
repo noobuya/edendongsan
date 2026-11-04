@@ -15,6 +15,7 @@ from google.genai import errors as genai_errors
 from PIL import Image
 
 from app.business_info import (
+    BUSINESS_CORE_HASHTAGS,
     BUSINESS_NAME,
     BUSINESS_PHONE,
     BUSINESS_SERVICE_AREA,
@@ -41,7 +42,10 @@ CLOSING_MARKER = "마무리:"
 TIPS_MARKER = "팁:"
 HASHTAG_MARKER = "해시태그:"
 SECTION_MARKERS = [TITLE_MARKER, CONTENT_MARKER, PROMISE_MARKER, CLOSING_MARKER, TIPS_MARKER, HASHTAG_MARKER]
-MAX_HASHTAGS = 10
+# BUSINESS_CORE_HASHTAGS(고정 지역·서비스 키워드)가 항상 먼저 들어가고, 그 뒤에
+# 이 글 내용에 맞는 AI 생성 태그가 이어 붙는다 — 전체 상한을 고정 태그 개수보다
+# 넉넉히 키워, 고정 태그가 AI 태그를 밀어내지 않게 한다.
+MAX_HASHTAGS = len(BUSINESS_CORE_HASHTAGS) + 7
 
 # response_mime_type="application/json"(구조화 출력)은 쓰지 않는다 — 실측 결과
 # 이 계정/시점에서 "이미지 첨부 + JSON 모드"를 함께 쓸 때 503(UNAVAILABLE, 과부하)
@@ -106,8 +110,10 @@ PROMPT_TEMPLATE = (
     "- '팁' 항목은 '필름 시공 업체 고를 때 체크할 3가지'를 번호(1. 2. 3.)로 한 줄씩 짧게 "
     "적는다(일반적인 조언 수준, 경쟁사 비방 금지).\n"
     "- 과장 광고 문구(예: '국내 1위', '평생 보장')는 쓰지 않는다.\n"
-    "- '해시태그' 항목은 네이버 검색에 쓸 해시태그 8~10개(지역명·시공 항목·'인테리어필름'·"
-    "'셀프인테리어' 같은 실제 검색어 위주)를 '#'로 시작해 한 줄에 공백으로 나열한다.\n"
+    "- '해시태그' 항목은 네이버 검색에 쓸 해시태그 5~7개를 '#'로 시작해 한 줄에 공백으로 "
+    "나열한다. 지역명·'인테리어필름'·'셀프인테리어' 같은 일반 검색어는 이미 고정으로 "
+    "붙으니 반복하지 말고, 이번 시공 항목·자재·공간(예: #욕실리모델링, #방화문필름, "
+    "#조명교체)처럼 이 글에만 해당하는 구체적인 태그 위주로 채운다.\n"
     "- 다른 설명 없이 정확히 이 형식으로만 답하라(아래 여섯 마커를 그대로, 이 순서대로):\n"
     f"{TITLE_MARKER} (블로그 제목 한 줄)\n"
     f"{CONTENT_MARKER}\n(# 큰 문구 + 짧은 설명 블록 4~6개)\n"
@@ -192,7 +198,7 @@ def generate_blog_post(quote: dict) -> dict:
     sections = _parse_sections(response.text)
     title = title_override or sections[TITLE_MARKER] or "시공 후기"
     content = _assemble_content(sections)
-    hashtags = _parse_hashtags(sections[HASHTAG_MARKER])
+    hashtags = _merge_hashtags(_parse_hashtags(sections[HASHTAG_MARKER]))
     return {
         "title": title,
         "content": content,
@@ -277,6 +283,17 @@ def _parse_hashtags(raw: str) -> list[str]:
         if tag not in tags:
             tags.append(tag)
     return tags[:MAX_HASHTAGS]
+
+
+def _merge_hashtags(ai_tags: list[str]) -> list[str]:
+    """고정 지역·서비스 키워드(BUSINESS_CORE_HASHTAGS)를 맨 앞에 무조건 넣고, 이 글
+    내용에 맞춰 AI가 만든 태그를 중복 없이 이어 붙인다 — 전화번호처럼 AI가 빠뜨리면
+    안 되는 값은 AI 출력을 신뢰하지 않고 고정값으로 강제하는 것과 같은 원칙이다."""
+    merged = list(BUSINESS_CORE_HASHTAGS)
+    for tag in ai_tags:
+        if tag not in merged:
+            merged.append(tag)
+    return merged[:MAX_HASHTAGS]
 
 
 def _collect_reference_images(quote: dict) -> list[Image.Image]:
