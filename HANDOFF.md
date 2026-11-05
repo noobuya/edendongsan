@@ -777,4 +777,120 @@
 
 ## 네이버 순서표: 자리 표시로 사진 순서 안내 + 업체 배너 (2026-11-03)
 - "본문을 하나로 하니 중간에 사진·영상 넣기 힘들다": 글 전체 한 번 복사는 유지하되, 앱 블로그와 같은 위치에 주황색 "📷 [사진 N] … 여기에 붙여넣기" 자리 표시를 함께 넣음. 순서표 2번부터 사진 N이 순서대로(줄 번호도 "사진 N"). 네이버에서 표시 줄 클릭 → [복사] → Ctrl+V → 표시 글자 삭제.
+
+---
+
+# 2026-11-04 ~ 11-05 세션 — 앱 크래시 2건, 가게부/견적 조정, 블로그 썸네일·키워드, 첫 화면 배치 편집, 업체 정보 설정화
+
+이 구간은 같은 날 이어진 긴 세션 하나다. 전부 커밋·푸시·`~/deploy.sh --force`까지
+직접 실행해 배포 완료(별도 "배포 대기" 표시 없는 한 전부 라이브 반영됨).
+
+## 설치된 앱 "켜졌다 바로 꺼짐" — 2차례에 걸친 원인 규명 (2026-11-04~05)
+- **1차 증상:** 문서 캐시(`s-maxage=1년`)가 배포 직후 폰이 들고 있던 옛 HTML이 삭제된 JS
+  청크를 가리키게 해 웹뷰 렌더러가 죽고, Capacitor 기본 동작은 그걸 처리하지 않고 앱
+  전체를 강제 종료함. `frontend/next.config.mjs`에 문서/페이지 응답 `no-store,
+  must-revalidate` 헤더 추가(불변 `/_next/static`은 제외)로 서버 쪽은 해결, 배포
+  시점 확인 완료.
+- **1차 "복구" 시도가 2차 사고를 냄:** `MainActivity.java`에 `onRenderProcessGone`
+  핸들러를 추가하며 `webView.destroy()` 후 `recreate()`로 "복구"하게 했는데, Capacitor
+  Bridge도 같은 액티비티 생명주기에 물려 같은 웹뷰를 정리하려다 충돌해 **새로운** 크래시
+  (이번엔 오류 메시지까지 뜸)를 냄. 서버는 재시작 이력 없이 안정적이었던 것으로 범위를
+  좁힘.
+- **최종 수정:** `onRenderProcessGone`에서 액티비티를 건드리지 않고 **같은 WebView
+  객체에 같은 URL을 다시 로드**만 함(`webView.loadUrl(webView.getUrl())`) — 렌더러가
+  죽어도 WebView 객체·주소는 살아있어 안드로이드가 새 렌더러 프로세스를 알아서 띄움.
+- APK 재빌드 2회(`eden-app-fix-crash-v2-debug.apk`, `backend/storage/results/`).
+  **서명 키가 달라 기존 앱 삭제 후 재설치 필요**(예전 설치본이 이 서버의 빌드 환경
+  갖추기 전 키로 서명됨 — 데이터는 서버에 있어 안전, 단 "사장님 기기 설정" 토큰은
+  로컬 저장이라 재입력 필요).
+
+## 가게부(장부) 신설 + 견적 금액 조정 (2026-11-04)
+- **가게부** (`backend/app/ledger_store.py`+`routers/ledger.py`, `frontend/app/admin/ledger`):
+  매출(완료 견적)·인건비(현장 지원 완료)는 자동 집계, 유류비·공구 등은 수동 입력
+  (SQLite). `finance.py`의 월간 집계 대시보드와 달리 건별 전표 목록.
+- **견적 금액 현장 조정:** `PremiumReceipt.tsx`에 예전부터 있던 "협의 공급가액"
+  계산기는 미리보기일 뿐 실제 반영이 안 됐음 — `POST /api/quotes/{id}/adjust-total`
+  신설, "이 금액으로 견적서 수정" 버튼으로 실제 `total_cost` 변경. 원래 AI 금액은
+  `estimate.original_total_cost`에 한 번만 저장, 조정 이력은 `price_adjustments`에 누적.
+
+## 로고·명함에 "대표 사진(hero)" 추가 (2026-11-04)
+- 앱 첫 화면 배경이 `frontend/public/images/eden_main.jpg`로 코드에 박혀 있던 것을
+  `/admin/brand`에서 사진 한 장으로 바로 바꿀 수 있게(`routers/brand.py`의 KINDS에
+  `hero` 추가, 기존 로고·명함 업로드 로직 재사용). `BrandHero.tsx`가 서버에 올라온
+  사진을 최우선으로 쓰고 없으면 기존 정적 파일로 폴백.
+
+## 첫 화면(1단계 "현장 등록") UI 개편 — 3차례 반복 (2026-11-04~05)
+- 1단계 패널이 화면의 62%를 덮어 대표 사진이 안 보인다는 신고 → 패널을 "화면의 %"
+  고정 대신 **내용 높이만큼만**(top 없이 bottom만 지정) 차지하는 작은 카드로 축소.
+  세로·가로(폴더 펼침) 둘 다 "필요한 만큼만 차지하는 카드" 언어로 통일.
+- 투명도 3차례 상향(`.glass-panel` 배경 불투명도 70%→55%→38%→24%, 블러 40px→64px —
+  낮출수록 블러를 더 세게 올려야 글씨 대비가 유지됨), 고객명·"다음" 글자를 검은색
+  굵게로.
+- 가로(폴더 펼침)에서 상호 문구가 화면 중간으로 처져 보이던 것을 상단 앱바 바로
+  아래로(`items-start`) 고정.
+- 패널 안에 끼어있던 "빠른 견적"(중복)·"자동화 작업"·"현장 실습 매칭" 바로가기 3개를
+  상단 앱바 아이콘 줄로 이동.
+
+## "웹에는 영상 다시 만들기·글 다시 쓰기가 있는데 앱에는 없다" (2026-11-05)
+- 원인: `eden_owner_token`(localStorage)은 **설치된 앱(WebView)과 일반 브라우저가
+  저장소를 완전히 공유하지 않음** — 브라우저에서 설정해도 앱엔 반영 안 됨. 게다가
+  그 설정 입구가 홈 화면(1단계) 한 곳뿐이라 다른 화면에선 아예 닿을 길이 없었음.
+- 수정: `components/OwnerUnlock.tsx` 신규(StepSite.tsx의 토큰 입력 로직을 공용
+  컴포넌트로 추출) — 블로그 상세·블로그 목록 등 사장님 전용 기능이 숨어있는 화면
+  어디서든 그 자리에서 바로 "사장님 기기 설정"을 할 수 있음.
+
+## 블로그 썸네일 재설계 — 전/후 분할 + 임팩트 글꼴 (2026-11-05)
+- **구도:** "썸네일이 이상하다"(세로로 좁은 사진을 ImageOps.fit으로 중앙 확대 크롭 →
+  맥락 없는 벽 한 칸만 남는 사고) → `services/blog_thumbnail.py`를 시공 전(실제 사진)/
+  후(AI 사진) 반반 분할 + BEFORE/AFTER 배지 구도로 재작성. 짝을 못 구하면
+  `ImageOps.contain`+블러 배경으로 폴백(더는 억지로 안 자름).
+- **글꼴·색·크기:** "글자가 평범하다" → 한글 전용 임팩트 서체 **Black Han Sans**(SIL
+  OFL, `backend/assets/fonts/`) 추가. 제목을 (일반 구절, 쉼표 뒤 강조 구절)로 갈라
+  일반은 작고 흰색, 강조는 더 크고(최대 118px) 쨍한 노란색.
+- **캐시 버전:** `LAYOUT_VERSION` 상수를 캐시 키에 추가 — 렌더링 코드만 바뀌어도
+  사진·제목이 그대로면 예전 캐시 파일을 계속 돌려주던 문제 해결, 기존 캐시 파일 수동
+  삭제로 즉시 반영.
+- **핵심 지역 키워드 고정:** `business_info.py`의 `BUSINESS_CORE_HASHTAGS`(대구·
+  테크노폴리스·달성군·현풍·텍폴 등 9개)를 모든 글의 해시태그 맨 앞에 무조건 삽입
+  (`blog_writer._merge_hashtags`) — AI 생성 해시태그만 믿으면 이 동네 검색어를
+  빠뜨릴 수 있어서, 전화번호처럼 고정값으로 강제.
+
+## 첫 화면 배치 편집 모드 (2026-11-05)
+- "배치가 엉망이다 — 길게 눌러 위치·크기 조정" 요청. 범위는 질문으로 확정: **사장님
+  기기에서만** 편집 가능, 값은 **서버 저장**(모든 기기 동일 적용), **첫 화면만**.
+- `backend/app/layout_store.py`+`routers/layout.py`: 요소 id별 `{dx, dy, scale_x,
+  scale_y, opacity}`를 `storage/layout.json`에 저장(절대 좌표 아닌 상대 보정값).
+  GET은 공개, PUT/DELETE는 사장님만.
+- `frontend/components/LayoutEdit.tsx`(Provider+훅)+`Movable.tsx`: 편집 모드에서
+  길게 누르면 집어서 옮기고, 대각선 모서리 손잡이로 가로·세로 **각각** 크기 조절,
+  왼쪽 아래 손잡이로 투명도 조절. `app/page.tsx`(앱바 좌측·아이콘줄·메인 패널),
+  `CanvasStage.tsx`(촬영 안내 문구·버튼)에 적용. `PricingSheet.tsx`에 "배치 편집"
+  진입점.
+- **"안 움직인다" 버그:** (1) 롱프레스 판정 중 떨림 허용 범위가 10px로 너무 좁아 거의
+  항상 취소됨 → 26px로. (2) `position:absolute` 요소(패널·뱃지) 쪽 경로엔
+  `touch-action:none`이 빠져 브라우저가 드래그를 스크롤로 가로챔 → 추가.
+- **세로/가로 따로 저장:** 요소 id에 `@portrait`/`@landscape` 접미사를 붙여 완전히
+  다른 저장 칸 사용 — main-panel처럼 두 레이아웃에서 CSS 배치 자체가 다른 요소는
+  같은 픽셀값을 공유하면 기준이 달라 펼쳤을 때 위치가 어긋났음. 기존 저장값(사장님이
+  이미 테스트해 둔 3개)은 `@portrait`로 1회성 마이그레이션 완료.
+
+## 업체 정보(상호명·전화번호) 설정화 + AI 대표 사진 생성 (2026-11-05)
+- `app/business_info.py`를 고정 상수 → `pricing_store.py`와 같은 override 패턴
+  (`storage/business_info.json`)으로 전환, `business_name()`/`business_phone()` 등
+  함수로 항상 최신값을 읽음. **상수를 쓰던 백엔드 7개 파일**(blog_video/blog_writer/
+  brand_banner/proposal_writer, routers/quotes·blog·blog_compose) **+ 프런트 7개
+  컴포넌트**(BusinessBanner/BusinessStamp/BrandHero/PremiumReceipt/BrandShowcase/
+  CanvasStage/CallBanner, `lib/businessInfo.ts`를 `useBusinessInfo()` 훅으로 전환)를
+  전부 전환 — 블로그 서명·네이버 배너·영수증·앱 화면 어디든 즉시 반영.
+- `GET/PUT /api/brand/business-info`(`routers/brand.py`, GET 공개·PUT 사장님).
+  **라우트 등록 순서 주의** — `/{kind}` 패턴보다 먼저 와야 `business-info`가
+  kind로 잘못 매칭 안 됨(실제로 이 순서 실수를 한 번 겪고 고침).
+- `services/hero_generator.py`(신규): Gemini 이미지 생성 모델로 "글자 없는" 분위기
+  배경만 만들고, 상호명·전화번호는 `blog_thumbnail.py`와 같은 원칙으로 PIL이 직접
+  그림(생성형 모델이 한글 같은 작은 글자를 정확히 못 그려 전화번호 오류 위험 —
+  AI와 정확성이 필요한 부분을 분리). 세로 1080×2400. `POST /api/brand/hero/generate`,
+  사장님이 버튼을 눌러야만 실행(자동 트리거 없음 — API 비용). 상호명을 실제로 바꿔
+  저장하면 `/admin/brand`의 대표 사진 카드에 "새로 만들어 주세요" 안내만 뜸.
+- **미검증:** AI 배경화면 생성 버튼은 실제로 눌러 결과물을 확인하지 않음(API
+  비용·시간, 누르면 실제 대표 사진이 바뀌어버림) — 사장님이 직접 확인 필요.
 - "앱 블로그의 대한인테리어 로고가 네이버엔 없다": 앱의 상호 표시(BusinessBanner)·전화 상담 배너(CallBanner)는 화면 요소라 복사가 안 됨 → 같은 모양 PNG를 `services/brand_banner.py`로 생성, `GET /api/blog/brand/top|bottom`(상호·전화가 바뀌면 파일명 해시가 바뀌어 재생성). 순서표 맨 처음(사진 1)·맨 끝 슬롯.
