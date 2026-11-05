@@ -9,7 +9,7 @@ import { getBusinessInfo } from "./api";
 // 응답이 오기 전 또는 서버에 못 닿을 때만 쓰는 안전한 폴백이라, 서버 기본값과
 // 반드시 같게 맞춘다.
 export const DEFAULT_BUSINESS_NAME = "대한인테리어필름";
-export const DEFAULT_BUSINESS_PHONE = "010-8134-0100";
+export const DEFAULT_BUSINESS_PHONE = "010-8314-0100";
 export const DEFAULT_BUSINESS_SERVICE_AREA = "대구 전지역 및 경북 지역 출장 가능";
 
 export interface BusinessInfoValues {
