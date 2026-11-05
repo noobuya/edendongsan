@@ -361,12 +361,19 @@ export default function HomePage() {
     step === 3 && job?.rendered_image_url ? resolveAssetUrl(job.rendered_image_url) : previewUrl;
 
   return (
-    <main className="relative h-dvh overflow-hidden">
+    <main className="relative h-dvh">
       {/* 첫 화면 배치 편집(2026-11-05 "배치가 엉망이다 — 설정모드에서 길게 눌러
           위치·크기를 조정") — 사장님 기기에서 PricingSheet의 "배치 편집" 스위치로
           켠다. 이 Provider는 DOM에 아무것도 그리지 않으므로(Context.Provider만)
           absolute 위치를 쓰는 자식들의 배치에 영향을 주지 않는다. */}
       <LayoutEditProvider ownerToken={ownerToken}>
+      {/* [왜 — 2026-11-06 "메뉴를 옆으로 이동하니 화면에서 짤린다"] overflow-hidden은
+          원래 main에 있었다 — 평소에는 꼭 필요하다(스크롤바가 생기지 않게). 그런데
+          편집 모드에서 요소를 화면 가장자리 쪽으로 끌면, 다 끌어다 놓기도 전에
+          그 경계에 걸쳐 보이지도 않게 잘려 나가 "짤리면서 이동된다"로 보였다.
+          편집 중에만 이 경계를 풀어(ClippedViewport) 어디로 끌든 전부 보이게
+          하고, 편집이 끝나면 다시 평소처럼 잘라 손님 화면은 그대로 둔다. */}
+      <ClippedViewport>
       {/* 무대 — 화면 전체가 뷰파인더이자 사진 뷰어다. */}
       <CanvasStage
         photoUrl={stagePhotoUrl}
@@ -405,6 +412,12 @@ export default function HomePage() {
               />
             ))}
           </span>
+          {/* [왜 — 2026-11-06 "업체 표기가 따로 떠 있으니 안 예쁘다, 메뉴 안에
+              넣어줘"] 전에는 앱 바 밖에 따로 뜬 구석 워터마크였다 — 앱 바(메뉴)
+              안으로 옮겨 같은 유리 알약 줄의 일부가 되게 한다(3초 길게 누르면
+              단가 설정은 그대로). 견적 결과 화면(3단계)은 영수증 안에 이미 같은
+              뱃지가 있어 겹치지 않게 여기서는 숨긴다. */}
+          {step !== 3 && <BusinessBadge onSecretHold={() => setPricingOpen(true)} />}
         </Movable>
 
         {/* 아이콘이 많아지면(사장님 기기는 최대 7개) 일반폭 폰에서 뒤쪽 아이콘이
@@ -489,17 +502,6 @@ export default function HomePage() {
         </Movable>
       </header>
 
-      {/* 업체 표기는 구석 워터마크로. 세로에서는 아래를 패널이 덮으므로 앱 바 밑에,
-          펼친 화면에서는 왼쪽 아래에 둔다. (3초 길게 누르면 단가 설정)
-          견적 결과 화면(3단계)의 영수증 안에는 이미 이 뱃지·숨은 입구가 있었는데,
-          정작 그 앞 단계(1·2단계, 사진 찍기·부위 고르기)에는 빠져 있어 견적을 끝까지
-          만들어야만 단가 설정에 닿을 수 있었다 — 여기 추가해 언제든 3초 누르면 열리게
-          한다. 3단계에는 그 자체 뱃지가 이미 있어 겹치지 않게 여기서는 숨긴다. */}
-      {step !== 3 && (
-        <MovableAbsolute id="business-badge" className="absolute left-4 top-20 z-20 foldLandscape:bottom-4 foldLandscape:top-auto">
-          <BusinessBadge onSecretHold={() => setPricingOpen(true)} />
-        </MovableAbsolute>
-      )}
 
       {exitHint && (
         <div className="glass-pill pointer-events-none absolute bottom-24 left-1/2 z-40 -translate-x-1/2 whitespace-nowrap px-4 py-2.5 text-[12px] font-semibold text-slate-700">
@@ -694,6 +696,7 @@ export default function HomePage() {
         ownerToken={ownerToken ?? ""}
       />
 
+      </ClippedViewport>
       <EditModeBar />
       </LayoutEditProvider>
     </main>
@@ -724,6 +727,14 @@ function MovableAbsolute({
       {overlay}
     </Component>
   );
+}
+
+/** main이 지던 "화면 밖으로 안 나가게 자르기" 역할을 대신 진다 — 평소에는
+ *  그대로 자르고, 배치 편집 중에는 풀어서 요소를 끌 때 가장자리에서 잘려
+ *  보이지 않게 한다(위 main 주석 참고). */
+function ClippedViewport({ children }: { children: React.ReactNode }) {
+  const { editMode } = useLayoutEdit();
+  return <div className={`absolute inset-0 ${editMode ? "" : "overflow-hidden"}`}>{children}</div>;
 }
 
 /** 편집 모드가 켜져 있을 때만 뜨는 하단 알림 바 — "지금 배치를 옮기는 중"이라는
