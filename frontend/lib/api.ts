@@ -462,7 +462,9 @@ export async function checkServerHealth(): Promise<boolean> {
 export interface LayoutAdjustment {
   dx: number;
   dy: number;
-  scale: number;
+  scale_x: number;
+  scale_y: number;
+  opacity: number;
 }
 
 /** 요소별 위치·크기 보정값 — 누구나 조회할 수 있다(이 값대로 그려야 손님 기기에도

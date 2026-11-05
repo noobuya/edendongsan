@@ -796,13 +796,19 @@ class PushTokenRequest(BaseModel):
 
 # ── 첫 화면 배치 편집 (app/layout_store.py, routers/layout.py 설계 메모 참고) ──────
 class LayoutAdjustment(BaseModel):
-    """요소 하나가 원래 자리에서 얼마나 벗어났는지(dx, dy, 픽셀)와 크기 배율. 절대
-    좌표가 아니라 상대값이라, 화면 크기가 다른 기기에서도 원래 자리를 기준으로
-    같은 만큼만 벗어나 보인다."""
+    """요소 하나가 원래 자리에서 얼마나 벗어났는지(dx, dy, 픽셀), 가로·세로 각각의
+    크기 배율, 투명도. 절대 좌표가 아니라 상대값이라, 화면 크기가 다른 기기에서도
+    원래 자리를 기준으로 같은 만큼만 벗어나 보인다.
+
+    [왜 2026-11-05에 scale 하나 → scale_x/scale_y 둘로 나눴는가] "가로세로 크기
+    따로 조정하게 해달라"는 요청 — 배지처럼 가로로 긴 요소를 세로만 눌러
+    납작하게 만들고 싶을 때 등, 한 배율로는 표현할 수 없는 모양이 있다."""
 
     dx: float = 0
     dy: float = 0
-    scale: float = Field(default=1.0, gt=0.3, le=3.0)
+    scale_x: float = Field(default=1.0, gt=0.3, le=3.0)
+    scale_y: float = Field(default=1.0, gt=0.3, le=3.0)
+    opacity: float = Field(default=1.0, ge=0.1, le=1.0)
 
 
 class LayoutResponse(BaseModel):

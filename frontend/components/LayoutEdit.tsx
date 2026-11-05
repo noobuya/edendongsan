@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { getLayout, resetLayoutElement, saveLayoutElement, type LayoutAdjustment } from "@/lib/api";
 
-const DEFAULT_ADJUSTMENT: LayoutAdjustment = { dx: 0, dy: 0, scale: 1 };
+export const DEFAULT_ADJUSTMENT: LayoutAdjustment = { dx: 0, dy: 0, scale_x: 1, scale_y: 1, opacity: 1 };
 
 interface LayoutEditContextValue {
   /** 지금 "배치 편집 모드"가 켜져 있는지. */
