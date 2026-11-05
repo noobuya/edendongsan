@@ -89,16 +89,44 @@ export function useMovable(rawId: string): MovableResult {
   const adjustment = { ...raw, scale_x: uniformScale, scale_y: uniformScale };
   const editable = editMode && canEdit;
 
+  // [왜 — 2026-11-06 "이동/크기/투명도 조절이 잘 안된다"] 아래 세 제스처(이동·
+  // 크기·투명도)는 전부 "누른 채로 화면을 가로질러 끌기"다. 전에는 각 손잡이
+  // 자신에게 onPointerMove/onPointerUp을 걸고 setPointerCapture로 포인터를
+  // 거기 묶어 두려 했는데, 이 묶기가 모든 기기·상황에서 항상 믿을 수 있게
+  // 걸리는 게 아니었다 — 특히 지름 36px짜리 작은 손잡이(크기·투명도 버튼)는
+  // 손가락이 그 자리를 벗어나는 순간(드래그라면 거의 즉시) 캡처가 안 걸려
+  // 있으면 더 이상 이벤트를 못 받아 "끌어도 안 움직인다"로 보였다. window
+  // 자체에 리스너를 걸면 포인터가 화면 어디로 가든 계속 받을 수 있어, 이
+  // 손잡이의 실제 크기와 무관하게 항상 동작한다. 최신 id/adjustment를 참조할
+  // 수 있게 ref에 매 렌더 최신값을 담아 둔다(window 리스너는 제스처가
+  // 끝날 때까지 같은 함수 인스턴스를 유지하므로, state가 아니라 ref로 읽어야
+  // 중간에 값이 바뀌어도 최신값을 본다).
+  const latest = useRef({ id, adjustment, get, update, commit });
+  latest.current = { id, adjustment, get, update, commit };
+
   const [armed, setArmed] = useState(false);
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingPress = useRef<{ pointerId: number; startX: number; startY: number } | null>(null);
   const dragState = useRef<{ pointerId: number; startX: number; startY: number; baseDx: number; baseDy: number } | null>(
     null
   );
-  const resizeState = useRef<{ pointerId: number; startX: number; startY: number; baseX: number; baseY: number } | null>(
-    null
-  );
+  const resizeState = useRef<{ pointerId: number; startX: number; startY: number; base: number } | null>(null);
   const opacityState = useRef<{ pointerId: number; startY: number; baseOpacity: number } | null>(null);
+
+  /** 제스처 하나(이동/크기/투명도)가 시작될 때 한 번 호출 — window에
+   *  pointermove/up/cancel을 걸고, 끝나면(onEnd) 스스로 떼어 낸다. */
+  function bindWindowDrag(onMove: (e: PointerEvent) => void, onEnd: (e: PointerEvent) => void) {
+    const handleMove = (e: PointerEvent) => onMove(e);
+    const handleEnd = (e: PointerEvent) => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleEnd);
+      window.removeEventListener("pointercancel", handleEnd);
+      onEnd(e);
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleEnd);
+    window.addEventListener("pointercancel", handleEnd);
+  }
 
   function clearPressTimer() {
     if (pressTimer.current) clearTimeout(pressTimer.current);
@@ -106,9 +134,11 @@ export function useMovable(rawId: string): MovableResult {
     pendingPress.current = null;
   }
 
+  // 길게 누르기 판정이 끝나기 전(0~420ms)에는 아직 window 리스너를 걸지 않는다
+  // — 탭인지 길게 누르기인지 모르는 상태라, 눌린 그 요소에서 오는 이벤트만
+  // 보면 된다(이 단계에서 손가락이 많이 움직이는 일은 드물다).
   function handlePointerDown(e: React.PointerEvent) {
     if (resizeState.current || opacityState.current) return;
-    const el = e.currentTarget;
     const pointerId = e.pointerId;
     const startX = e.clientX;
     const startY = e.clientY;
@@ -118,123 +148,110 @@ export function useMovable(rawId: string): MovableResult {
     pendingPress.current = { pointerId, startX, startY };
     pressTimer.current = setTimeout(() => {
       pendingPress.current = null;
-      try {
-        el.setPointerCapture(pointerId);
-      } catch {
-        /* 이미 떼어졌으면 무시 */
-      }
       dragState.current = { pointerId, startX, startY, baseDx, baseDy };
       setArmed(true);
+      bindWindowDrag(
+        (ev) => {
+          const drag = dragState.current;
+          if (!drag || drag.pointerId !== ev.pointerId) return;
+          const { id: curId, adjustment: curAdj, update: curUpdate } = latest.current;
+          curUpdate(curId, {
+            ...curAdj,
+            dx: drag.baseDx + (ev.clientX - drag.startX),
+            dy: drag.baseDy + (ev.clientY - drag.startY),
+          });
+        },
+        (ev) => {
+          const drag = dragState.current;
+          if (drag && drag.pointerId === ev.pointerId) {
+            const { id: curId, get: curGet, commit: curCommit } = latest.current;
+            curCommit(curId, curGet(curId));
+            dragState.current = null;
+          }
+          setArmed(false);
+        }
+      );
     }, LONG_PRESS_MS);
   }
 
-  function handlePointerMove(e: React.PointerEvent) {
+  // 길게 누르기가 아직 판정 중일 때만 쓰는 임시 핸들러 — 너무 많이 움직이면
+  // (스크롤·탭으로 보고) 판정을 취소한다. 판정이 끝나면(armed) 실제 이동은
+  // 전부 위 bindWindowDrag가 건 window 리스너가 맡는다.
+  function handlePendingMove(e: React.PointerEvent) {
     const pending = pendingPress.current;
-    if (pending && pending.pointerId === e.pointerId) {
-      const moved = Math.hypot(e.clientX - pending.startX, e.clientY - pending.startY);
-      if (moved > MOVE_TOLERANCE_PX) clearPressTimer();
-      return;
-    }
-    const drag = dragState.current;
-    if (!drag || drag.pointerId !== e.pointerId) return;
-    update(id, {
-      ...adjustment,
-      dx: drag.baseDx + (e.clientX - drag.startX),
-      dy: drag.baseDy + (e.clientY - drag.startY),
-    });
+    if (!pending || pending.pointerId !== e.pointerId) return;
+    const moved = Math.hypot(e.clientX - pending.startX, e.clientY - pending.startY);
+    if (moved > MOVE_TOLERANCE_PX) clearPressTimer();
   }
 
-  function endDrag(e: React.PointerEvent) {
+  function handlePendingEnd() {
+    // 판정이 끝나기 전에 손을 뗐다 — 탭으로 보고 취소한다(실제 드래그는
+    // 이미 armed라면 window의 pointerup이 처리하므로 여기서 건드리지 않는다).
     clearPressTimer();
-    const drag = dragState.current;
-    if (drag && drag.pointerId === e.pointerId) {
-      commit(id, get(id));
-      dragState.current = null;
-    }
-    setArmed(false);
-  }
-
-  function handlePointerCancel() {
-    clearPressTimer();
-    dragState.current = null;
-    setArmed(false);
   }
 
   // 모서리 손잡이 — 끄는 거리만큼 "크기" 하나를 바꾸고, 가로·세로에 항상 같이
-  // 적용한다. [왜 가로·세로를 따로 늘리지 않는가 — 위 adjustment 메모 참고]
-  // 텍스트가 든 요소를 가로·세로 다른 비율로 늘리면 글자가 눌리거나 늘어나
-  // 보이는 건 CSS transform의 당연한 동작이라 피할 수 없다 — 그래서 "크기"는
-  // 하나의 값으로 통일해 항상 또렷하게 유지하고, 위치(dx/dy)는 여전히 가로·
-  // 세로를 완전히 독립적으로 옮길 수 있다(길게 눌러 드래그).
+  // 적용한다. [왜 가로·세로를 따로 늘리지 않는가] 텍스트가 든 요소를 가로·세로
+  // 다른 비율로 늘리면 글자가 눌리거나 늘어나 보이는 건 CSS transform의 당연한
+  // 동작이라 피할 수 없다 — 그래서 "크기"는 하나의 값으로 통일해 항상 또렷하게
+  // 유지하고, 위치(dx/dy)는 여전히 가로·세로를 완전히 독립적으로 옮길 수 있다.
   function handleResizeStart(e: React.PointerEvent) {
     e.stopPropagation();
     e.preventDefault();
     clearPressTimer();
     dragState.current = null;
     setArmed(false);
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {
-      /* noop */
-    }
-    resizeState.current = {
-      pointerId: e.pointerId,
-      startX: e.clientX,
-      startY: e.clientY,
-      baseX: adjustment.scale_x,
-      baseY: adjustment.scale_y,
-    };
+    resizeState.current = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, base: adjustment.scale_x };
+    bindWindowDrag(
+      (ev) => {
+        const resize = resizeState.current;
+        if (!resize || resize.pointerId !== ev.pointerId) return;
+        const { id: curId, adjustment: curAdj, update: curUpdate } = latest.current;
+        // 가로·세로 이동의 평균으로 "크기" 하나를 구한다 — 대각선으로 끌면 두
+        // 방향이 비슷해 자연스럽고, 한쪽으로만 끌어도 그만큼 반영된다.
+        const deltaX = (ev.clientX - resize.startX) / 140;
+        const deltaY = (ev.clientY - resize.startY) / 140;
+        const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, resize.base + (deltaX + deltaY) / 2));
+        curUpdate(curId, { ...curAdj, scale_x: next, scale_y: next });
+      },
+      (ev) => {
+        const resize = resizeState.current;
+        if (resize && resize.pointerId === ev.pointerId) {
+          const { id: curId, get: curGet, commit: curCommit } = latest.current;
+          curCommit(curId, curGet(curId));
+          resizeState.current = null;
+        }
+      }
+    );
   }
 
-  function handleResizeMove(e: React.PointerEvent) {
-    const resize = resizeState.current;
-    if (!resize || resize.pointerId !== e.pointerId) return;
-    // 가로·세로 이동의 평균으로 "크기" 하나를 구한다 — 대각선으로 끌면 두
-    // 방향이 비슷해 자연스럽고, 한쪽으로만 끌어도 그만큼 반영된다.
-    const deltaX = (e.clientX - resize.startX) / 140;
-    const deltaY = (e.clientY - resize.startY) / 140;
-    const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, resize.baseX + (deltaX + deltaY) / 2));
-    update(id, { ...adjustment, scale_x: next, scale_y: next });
-  }
-
-  function handleResizeEnd(e: React.PointerEvent) {
-    const resize = resizeState.current;
-    if (resize && resize.pointerId === e.pointerId) {
-      commit(id, get(id));
-      resizeState.current = null;
-    }
-  }
-
-  // 왼쪽 아래 손잡이 — 위아래로 끌면 투명도가 바뀐다.
+  // 왼쪽 아래 손잡이 — 위아래로 끌면 투명도(명암)가 바뀐다.
   function handleOpacityStart(e: React.PointerEvent) {
     e.stopPropagation();
     e.preventDefault();
     clearPressTimer();
     dragState.current = null;
     setArmed(false);
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {
-      /* noop */
-    }
     opacityState.current = { pointerId: e.pointerId, startY: e.clientY, baseOpacity: adjustment.opacity };
-  }
-
-  function handleOpacityMove(e: React.PointerEvent) {
-    const op = opacityState.current;
-    if (!op || op.pointerId !== e.pointerId) return;
-    // 위로 끌면 진하게(불투명), 아래로 끌면 투명하게 — 손잡이를 "끌어올린다"는
-    // 직관과 맞춘다.
-    const delta = (op.startY - e.clientY) / 160;
-    update(id, { ...adjustment, opacity: Math.min(1, Math.max(MIN_OPACITY, op.baseOpacity + delta)) });
-  }
-
-  function handleOpacityEnd(e: React.PointerEvent) {
-    const op = opacityState.current;
-    if (op && op.pointerId === e.pointerId) {
-      commit(id, get(id));
-      opacityState.current = null;
-    }
+    bindWindowDrag(
+      (ev) => {
+        const op = opacityState.current;
+        if (!op || op.pointerId !== ev.pointerId) return;
+        const { id: curId, adjustment: curAdj, update: curUpdate } = latest.current;
+        // 위로 끌면 진하게(불투명), 아래로 끌면 투명하게 — 손잡이를 "끌어올린다"는
+        // 직관과 맞춘다.
+        const delta = (op.startY - ev.clientY) / 160;
+        curUpdate(curId, { ...curAdj, opacity: Math.min(1, Math.max(MIN_OPACITY, op.baseOpacity + delta)) });
+      },
+      (ev) => {
+        const op = opacityState.current;
+        if (op && op.pointerId === ev.pointerId) {
+          const { id: curId, get: curGet, commit: curCommit } = latest.current;
+          curCommit(curId, curGet(curId));
+          opacityState.current = null;
+        }
+      }
+    );
   }
 
   const hasCustomLayout =
@@ -261,9 +278,9 @@ export function useMovable(rawId: string): MovableResult {
   const handlers = editable
     ? {
         onPointerDown: handlePointerDown,
-        onPointerMove: handlePointerMove,
-        onPointerUp: endDrag,
-        onPointerCancel: handlePointerCancel,
+        onPointerMove: handlePendingMove,
+        onPointerUp: handlePendingEnd,
+        onPointerCancel: handlePendingEnd,
       }
     : {};
 
@@ -280,24 +297,18 @@ export function useMovable(rawId: string): MovableResult {
       <button
         type="button"
         onPointerDown={handleResizeStart}
-        onPointerMove={handleResizeMove}
-        onPointerUp={handleResizeEnd}
-        onPointerCancel={handleResizeEnd}
         aria-label={`${rawId} 크기 조절`}
-        style={{ touchAction: "none" }}
+        style={{ touchAction: "none", userSelect: "none" }}
         className="absolute -bottom-3 -right-3 z-50 flex h-9 w-9 items-center justify-center rounded-full bg-indigo-600 text-white shadow-lg active:scale-95"
       >
         <Maximize2 className="h-4 w-4" />
       </button>
-      {/* 투명도 — 위아래로 끌면 바뀐다. */}
+      {/* 투명도(명암) — 위아래로 끌면 바뀐다. */}
       <button
         type="button"
         onPointerDown={handleOpacityStart}
-        onPointerMove={handleOpacityMove}
-        onPointerUp={handleOpacityEnd}
-        onPointerCancel={handleOpacityEnd}
         aria-label={`${rawId} 투명도 조절`}
-        style={{ touchAction: "none" }}
+        style={{ touchAction: "none", userSelect: "none" }}
         className="absolute -bottom-3 -left-3 z-50 flex h-9 w-9 items-center justify-center rounded-full bg-sky-500 text-white shadow-lg active:scale-95"
       >
         <Droplet className="h-4 w-4" />
