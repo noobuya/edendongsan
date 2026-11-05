@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowLeft, ArrowRight, Bot, Briefcase, Calculator, FolderOpen, Images, Loader2, Newspaper, Ruler, Sparkles, Users } from "lucide-react";
-import BusinessBadge from "@/components/BusinessBanner";
+import { AlertCircle, ArrowLeft, ArrowRight, Bot, Briefcase, Calculator, FolderOpen, Images, Loader2, Newspaper, Ruler, Settings, Sparkles, Users } from "lucide-react";
 import CanvasStage from "@/components/CanvasStage";
 import FeatureIntroDialog from "@/components/FeatureIntroDialog";
 import { LayoutEditProvider, useLayoutEdit } from "@/components/LayoutEdit";
@@ -412,17 +411,26 @@ export default function HomePage() {
               />
             ))}
           </span>
-          {/* [왜 — 2026-11-06 "업체 표기가 따로 떠 있으니 안 예쁘다, 메뉴 안에
-              넣어줘"] 전에는 앱 바 밖에 따로 뜬 구석 워터마크였다 — 앱 바(메뉴)
-              안으로 옮겨 같은 유리 알약 줄의 일부가 되게 한다(3초 길게 누르면
-              단가 설정은 그대로). 견적 결과 화면(3단계)은 영수증 안에 이미 같은
-              뱃지가 있어 겹치지 않게 여기서는 숨긴다. */}
-          {step !== 3 && <BusinessBadge onSecretHold={() => setPricingOpen(true)} />}
         </Movable>
 
-        {/* 아이콘이 많아지면(사장님 기기는 최대 7개) 일반폭 폰에서 뒤쪽 아이콘이
-            화면 밖으로 밀려 안 보이던 문제가 있었다 — 가로 스크롤로 전부 닿게 한다. */}
-        <Movable id="header-icons" className="no-scrollbar flex min-w-0 items-center gap-2 overflow-x-auto">
+        {/* [왜 — 2026-11-06 "상호·전화번호 빼고 설정 아이콘으로, 종목(메뉴) 안에
+            넣어줘"] 상호명·전화번호를 보여주던 뱃지(3초 길게 누르면 단가 설정)를
+            없애고, 그 입구를 다른 아이콘들과 똑같은 평범한 설정 아이콘으로
+            바꿔 이 줄 안에 넣었다 — 사장님 기기에서만 보인다(아래 ownerToken
+            조건). 상호·전화는 이미 영수증·블로그 서명·전화 배너 등 실제로
+            필요한 자리에 따로 나온다.
+            아이콘이 많아지면(사장님 기기는 최대 8개) 일반폭 폰에서 뒤쪽 아이콘이
+            화면 밖으로 밀려 안 보이던 문제가 있었다 — 가로 스크롤로 전부 닿게
+            한다. [왜 가장자리에 옅은 페이드를 넣는가 — "옆으로 밀면 사각 안에서
+            움직이는 것 같다"] overflow-x-auto만 쓰면 스크롤 가능 영역의 경계가
+            칼로 자른 듯 딱 끊겨, 그 폭만큼의 "상자" 안에서 아이콘이 움직이는
+            느낌이 든다. 가장자리를 투명하게 페이드시키는 마스크를 걸면 아이콘이
+            상자 밖에서부터 자연스럽게 나타나고 사라지는, 더 당겨볼 것이 있다는
+            느낌의 스크롤로 바뀐다(iOS 탭바류에서 흔한 처리). */}
+        <Movable
+          id="header-icons"
+          className="no-scrollbar flex min-w-0 items-center gap-2 overflow-x-auto [mask-image:linear-gradient(to_right,transparent,black_20px,black_calc(100%-20px),transparent)] [-webkit-mask-image:linear-gradient(to_right,transparent,black_20px,black_calc(100%-20px),transparent)]"
+        >
           <Link
             href="/quote"
             aria-label="빠른 견적 (평수별·품목별)"
@@ -498,6 +506,18 @@ export default function HomePage() {
             >
               <Sparkles className="h-5 w-5" />
             </Link>
+          )}
+          {/* 단가 설정 입구 — 전엔 상호·전화번호 뱃지를 3초 눌러야 열렸다.
+              다른 아이콘과 똑같이 눌러서 열리는 평범한 설정 아이콘으로 바꿨다. */}
+          {ownerToken && (
+            <button
+              type="button"
+              onClick={() => setPricingOpen(true)}
+              aria-label="단가 설정"
+              className="glass-pill flex h-11 w-11 shrink-0 items-center justify-center text-slate-700 transition-transform active:scale-90"
+            >
+              <Settings className="h-5 w-5" />
+            </button>
           )}
         </Movable>
       </header>
