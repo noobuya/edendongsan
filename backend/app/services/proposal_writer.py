@@ -17,7 +17,7 @@ from google import genai
 from google.genai import errors as genai_errors, types
 from PIL import Image, ImageEnhance
 
-from app.business_info import BUSINESS_NAME
+from app import business_info
 from app.config import get_settings
 from app.services.timeouts import run_gemini_with_retry
 
@@ -178,7 +178,7 @@ def generate_copy(image_path: str, sales_pitch: str = "") -> dict:
         raise RuntimeError("Gemini API 키가 설정되어 있지 않습니다.")
 
     context_line = f"참고 문구(있으면 자연스럽게 녹여라): {sales_pitch}\n" if sales_pitch else ""
-    prompt = COPY_PROMPT_TEMPLATE.format(business_name=BUSINESS_NAME, context_line=context_line)
+    prompt = COPY_PROMPT_TEMPLATE.format(business_name=business_info.business_name(), context_line=context_line)
 
     with Image.open(image_path) as img:
         image = img.convert("RGB")

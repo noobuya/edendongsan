@@ -12,17 +12,31 @@
 frontend/public/images/eden_main.jpg로 코드에 박혀 있어, 바꾸려면 파일을 덮어쓰고
 다시 빌드·배포해야 했다. "hero"를 로고·명함과 같은 종류로 추가해 같은 화면
 (/admin/brand)에서 사진 한 장으로 바로 바꿀 수 있게 한다 — 새 코드를 더 만들
-필요 없이 기존 로고·명함 업로드 로직을 그대로 탄다."""
+필요 없이 기존 로고·명함 업로드 로직을 그대로 탄다.
+
+[왜 — 2026-11-05 사장님 요청 "상호명·전화번호를 설정에서 바꾸고, 대표 사진도
+AI로 새로 만들 수 있게"]
+상호명·전화번호는 이제 app/business_info.py의 override 저장소에서 읽고 쓴다
+(get/put_business_info). 대표 사진은 사장님이 직접 올리는 것과 별개로,
+services/hero_generator.py가 AI로 새로 만들어 같은 hero.png 자리에 채우는
+경로(POST /hero/generate)도 추가했다 — 상호명을 바꿨다고 자동으로 사진까지
+다시 만들지는 않는다(API 비용이 드는 작업이라 매번 저절로 돌리면 안 된다).
+대신 프론트가 상호명 저장 직후 "대표 사진도 새로 만들어 주세요"라고 안내만
+하고, 실제 생성은 사장님이 버튼을 눌러야 시작된다."""
 import io
 import os
 from pathlib import Path
 
 from fastapi import APIRouter, File, Header, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+from app import business_info
 from app.config import get_settings
 from app.owner_auth import is_owner
+from app.schemas import BusinessInfoResponse, BusinessInfoUpdateRequest
+from app.services.hero_generator import generate_hero_image
 
 router = APIRouter(prefix="/api/brand", tags=["brand"])
 
@@ -52,6 +66,41 @@ def brand_info() -> dict:
 @router.get("")
 async def get_brand():
     return brand_info()
+
+
+# [왜 이 구체적인 경로들이 /{kind}보다 먼저 와야 하는가] FastAPI는 등록 순서대로
+# 매치한다. GET /{kind}가 먼저 있으면 GET /business-info가 kind="business-info"로
+# 잘못 잡혀 404("없는 항목입니다")가 난다 — 실제로 이 순서로 한 번 썼다가 겪었다.
+@router.post("/hero/generate")
+async def generate_hero(x_admin_token: str | None = Header(default=None)):
+    """AI로 대표 사진(배경)을 새로 만들어 hero 자리에 채운다 — 지금 설정된
+    상호명·전화번호가 그 위에 정확하게 얹힌다(services/hero_generator.py)."""
+    if not is_owner(x_admin_token):
+        raise HTTPException(status_code=401, detail="사장님 기기에서만 만들 수 있어요.")
+    tmp = brand_dir() / "hero.tmp.png"
+    try:
+        await run_in_threadpool(generate_hero_image, str(tmp))
+    except Exception as exc:  # noqa: BLE001 - Gemini 실패/키 미설정 등을 그대로 사용자에게
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    os.replace(tmp, brand_dir() / "hero.png")
+    return brand_info()
+
+
+@router.get("/business-info", response_model=BusinessInfoResponse)
+async def get_business_info():
+    return BusinessInfoResponse(**business_info.effective())
+
+
+@router.put("/business-info", response_model=BusinessInfoResponse)
+async def put_business_info(payload: BusinessInfoUpdateRequest, x_admin_token: str | None = Header(default=None)):
+    if not is_owner(x_admin_token):
+        raise HTTPException(status_code=401, detail="사장님 기기에서만 바꿀 수 있어요.")
+    values = {k: v.strip() for k, v in payload.model_dump().items() if v is not None}
+    if "business_name" in values and not values["business_name"]:
+        raise HTTPException(status_code=422, detail="상호명은 비워둘 수 없습니다.")
+    if "phone" in values and not values["phone"]:
+        raise HTTPException(status_code=422, detail="전화번호는 비워둘 수 없습니다.")
+    return BusinessInfoResponse(**business_info.save_overrides(values))
 
 
 @router.get("/{kind}")

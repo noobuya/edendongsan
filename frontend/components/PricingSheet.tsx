@@ -133,7 +133,7 @@ export default function PricingSheet({
           >
             <span className="flex items-center gap-2">
               <ImagePlus className="h-4 w-4" />
-              로고·명함·대표 사진 관리
+              업체 정보·대표 사진 관리
             </span>
             <span className="text-slate-400">→</span>
           </Link>

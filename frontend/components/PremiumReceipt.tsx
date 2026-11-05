@@ -6,7 +6,7 @@ import BusinessBadge from "@/components/BusinessBanner";
 import QuoteIcon, { toneOfWorkItem } from "@/components/quote/QuoteIcon";
 import BusinessStamp from "@/components/BusinessStamp";
 import SignaturePad from "@/components/SignaturePad";
-import { BUSINESS_NAME, BUSINESS_PHONE } from "@/lib/businessInfo";
+import { useBusinessInfo } from "@/lib/businessInfo";
 import { adjustQuoteTotal } from "@/lib/api";
 import ROIBarChart from "@/components/ROIBarChart";
 import type { EstimateBreakdown, MaterialOrderLine, RoiComparison, Signature, WorkItemId } from "@/types";
@@ -94,10 +94,6 @@ function signedAtLabel(iso: string): string {
   return d.toLocaleString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
-// 문자로 견적서를 보낼 때 미리 채워 넣는 안내 문구. sms: 링크는 파일을 첨부하지 못하므로
-// (표준 자체에 없다), 사진은 별도로 갤러리에 저장해 사장님이 문자 앱에서 직접 첨부해야 한다.
-const SMS_BODY = `안녕하세요, ${BUSINESS_NAME} 인테리어 필름 견적서입니다.`;
-
 /** 입력하는 대로 010-1234-5678 모양으로 다듬는다. 숫자만 남기고 11자리로 자른 뒤
  *  3-4-4(또는 입력이 짧을 때는 3-3/3-4)로 하이픈을 끼워 넣는다. */
 function formatPhoneInput(raw: string): string {
@@ -108,9 +104,13 @@ function formatPhoneInput(raw: string): string {
 }
 
 /** 안드로이드 기본 문자 앱을 여는 sms: 링크. (이 앱은 안드로이드 전용이라 iOS의
- *  "&body=" 방식은 다루지 않는다 — PRODUCT.md 참고.) */
-function buildSmsHref(phoneDigits: string): string {
-  return `sms:${phoneDigits}?body=${encodeURIComponent(SMS_BODY)}`;
+ *  "&body=" 방식은 다루지 않는다 — PRODUCT.md 참고.) 문자로 견적서를 보낼 때 미리
+ *  채워 넣는 안내 문구도 함께 만든다. sms: 링크는 파일을 첨부하지 못하므로(표준
+ *  자체에 없다), 사진은 별도로 갤러리에 저장해 사장님이 문자 앱에서 직접
+ *  첨부해야 한다. */
+function buildSmsHref(phoneDigits: string, businessName: string): string {
+  const body = `안녕하세요, ${businessName} 인테리어 필름 견적서입니다.`;
+  return `sms:${phoneDigits}?body=${encodeURIComponent(body)}`;
 }
 
 export interface ReceiptRow {
@@ -241,6 +241,7 @@ export function PremiumReceiptView({
   originalTotal,
   adjustmentCount,
 }: ReceiptViewProps) {
+  const { name: businessName, phone: businessPhone } = useBusinessInfo();
   const cardRef = useRef<HTMLDivElement>(null);
   const [stealthOpen, setStealthOpen] = useState(false);
   const [sharing, setSharing] = useState(false);
@@ -287,14 +288,14 @@ export function PremiumReceiptView({
       const canvas = await html2canvas(node, { scale: 2, backgroundColor: "#ffffff", useCORS: true });
       const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
       if (!blob) throw new Error("blob");
-      const filename = `${BUSINESS_NAME}_견적서_${issueDateLabel().replace(/\./g, "")}.png`;
+      const filename = `${businessName}_견적서_${issueDateLabel().replace(/\./g, "")}.png`;
       const file = new File([blob], filename, { type: "image/png" });
 
       if (navigator.canShare?.({ files: [file] })) {
         try {
           await navigator.share({
             files: [file],
-            title: `${BUSINESS_NAME} 프리미엄 견적서`,
+            title: `${businessName} 프리미엄 견적서`,
             text: "고객님, 요청하신 프리미엄 인테리어 필름 시공 견적서입니다.",
           });
           showToast("견적서를 공유했습니다");
@@ -371,7 +372,7 @@ export function PremiumReceiptView({
     // 방금 저장한 이미지가 없다면 문자 앱을 열기 전에 먼저 저장해 둔다 — 문자 앱에서
     // 첨부할 사진이 갤러리에 있어야 하기 때문이다.
     if (shareFallback && !shareFallback.saved) await handleSaveToGallery();
-    window.location.href = buildSmsHref(phoneDigits);
+    window.location.href = buildSmsHref(phoneDigits, businessName);
     closeShareFallback();
     showToast("문자 앱이 열렸습니다. 저장된 견적서 이미지를 직접 첨부해서 보내주세요");
   }
@@ -421,10 +422,10 @@ export function PremiumReceiptView({
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-[17px] font-extrabold text-white">
-              {BUSINESS_NAME.charAt(0)}
+              {businessName.charAt(0)}
             </div>
             <div>
-              <p className="text-[16px] font-bold leading-tight tracking-tight">{BUSINESS_NAME}</p>
+              <p className="text-[16px] font-bold leading-tight tracking-tight">{businessName}</p>
               <p className="mt-0.5 text-[13px] text-[#5b6573]">시공 견적서</p>
             </div>
           </div>
@@ -532,7 +533,7 @@ export function PremiumReceiptView({
         <div className="mt-6 flex items-end justify-between gap-3 border-t border-[#eef0f2] pt-4 text-[12.5px] leading-[1.6] text-[#6b7684]">
           <div>
             <p>
-              {BUSINESS_NAME} · <span className="tabular-nums">{BUSINESS_PHONE}</span>
+              {businessName} · <span className="tabular-nums">{businessPhone}</span>
             </p>
             <p>본 견적은 현장 실측 결과에 따라 조정될 수 있습니다.</p>
           </div>

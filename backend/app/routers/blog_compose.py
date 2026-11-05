@@ -22,7 +22,7 @@ from fastapi import APIRouter, BackgroundTasks, File, Form, Header, HTTPExceptio
 from fastapi.concurrency import run_in_threadpool
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-from app.business_info import BUSINESS_NAME
+from app import business_info
 from app.owner_auth import is_owner
 from app.quotes_store import load_quote, save_quote, set_blog_post
 from app.services.blackboard import stamp_blackboard
@@ -46,7 +46,7 @@ def _save_photo(raw: bytes, job_id: str, stage: str, stamp: bool, site_name: str
     if stamp:
         normalized = stamp_blackboard(
             normalized,
-            business_name=BUSINESS_NAME,
+            business_name=business_info.business_name(),
             customer_name=site_name,
             stage=stage,
             recorded_at_label=datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y.%m.%d"),

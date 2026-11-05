@@ -13,7 +13,7 @@ from app.schemas import BlogDetailResponse, BlogListResponse, BlogSummary, WorkP
 from app.services.blog_thumbnail import LAYOUT_VERSION, make_blog_thumbnail
 from app.services.blog_video import make_compare_gif, make_compare_mp4
 from app.services.brand_banner import make_brand_banner
-from app.business_info import BUSINESS_NAME, BUSINESS_PHONE, BUSINESS_SERVICE_AREA
+from app import business_info
 
 router = APIRouter(prefix="/api/blog", tags=["blog"])
 
@@ -153,7 +153,8 @@ async def get_brand_banner(variant: str):
     (services/brand_banner.py)."""
     if variant not in ("top", "bottom"):
         raise HTTPException(status_code=404, detail="없는 배너입니다.")
-    key = hashlib.md5(f"{BUSINESS_NAME}|{BUSINESS_PHONE}|{BUSINESS_SERVICE_AREA}|v2".encode()).hexdigest()[:8]
+    name, phone, area = business_info.business_name(), business_info.business_phone(), business_info.service_area()
+    key = hashlib.md5(f"{name}|{phone}|{area}|v2".encode()).hexdigest()[:8]
     out = f"storage/results/brand_{variant}_{key}.png"
     if not os.path.exists(out):
         tmp = out.replace(".png", ".tmp.png")

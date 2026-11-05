@@ -22,7 +22,7 @@ import imageio_ffmpeg
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
-from app.business_info import BUSINESS_NAME, BUSINESS_PHONE, BUSINESS_SERVICE_AREA, BUSINESS_SERVICE_AREA_SHORT
+from app import business_info
 
 W, H = 1080, 1350  # 4:5 세로 — 휴대폰으로 네이버 블로그를 보는 독자에게 화면을 꽉 채운다
 FPS = 24
@@ -154,7 +154,7 @@ def make_blog_video(quote: dict, out_path: str) -> str:
         bg = Image.eval(bg, lambda v: int(v * 0.55))
         intro = _text_layer(
             [
-                (f"{BUSINESS_SERVICE_AREA_SHORT} 인테리어 필름", 64, "#ffffff"),
+                (f"{business_info.service_area_short()} 인테리어 필름", 64, "#ffffff"),
                 ("확 달라진 공간", 120, "#ffe066"),
                 ("BEFORE → AFTER", 70, "#ffffff"),
             ],
@@ -198,10 +198,10 @@ def make_blog_video(quote: dict, out_path: str) -> str:
         dark = Image.eval(cover.filter(ImageFilter.GaussianBlur(10)), lambda v: int(v * 0.35))
         outro = _text_layer(
             [
-                (BUSINESS_NAME, 92, "#ffffff"),
-                (BUSINESS_PHONE, 104, "#ffe066"),
+                (business_info.business_name(), 92, "#ffffff"),
+                (business_info.business_phone(), 104, "#ffe066"),
                 ("사진 한 장으로 무료 견적 상담", 54, "#ffffff"),
-                (BUSINESS_SERVICE_AREA, 40, "#dddddd"),
+                (business_info.service_area(), 40, "#dddddd"),
             ],
             H // 2,
         )

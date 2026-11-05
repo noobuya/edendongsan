@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { Phone } from "lucide-react";
-import { BUSINESS_NAME, BUSINESS_PHONE, BUSINESS_PHONE_TEL_HREF } from "@/lib/businessInfo";
+import { useBusinessInfo } from "@/lib/businessInfo";
 
 const HOLD_MS = 3000;
 // 손가락은 가만히 있어도 미세하게 흔들린다. 이 정도 움직임까지는 "누르고 있는
@@ -27,6 +27,7 @@ interface Props {
  *  매번 취소돼 단가 설정이 열리지 않는다(PC 브라우저에서는 잘 열려서 더 헷갈린다).
  *  버튼으로 두고 전화 걸기는 짧게 눌렀을 때 직접 실행한다. */
 export default function BusinessBadge({ onSecretHold }: Props = {}) {
+  const { name, phone, phoneTelHref } = useBusinessInfo();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startRef = useRef<{ x: number; y: number } | null>(null);
   const firedRef = useRef(false);
@@ -61,7 +62,7 @@ export default function BusinessBadge({ onSecretHold }: Props = {}) {
     cancelHold();
     startRef.current = null;
     // 길게 눌러 설정을 연 경우에는 전화가 이어서 걸리면 안 된다.
-    if (!wasHeld) window.location.href = BUSINESS_PHONE_TEL_HREF;
+    if (!wasHeld) window.location.href = phoneTelHref;
     firedRef.current = false;
   }
 
@@ -73,7 +74,7 @@ export default function BusinessBadge({ onSecretHold }: Props = {}) {
       onPointerUp={handlePointerUp}
       onPointerCancel={cancelHold}
       onContextMenu={(e) => e.preventDefault()}
-      aria-label={`${BUSINESS_NAME} ${BUSINESS_PHONE}`}
+      aria-label={`${name} ${phone}`}
       // WebKit/안드로이드가 길게 누를 때 띄우는 미리보기·선택 UI를 막는다.
       style={{ WebkitTouchCallout: "none", touchAction: "manipulation" }}
       className="glass-pill relative flex select-none items-center gap-2.5 overflow-hidden px-4 py-2.5 text-left transition-transform active:scale-95"
@@ -90,8 +91,8 @@ export default function BusinessBadge({ onSecretHold }: Props = {}) {
         <Phone className="h-3 w-3" />
       </span>
       <span className="relative leading-tight">
-        <span className="block text-[11px] font-bold tracking-tight text-slate-900">{BUSINESS_NAME}</span>
-        <span className="block text-[11px] font-light tabular-nums text-slate-500">{BUSINESS_PHONE}</span>
+        <span className="block text-[11px] font-bold tracking-tight text-slate-900">{name}</span>
+        <span className="block text-[11px] font-light tabular-nums text-slate-500">{phone}</span>
       </span>
     </button>
   );

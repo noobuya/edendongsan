@@ -536,6 +536,45 @@ export async function uploadBrandImage(
   return res.json();
 }
 
+/** AI로 대표 사진(배경)을 새로 만든다 — 지금 설정된 상호명·전화번호가 그 위에
+ *  정확하게 얹힌 채로 hero 자리를 덮어쓴다(API 비용이 드는 작업이라 사장님이
+ *  버튼을 눌러야만 실행된다). */
+export async function generateHeroImage(ownerToken: string): Promise<BrandAssets> {
+  const res = await apiFetch(`${API_BASE}/api/brand/hero/generate`, {
+    method: "POST",
+    headers: ownerHeaders(ownerToken),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "AI 배경화면을 만들지 못했습니다."));
+  return res.json();
+}
+
+/* ---- 업체 정보(상호명·전화번호 등, /admin/brand) ---- */
+export interface BusinessInfo {
+  business_name: string;
+  phone: string;
+  representative_name: string;
+  service_area: string;
+  service_area_short: string;
+}
+
+/** 지금 설정된 상호명·전화번호 등 — 공개 핑이라 인증이 필요 없다(앱 화면 어디서나
+ *  이 값을 보여줘야 한다 — lib/businessInfo.ts 참고). */
+export async function getBusinessInfo(): Promise<BusinessInfo> {
+  const res = await apiFetch(`${API_BASE}/api/brand/business-info`);
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "업체 정보를 불러오지 못했습니다."));
+  return res.json();
+}
+
+export async function saveBusinessInfo(values: Partial<BusinessInfo>, ownerToken: string): Promise<BusinessInfo> {
+  const res = await apiFetch(`${API_BASE}/api/brand/business-info`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...ownerHeaders(ownerToken) },
+    body: JSON.stringify(values),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "업체 정보를 저장하지 못했습니다."));
+  return res.json();
+}
+
 // 견적서 목록·현장 사진·블로그 글은 고객 이름·금액이 들어 있는 사장님 전용 자료라
 // 서버가 X-Admin-Token을 요구한다(routers/quotes.py).
 export async function listQuotes(ownerToken: string, query = ""): Promise<QuoteSummary[]> {

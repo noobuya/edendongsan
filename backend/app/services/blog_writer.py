@@ -14,13 +14,8 @@ from google import genai
 from google.genai import errors as genai_errors
 from PIL import Image
 
-from app.business_info import (
-    BUSINESS_CORE_HASHTAGS,
-    BUSINESS_NAME,
-    BUSINESS_PHONE,
-    BUSINESS_SERVICE_AREA,
-    BUSINESS_SERVICE_AREA_SHORT,
-)
+from app import business_info
+from app.business_info import BUSINESS_CORE_HASHTAGS
 from app.config import get_settings
 from app.services.timeouts import run_gemini_with_retry
 
@@ -157,10 +152,10 @@ def generate_blog_post(quote: dict) -> dict:
         customer_name=quote.get("customer_name") or "고객님",
         item_names=", ".join(item_names) or (quote.get("blog_memo") or "").strip() or "인테리어 필름 시공",
         material_names=material_names,
-        service_area=BUSINESS_SERVICE_AREA,
-        service_area_short=BUSINESS_SERVICE_AREA_SHORT,
+        service_area=business_info.service_area(),
+        service_area_short=business_info.service_area_short(),
         standard_process=STANDARD_PROCESS_NOTE,
-        business_name=BUSINESS_NAME,
+        business_name=business_info.business_name(),
     )
 
     # 사진·제목만으로 만드는 블로그(routers/blog_compose.py): 사장님이 정한 제목은 바꾸지
@@ -213,7 +208,7 @@ def _signature_block() -> str:
     렌더링하므로, 이 블록도 독립된 문단으로 보이도록 앞에 빈 줄을 하나 둔다.
     이모지 없이 정중한 톤을 유지한다(2026-10 수석 실장 페르소나 개편 — 이 파일
     상단 PROMPT_TEMPLATE 설명 참고)."""
-    return f"문의: {BUSINESS_NAME} {BUSINESS_PHONE}\n{BUSINESS_SERVICE_AREA}"
+    return f"문의: {business_info.business_name()} {business_info.business_phone()}\n{business_info.service_area()}"
 
 
 def _assemble_content(sections: dict[str, str]) -> str:
@@ -224,7 +219,7 @@ def _assemble_content(sections: dict[str, str]) -> str:
 
     promise = sections[PROMISE_MARKER]
     if promise:
-        blocks.append(f"# {BUSINESS_NAME}의 약속\n{promise}")
+        blocks.append(f"# {business_info.business_name()}의 약속\n{promise}")
 
     closing = sections[CLOSING_MARKER]
     if closing:

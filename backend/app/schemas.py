@@ -813,3 +813,20 @@ class LayoutAdjustment(BaseModel):
 
 class LayoutResponse(BaseModel):
     elements: dict[str, LayoutAdjustment]
+
+
+# ── 업체 정보 설정 (app/business_info.py 설계 메모 참고) ──────────────────────
+class BusinessInfoResponse(BaseModel):
+    business_name: str
+    phone: str
+    representative_name: str
+    service_area: str
+    service_area_short: str
+
+
+class BusinessInfoUpdateRequest(BaseModel):
+    business_name: Optional[str] = None
+    phone: Optional[str] = None
+    representative_name: Optional[str] = None
+    service_area: Optional[str] = None
+    service_area_short: Optional[str] = None

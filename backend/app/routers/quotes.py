@@ -8,7 +8,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-from app.business_info import BUSINESS_NAME
+from app import business_info
 from app.owner_auth import is_owner
 from app.services.blackboard import stamp_blackboard
 from app.quotes_store import (
@@ -111,7 +111,7 @@ async def upload_work_photo(
     recorded_at_label = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y.%m.%d")
     stamped = stamp_blackboard(
         normalized,
-        business_name=BUSINESS_NAME,
+        business_name=business_info.business_name(),
         customer_name=quote.get("customer_name") or "",
         stage=stage,
         recorded_at_label=recorded_at_label,

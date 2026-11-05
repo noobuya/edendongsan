@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import AssetImage from "@/components/AssetImage";
 import { getBrandAssets } from "@/lib/api";
-import { BUSINESS_SERVICE_AREA } from "@/lib/businessInfo";
+import { useBusinessInfo } from "@/lib/businessInfo";
 
 /** 대표 시공 사진이 놓이는 자리. 사장님이 /admin/brand에서 올린 사진이 최우선이고,
  *  아직 한 번도 안 올렸으면 코드에 미리 넣어둔 public/images/eden_main.jpg로
@@ -98,6 +98,7 @@ export function BrandLogoMark({ className = "" }: { className?: string }) {
  *  글씨는 사진 위든 어두운 면 위든 읽히도록 항상 아래에서 올라오는 어두운 그라데이션을 깐다. */
 export default function BrandHero({ aspect = "aspect-[16/9]", className = "" }: { aspect?: string; className?: string }) {
   const src = useBrandImageSrc();
+  const { serviceArea } = useBusinessInfo();
 
   return (
     <figure
@@ -117,7 +118,7 @@ export default function BrandHero({ aspect = "aspect-[16/9]", className = "" }: 
           <p className="text-[19px] font-extrabold leading-[1.3] tracking-[-0.02em] text-white break-keep [text-wrap:balance]">
             {BRAND_HERO_ALT}
           </p>
-          <p className="mt-1.5 text-[13px] leading-snug text-white/85 break-keep">{BUSINESS_SERVICE_AREA}</p>
+          <p className="mt-1.5 text-[13px] leading-snug text-white/85 break-keep">{serviceArea}</p>
         </div>
       </figcaption>
     </figure>

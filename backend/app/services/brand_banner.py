@@ -8,7 +8,7 @@ business_info의 고정값만 쓴다(블로그 서명과 같은 원칙).
 """
 from PIL import Image, ImageDraw
 
-from app.business_info import BUSINESS_NAME, BUSINESS_PHONE, BUSINESS_SERVICE_AREA
+from app import business_info
 from app.services.blog_video import _font
 
 W = 1200
@@ -40,15 +40,15 @@ def make_brand_banner(variant: str, out_path: str) -> str:
         img = _gradient(h)
         d = ImageDraw.Draw(img)
         _center(d, 46, "사진 한 장만 보내 주세요 · 무료 견적 상담", 40, (203, 213, 225))
-        _center(d, 112, BUSINESS_NAME, 92, (255, 255, 255))
-        _center(d, 246, f"☎ {BUSINESS_PHONE}", 84, (147, 197, 253))
-        _center(d, 362, BUSINESS_SERVICE_AREA, 34, (148, 163, 184))
+        _center(d, 112, business_info.business_name(), 92, (255, 255, 255))
+        _center(d, 246, f"☎ {business_info.business_phone()}", 84, (147, 197, 253))
+        _center(d, 362, business_info.service_area(), 34, (148, 163, 184))
     else:
         h = 320
         img = _gradient(h)
         d = ImageDraw.Draw(img)
         _center(d, 40, "인테리어 필름 · 시트지 · 리폼 전문", 36, (203, 213, 225))
-        _center(d, 92, BUSINESS_NAME, 92, (255, 255, 255))
-        _center(d, 238, f"☎ {BUSINESS_PHONE}   |   {BUSINESS_SERVICE_AREA}", 34, (147, 197, 253))
+        _center(d, 92, business_info.business_name(), 92, (255, 255, 255))
+        _center(d, 238, f"☎ {business_info.business_phone()}   |   {business_info.service_area()}", 34, (147, 197, 253))
     img.save(out_path, "PNG", optimize=True)
     return out_path

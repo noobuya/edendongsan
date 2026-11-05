@@ -7,7 +7,7 @@ import { BRAND_HERO_ALT, useBrandImageSrc } from "@/components/BrandHero";
 import CameraSheet from "@/components/CameraSheet";
 import Movable from "@/components/Movable";
 import { PhotoGuideSheet, PhotoGuideTip } from "@/components/PhotoGuide";
-import { BUSINESS_SERVICE_AREA } from "@/lib/businessInfo";
+import { useBusinessInfo } from "@/lib/businessInfo";
 
 interface Props {
   photoUrl: string | null;
@@ -36,6 +36,7 @@ export default function CanvasStage({
 }: Props) {
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const heroSrc = useBrandImageSrc();
+  const { serviceArea } = useBusinessInfo();
   // 촬영 단계에서 아직 사진이 없을 때만 대표 시공 사진(또는 같은 결의 어두운 면)을 배경으로 쓴다.
   const heroStage = showCapture && !photoUrl;
   // 페이지가 상태를 들고 있으면 그걸 쓰고, 아니면 예전처럼 스스로 관리한다.
@@ -111,7 +112,7 @@ export default function CanvasStage({
                 <p className="text-[21px] font-extrabold leading-[1.3] tracking-[-0.02em] text-white break-keep foldLandscape:text-[28px]">
                   {BRAND_HERO_ALT}
                 </p>
-                <p className="text-[13px] text-white/85 break-keep">{BUSINESS_SERVICE_AREA}</p>
+                <p className="text-[13px] text-white/85 break-keep">{serviceArea}</p>
               </div>
 
               {/* 유리 알약 버튼 — 반투명 흰 면 + 블러 + 얇은 테두리. 사진 위에서도 또렷하다.
