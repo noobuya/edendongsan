@@ -16,7 +16,7 @@ from pathlib import Path
 from app.config import get_settings
 
 DEFAULT_BUSINESS_NAME = "대한인테리어필름"
-DEFAULT_BUSINESS_PHONE = "010-7664-8007"
+DEFAULT_BUSINESS_PHONE = "010-8134-0100"
 DEFAULT_REPRESENTATIVE_NAME = ""
 DEFAULT_SERVICE_AREA = "대구 전지역 및 경북 지역 출장 가능"
 # 블로그 제목 말머리("[대구 인테리어 필름]")처럼 짧게 들어가야 하는 자리용 —
