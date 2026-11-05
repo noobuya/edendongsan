@@ -458,6 +458,50 @@ export async function checkServerHealth(): Promise<boolean> {
   }
 }
 
+/* ---- 첫 화면 배치 편집(components/LayoutEdit.tsx, Movable.tsx) ---- */
+export interface LayoutAdjustment {
+  dx: number;
+  dy: number;
+  scale: number;
+}
+
+/** 요소별 위치·크기 보정값 — 누구나 조회할 수 있다(이 값대로 그려야 손님 기기에도
+ *  사장님이 맞춘 배치가 똑같이 보인다). */
+export async function getLayout(): Promise<Record<string, LayoutAdjustment>> {
+  const res = await apiFetch(`${API_BASE}/api/layout`);
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "배치 정보를 불러오지 못했습니다."));
+  const data = await res.json();
+  return data.elements;
+}
+
+export async function saveLayoutElement(
+  elementId: string,
+  adjustment: LayoutAdjustment,
+  ownerToken: string
+): Promise<Record<string, LayoutAdjustment>> {
+  const res = await apiFetch(`${API_BASE}/api/layout/${encodeURIComponent(elementId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...ownerHeaders(ownerToken) },
+    body: JSON.stringify(adjustment),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "배치를 저장하지 못했습니다."));
+  const data = await res.json();
+  return data.elements;
+}
+
+export async function resetLayoutElement(
+  elementId: string,
+  ownerToken: string
+): Promise<Record<string, LayoutAdjustment>> {
+  const res = await apiFetch(`${API_BASE}/api/layout/${encodeURIComponent(elementId)}`, {
+    method: "DELETE",
+    headers: ownerHeaders(ownerToken),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "배치를 되돌리지 못했습니다."));
+  const data = await res.json();
+  return data.elements;
+}
+
 /* ---- 업체 로고·명함(/admin/brand) ---- */
 export interface BrandAssets {
   logo: string | null;

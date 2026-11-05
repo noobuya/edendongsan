@@ -792,3 +792,18 @@ class WeatherAdvisoryResponse(BaseModel):
 # ── 실시간 알림(FCM 푸시) ──────────────────────────────────────────────
 class PushTokenRequest(BaseModel):
     token: str
+
+
+# ── 첫 화면 배치 편집 (app/layout_store.py, routers/layout.py 설계 메모 참고) ──────
+class LayoutAdjustment(BaseModel):
+    """요소 하나가 원래 자리에서 얼마나 벗어났는지(dx, dy, 픽셀)와 크기 배율. 절대
+    좌표가 아니라 상대값이라, 화면 크기가 다른 기기에서도 원래 자리를 기준으로
+    같은 만큼만 벗어나 보인다."""
+
+    dx: float = 0
+    dy: float = 0
+    scale: float = Field(default=1.0, gt=0.3, le=3.0)
+
+
+class LayoutResponse(BaseModel):
+    elements: dict[str, LayoutAdjustment]

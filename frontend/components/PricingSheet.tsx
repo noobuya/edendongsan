@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BookText, ImagePlus, KeyRound, Loader2, Radar, RotateCcw, TrendingUp } from "lucide-react";
+import { BookText, ImagePlus, KeyRound, Loader2, Move, Radar, RotateCcw, TrendingUp } from "lucide-react";
 import type { PricingField } from "@/types";
 import BottomSheet from "@/components/ui/BottomSheet";
+import { useLayoutEdit } from "@/components/LayoutEdit";
 import { getPricing, savePricing } from "@/lib/api";
 
 interface Props {
@@ -47,6 +48,10 @@ export default function PricingSheet({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState(false);
+  // 첫 화면에만 있는 기능이라(LayoutEditProvider도 거기서만 둘러싼다), 이 시트를
+  // 그 Provider 없이 여는 화면(/quote)에서는 canEdit이 항상 false라 입구 자체가
+  // 조용히 숨는다 — useLayoutEdit.tsx의 기본 컨텍스트 참고.
+  const { canEdit: canEditLayout, setEditMode: setLayoutEditMode } = useLayoutEdit();
 
   useEffect(() => {
     if (!open) return;
@@ -180,6 +185,28 @@ export default function PricingSheet({
             </span>
             <span className="text-slate-400">→</span>
           </Link>
+
+          {/* [왜 2026-11-05에 추가 — "배치가 엉망이다, 길게 눌러 위치·크기를
+              조정할 수 있게"] 첫 화면(현장 등록~견적 화면)의 떠 있는 요소들을
+              직접 옮기고 크기를 바꾸는 편집 모드로 들어간다. 이 시트를 닫고
+              바로 편집 모드가 켜져야 하므로 다른 항목처럼 페이지 이동이 아니라
+              버튼이다 — 누르면 시트를 닫고 첫 화면 위에 손잡이가 뜬다. */}
+          {canEditLayout && (
+            <button
+              type="button"
+              onClick={() => {
+                setLayoutEditMode(true);
+                onClose();
+              }}
+              className="flex h-14 w-full items-center justify-between rounded-2xl bg-slate-100 px-4 text-[15px] font-semibold text-slate-800 transition-transform active:scale-[0.98]"
+            >
+              <span className="flex items-center gap-2">
+                <Move className="h-4 w-4" />
+                배치 편집 (첫 화면)
+              </span>
+              <span className="text-slate-400">→</span>
+            </button>
+          )}
 
           {error && (
             <p className="rounded-2xl bg-red-50 px-4 py-3 text-[13px] font-light text-red-700">{error}</p>

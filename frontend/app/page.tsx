@@ -7,6 +7,8 @@ import { AlertCircle, ArrowLeft, ArrowRight, Bot, Briefcase, Calculator, FolderO
 import BusinessBadge from "@/components/BusinessBanner";
 import CanvasStage from "@/components/CanvasStage";
 import FeatureIntroDialog from "@/components/FeatureIntroDialog";
+import { LayoutEditProvider, useLayoutEdit } from "@/components/LayoutEdit";
+import Movable, { useMovable } from "@/components/Movable";
 import PricingSheet from "@/components/PricingSheet";
 import QuoteListDialog from "@/components/QuoteListDialog";
 import SimulationPanel from "@/components/SimulationPanel";
@@ -360,6 +362,11 @@ export default function HomePage() {
 
   return (
     <main className="relative h-dvh overflow-hidden">
+      {/* 첫 화면 배치 편집(2026-11-05 "배치가 엉망이다 — 설정모드에서 길게 눌러
+          위치·크기를 조정") — 사장님 기기에서 PricingSheet의 "배치 편집" 스위치로
+          켠다. 이 Provider는 DOM에 아무것도 그리지 않으므로(Context.Provider만)
+          absolute 위치를 쓰는 자식들의 배치에 영향을 주지 않는다. */}
+      <LayoutEditProvider ownerToken={ownerToken}>
       {/* 무대 — 화면 전체가 뷰파인더이자 사진 뷰어다. */}
       <CanvasStage
         photoUrl={stagePhotoUrl}
@@ -372,7 +379,7 @@ export default function HomePage() {
 
       {/* 떠 있는 앱 바 */}
       <header className="absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-3 p-4">
-        <div className="flex shrink-0 items-center gap-2">
+        <Movable id="header-left" className="flex shrink-0 items-center gap-2">
           {step > 1 ? (
             <button
               type="button"
@@ -398,11 +405,11 @@ export default function HomePage() {
               />
             ))}
           </span>
-        </div>
+        </Movable>
 
         {/* 아이콘이 많아지면(사장님 기기는 최대 7개) 일반폭 폰에서 뒤쪽 아이콘이
             화면 밖으로 밀려 안 보이던 문제가 있었다 — 가로 스크롤로 전부 닿게 한다. */}
-        <div className="no-scrollbar flex min-w-0 items-center gap-2 overflow-x-auto">
+        <Movable id="header-icons" className="no-scrollbar flex min-w-0 items-center gap-2 overflow-x-auto">
           <Link
             href="/quote"
             aria-label="빠른 견적 (평수별·품목별)"
@@ -479,7 +486,7 @@ export default function HomePage() {
               <Sparkles className="h-5 w-5" />
             </Link>
           )}
-        </div>
+        </Movable>
       </header>
 
       {/* 업체 표기는 구석 워터마크로. 세로에서는 아래를 패널이 덮으므로 앱 바 밑에,
@@ -489,9 +496,9 @@ export default function HomePage() {
           만들어야만 단가 설정에 닿을 수 있었다 — 여기 추가해 언제든 3초 누르면 열리게
           한다. 3단계에는 그 자체 뱃지가 이미 있어 겹치지 않게 여기서는 숨긴다. */}
       {step !== 3 && (
-        <div className="absolute left-4 top-20 z-20 foldLandscape:bottom-4 foldLandscape:top-auto">
+        <MovableAbsolute id="business-badge" className="absolute left-4 top-20 z-20 foldLandscape:bottom-4 foldLandscape:top-auto">
           <BusinessBadge onSecretHold={() => setPricingOpen(true)} />
-        </div>
+        </MovableAbsolute>
       )}
 
       {exitHint && (
@@ -574,7 +581,9 @@ export default function HomePage() {
            세로·가로 어느 쪽이든 "필요한 만큼만 차지하는 카드"라는 같은 디자인
            언어를 쓴다(예전엔 가로에서만 항상 전체 높이 패널이라 두 화면이 서로
            다른 제품처럼 보였다). 2단계는 내용이 많아 그대로 둔다. */
-        <section
+        <MovableAbsolute
+          id="main-panel"
+          as="section"
           className={
             step === 1
               ? "glass-panel absolute inset-x-4 bottom-4 z-10 flex flex-col " +
@@ -659,7 +668,7 @@ export default function HomePage() {
               </p>
             )}
           </div>
-        </section>
+        </MovableAbsolute>
       )}
 
       {step === 3 && (
@@ -684,7 +693,57 @@ export default function HomePage() {
         onSelect={handleLoadQuote}
         ownerToken={ownerToken ?? ""}
       />
+
+      <EditModeBar />
+      </LayoutEditProvider>
     </main>
+  );
+}
+
+/** 이미 position:absolute로 직접 떠 있는 요소(뱃지·패널)에 배치 편집을 입힌다 —
+ *  Movable처럼 감싸는 div에 position:relative를 더하면 그 요소 자신의 absolute
+ *  기준이 감싸는 div로 뒤바뀌어 레이아웃이 깨진다(Movable.tsx 상단 메모 참고).
+ *  이 요소는 자기 자신이 이미 위치 기준이므로 그 자리에 style·핸들러·편집
+ *  손잡이만 얹는다. */
+function MovableAbsolute({
+  id,
+  as = "div",
+  className,
+  children,
+}: {
+  id: string;
+  as?: "div" | "section";
+  className: string;
+  children: React.ReactNode;
+}) {
+  const { style, handlers, overlay } = useMovable(id);
+  const Component = as;
+  return (
+    <Component className={className} style={style} {...handlers}>
+      {children}
+      {overlay}
+    </Component>
+  );
+}
+
+/** 편집 모드가 켜져 있을 때만 뜨는 하단 알림 바 — "지금 배치를 옮기는 중"이라는
+ *  상태를 분명히 하고, 빠져나갈 길(완료)을 준다. */
+function EditModeBar() {
+  const { editMode, setEditMode } = useLayoutEdit();
+  if (!editMode) return null;
+  return (
+    <div className="glass-pill fixed bottom-6 left-1/2 z-[100] flex -translate-x-1/2 items-center gap-3 px-5 py-3 shadow-xl">
+      <span className="whitespace-nowrap text-[13px] font-semibold text-indigo-700">
+        배치 편집 중 · 길게 눌러 옮기기
+      </span>
+      <button
+        type="button"
+        onClick={() => setEditMode(false)}
+        className="shrink-0 rounded-full bg-indigo-600 px-4 py-2 text-[13px] font-bold text-white transition-transform active:scale-95"
+      >
+        완료
+      </button>
+    </div>
   );
 }
 

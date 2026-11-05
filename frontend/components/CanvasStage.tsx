@@ -5,6 +5,7 @@ import { Camera, ImagePlus, RotateCcw } from "lucide-react";
 import AssetImage from "@/components/AssetImage";
 import { BRAND_HERO_ALT, useBrandImageSrc } from "@/components/BrandHero";
 import CameraSheet from "@/components/CameraSheet";
+import Movable from "@/components/Movable";
 import { PhotoGuideSheet, PhotoGuideTip } from "@/components/PhotoGuide";
 import { BUSINESS_SERVICE_AREA } from "@/lib/businessInfo";
 
@@ -105,7 +106,7 @@ export default function CanvasStage({
               다시 촬영
             </button>
           ) : (
-            <div className="pointer-events-auto flex flex-col items-center gap-5 text-center foldLandscape:gap-7">
+            <Movable id="capture-prompt" className="pointer-events-auto flex flex-col items-center gap-5 text-center foldLandscape:gap-7">
               <div className="space-y-1.5">
                 <p className="text-[21px] font-extrabold leading-[1.3] tracking-[-0.02em] text-white break-keep foldLandscape:text-[28px]">
                   {BRAND_HERO_ALT}
@@ -136,7 +137,7 @@ export default function CanvasStage({
               </div>
 
               <PhotoGuideTip onOpenExample={() => setExampleOpen(true)} className="max-w-sm" />
-            </div>
+            </Movable>
           )}
         </div>
       )}
