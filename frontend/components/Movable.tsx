@@ -23,8 +23,16 @@ const MIN_OPACITY = 0.15;
 // 기준점 자체가 다르니 펼쳤을 때 위치가 달라져 보인다(2026-11-05 "폴더를
 // 열었을 때 위치가 달라진다") — 지문처럼 요소 id에 방향을 붙여 아예 다른 저장
 // 칸을 쓰면, 세로에서 맞춘 배치와 가로에서 맞춘 배치가 서로 간섭하지 않는다.
+function matchesLandscape(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia("(orientation: landscape) and (min-width: 700px)").matches;
+}
+
 function useOrientationSuffix(): string {
-  const [suffix, setSuffix] = useState("portrait");
+  // 처음부터 "portrait"로 시작하면, 폴더를 펼친 채로 앱을 열 때 아주 짧게
+  // 세로용 보정값으로 그려졌다가 가로용으로 바뀌는 깜빡임이 있었다 — 첫
+  // 렌더부터 실제 방향을 바로 읽어 시작한다.
+  const [suffix, setSuffix] = useState(() => (matchesLandscape() ? "landscape" : "portrait"));
   useEffect(() => {
     const mq = window.matchMedia("(orientation: landscape) and (min-width: 700px)");
     const update = () => setSuffix(mq.matches ? "landscape" : "portrait");
@@ -66,7 +74,19 @@ export interface MovableResult {
 export function useMovable(rawId: string): MovableResult {
   const { editMode, canEdit, get, update, commit, reset } = useLayoutEdit();
   const id = `${rawId}@${useOrientationSuffix()}`;
-  const adjustment = get(id);
+  // [왜 가로·세로 스케일을 항상 같은 값으로 맞추는가 — 2026-11-05 "상호명을
+  // 늘리거나 줄이면 글자가 이상해진다"] 모서리 손잡이를 대각선이 아닌 방향으로
+  // 끌면 scale_x·scale_y가 서로 다른 값으로 저장될 수 있는데, CSS transform이
+  // 가로·세로를 다른 비율로 늘리면 글자가 실제로 찌그러져 보인다(버그가 아니라
+  // 그게 CSS의 정상 동작) — 실제로 이전에 저장된 값 하나(capture-prompt@landscape,
+  // 가로 1.6배·세로 0.96배)가 정확히 이 증상으로 "펼친 화면이 이상하다"는 신고의
+  // 원인이었다. 여기서 두 값을 평균 내 항상 같게 맞춰 두면, 과거에 비대칭으로
+  // 저장된 값이 남아 있어도 화면에는 절대 찌그러진 모습이 나오지 않는다(아래
+  // handleResizeMove도 애초에 두 값을 항상 같게만 쓴다 — "크기"는 하나의
+  // 슬라이더처럼 동작하고, 위치 이동(dx/dy)은 여전히 가로·세로 완전히 독립적이다).
+  const raw = get(id);
+  const uniformScale = (raw.scale_x + raw.scale_y) / 2;
+  const adjustment = { ...raw, scale_x: uniformScale, scale_y: uniformScale };
   const editable = editMode && canEdit;
 
   const [armed, setArmed] = useState(false);
@@ -140,8 +160,12 @@ export function useMovable(rawId: string): MovableResult {
     setArmed(false);
   }
 
-  // 모서리 손잡이 — 대각선으로 끌면 가로(scale_x)·세로(scale_y)가 각각 그 방향
-  // 만큼만 바뀐다("가로세로 크기 따로 조정" 요청).
+  // 모서리 손잡이 — 끄는 거리만큼 "크기" 하나를 바꾸고, 가로·세로에 항상 같이
+  // 적용한다. [왜 가로·세로를 따로 늘리지 않는가 — 위 adjustment 메모 참고]
+  // 텍스트가 든 요소를 가로·세로 다른 비율로 늘리면 글자가 눌리거나 늘어나
+  // 보이는 건 CSS transform의 당연한 동작이라 피할 수 없다 — 그래서 "크기"는
+  // 하나의 값으로 통일해 항상 또렷하게 유지하고, 위치(dx/dy)는 여전히 가로·
+  // 세로를 완전히 독립적으로 옮길 수 있다(길게 눌러 드래그).
   function handleResizeStart(e: React.PointerEvent) {
     e.stopPropagation();
     e.preventDefault();
@@ -165,13 +189,12 @@ export function useMovable(rawId: string): MovableResult {
   function handleResizeMove(e: React.PointerEvent) {
     const resize = resizeState.current;
     if (!resize || resize.pointerId !== e.pointerId) return;
+    // 가로·세로 이동의 평균으로 "크기" 하나를 구한다 — 대각선으로 끌면 두
+    // 방향이 비슷해 자연스럽고, 한쪽으로만 끌어도 그만큼 반영된다.
     const deltaX = (e.clientX - resize.startX) / 140;
     const deltaY = (e.clientY - resize.startY) / 140;
-    update(id, {
-      ...adjustment,
-      scale_x: Math.min(MAX_SCALE, Math.max(MIN_SCALE, resize.baseX + deltaX)),
-      scale_y: Math.min(MAX_SCALE, Math.max(MIN_SCALE, resize.baseY + deltaY)),
-    });
+    const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, resize.baseX + (deltaX + deltaY) / 2));
+    update(id, { ...adjustment, scale_x: next, scale_y: next });
   }
 
   function handleResizeEnd(e: React.PointerEvent) {
@@ -221,7 +244,19 @@ export function useMovable(rawId: string): MovableResult {
     style.transform = `translate(${adjustment.dx}px, ${adjustment.dy}px) scale(${adjustment.scale_x}, ${adjustment.scale_y})`;
   }
   if (adjustment.opacity !== 1) style.opacity = adjustment.opacity;
-  if (editable) style.touchAction = "none";
+  // [왜 — 2026-11-05 "UI 이동이 잘 안된다"] touchAction만으로는 안드로이드
+  // 웹뷰의 "길게 누르면 글자 선택/길게 눌러 메뉴" 제스처를 막지 못한다.
+  // Movable은 className에 select-none을 넣어 왔지만 MovableAbsolute(상호
+  // 뱃지·메인 패널 등 이미 absolute인 요소)는 className을 그대로 쓰는 쪽이라
+  // 그 처리가 빠져 있었다 — 길게 누르는 순간 브라우저의 네이티브 선택
+  // 제스처가 같이 발동해 우리 포인터 캡처와 충돌하면서 드래그가 끊기거나
+  // 아예 시작하지 못했다. 두 감싸개 모두 같은 style 객체를 쓰므로 여기
+  // 한 곳에서 막으면 어디서 써도 적용된다.
+  if (editable) {
+    style.touchAction = "none";
+    style.userSelect = "none";
+    (style as React.CSSProperties & { WebkitTouchCallout?: string }).WebkitTouchCallout = "none";
+  }
 
   const handlers = editable
     ? {
@@ -241,14 +276,14 @@ export function useMovable(rawId: string): MovableResult {
           armed ? "border-emerald-400 bg-emerald-400/10" : "border-indigo-400"
         }`}
       />
-      {/* 크기 — 대각선으로 끌면 가로·세로가 각각 그만큼 바뀐다. */}
+      {/* 크기 — 끄는 만큼 커지거나 작아진다(가로·세로 항상 같은 비율 — 위 메모 참고). */}
       <button
         type="button"
         onPointerDown={handleResizeStart}
         onPointerMove={handleResizeMove}
         onPointerUp={handleResizeEnd}
         onPointerCancel={handleResizeEnd}
-        aria-label={`${rawId} 크기 조절(가로·세로 각각)`}
+        aria-label={`${rawId} 크기 조절`}
         style={{ touchAction: "none" }}
         className="absolute -bottom-3 -right-3 z-50 flex h-9 w-9 items-center justify-center rounded-full bg-indigo-600 text-white shadow-lg active:scale-95"
       >
@@ -287,8 +322,8 @@ export function useMovable(rawId: string): MovableResult {
   return { editable, style, handlers, overlay };
 }
 
-/** 편집 모드에서 길게 누르면 집어서 옮기고, 모서리 손잡이로 크기(가로·세로 각각)와
- *  왼쪽 아래 손잡이로 투명도를 바꿀 수 있는 감싸개 — position:static인(원래 자기
+/** 편집 모드에서 길게 누르면 집어서 옮기고, 모서리 손잡이로 크기(가로·세로 항상
+ *  같은 비율)와 왼쪽 아래 손잡이로 투명도를 바꿀 수 있는 감싸개 — position:static인(원래 자기
  *  자리 기준이 없는) 요소에 쓴다. 이미 position:absolute인 요소(떠 있는 패널·
  *  뱃지 등)는 이 감싸개 대신 useMovable을 직접 써서 감싸는 div 없이 적용해야
  *  한다 — 그렇지 않으면 이 감싸개가 새로 만드는 위치 기준 때문에 원래의
