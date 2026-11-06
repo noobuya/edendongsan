@@ -19,10 +19,8 @@ import {
   checkServerHealth,
   createJob,
   getJobStatus,
-  registerOwnerPushToken,
   resolveAssetUrl,
 } from "@/lib/api";
-import { registerForPush } from "@/lib/pushRegistration";
 import { clearOwnerToken, readOwnerToken, saveOwnerToken } from "@/lib/ownerToken";
 import { useAndroidBack } from "@/lib/useAndroidBack";
 import { DEFAULT_OPTIONS, DEFAULT_WORK_ITEMS } from "@/lib/workItems";
@@ -94,9 +92,17 @@ export default function HomePage() {
     void checkOwnerToken(saved).then((result) => {
       if (result === "ok") {
         setOwnerTokenState(saved);
-        // 제안서 열람 알림 — 네이티브 앱이 아니거나 아직 플러그인이 없는 빌드에서는
-        // registerForPush가 조용히 아무 일도 하지 않는다.
-        void registerForPush((token) => void registerOwnerPushToken(saved, token).catch(() => {}));
+        // [왜 2026-11-06에 껐는가 — "관리자 코드 넣고 들어가면(설치된 앱에서만)
+        // 튕긴다"] 이 호출 하나가 Capacitor.isNativePlatform()으로 설치된
+        // 앱에서만 실제로 동작한다(lib/pushRegistration.ts 참고) — 그래서
+        // 똑같은 코드가 브라우저에서는 멀쩡하고 설치된 앱에서만 켜는 순간
+        // 꺼지는 증상과 정확히 일치한다. 이 안에서 PushNotifications.
+        // requestPermissions()가 안드로이드 알림 권한 다이얼로그를 띄우는데,
+        // 이 빌드에 Firebase 설정(google-services.json)이 제대로 들어있지
+        // 않으면 그 네이티브 플러그인 쪽에서 죽을 수 있다 — JS try/catch로는
+        // 못 잡는 네이티브 크래시라, 캐시를 지워도 에러 화면이 안 떠도 설명이
+        // 된다. 원인이 확실해지기 전까지 끈다 — 알림 기능만 빠지고 앱 사용
+        // 자체에는 지장이 없다.
       } else if (result === "rejected") clearOwnerToken();
     });
   }, []);
