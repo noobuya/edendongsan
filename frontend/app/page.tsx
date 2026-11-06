@@ -420,16 +420,18 @@ export default function HomePage() {
             조건). 상호·전화는 이미 영수증·블로그 서명·전화 배너 등 실제로
             필요한 자리에 따로 나온다.
             아이콘이 많아지면(사장님 기기는 최대 8개) 일반폭 폰에서 뒤쪽 아이콘이
-            화면 밖으로 밀려 안 보이던 문제가 있었다 — 가로 스크롤로 전부 닿게
-            한다. [왜 가장자리에 옅은 페이드를 넣는가 — "옆으로 밀면 사각 안에서
-            움직이는 것 같다"] overflow-x-auto만 쓰면 스크롤 가능 영역의 경계가
-            칼로 자른 듯 딱 끊겨, 그 폭만큼의 "상자" 안에서 아이콘이 움직이는
-            느낌이 든다. 가장자리를 투명하게 페이드시키는 마스크를 걸면 아이콘이
-            상자 밖에서부터 자연스럽게 나타나고 사라지는, 더 당겨볼 것이 있다는
-            느낌의 스크롤로 바뀐다(iOS 탭바류에서 흔한 처리). */}
+            화면 밖으로 밀려 안 보이던 문제가 있었다 — 가로 스크롤로 전부 닿게 한다.
+            [왜 가장자리 페이드(mask-image)를 뺐는가 — 2026-11-06 "관리자 코드
+            넣고 들어가면 튕긴다"] 옆으로 밀 때 "상자 안에서 움직이는" 느낌을
+            없애려고 넣었던 mask-image가, 정확히 관리자 코드를 넣어 이 줄에
+            아이콘(설정)이 하나 더 생기며 다시 그려지는 순간과 겹쳐 크래시가
+            났다 — JS 예외가 아니라(에러 바운더리로도 안 잡힘) 일부 안드로이드
+            GPU/웹뷰 조합에서 mask-image가 레이어를 다시 구성할 때 렌더러 자체가
+            죽는 것으로 보고 되돌린다. 가장자리 느낌 개선은 나중에 mask-image가
+            아닌 다른 방법(예: 그라데이션 오버레이 div)으로 다시 시도할 것. */}
         <Movable
           id="header-icons"
-          className="no-scrollbar flex min-w-0 items-center gap-2 overflow-x-auto [mask-image:linear-gradient(to_right,transparent,black_20px,black_calc(100%-20px),transparent)] [-webkit-mask-image:linear-gradient(to_right,transparent,black_20px,black_calc(100%-20px),transparent)]"
+          className="no-scrollbar flex min-w-0 items-center gap-2 overflow-x-auto"
         >
           <Link
             href="/quote"
