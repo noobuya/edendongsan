@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowLeft, ArrowRight, Bot, Briefcase, Calculator, FolderOpen, Images, Loader2, Newspaper, Ruler, Sparkles, Users } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, Bot, Briefcase, Calculator, FolderOpen, Images, Loader2, Newspaper, Ruler, Settings, Sparkles, Users } from "lucide-react";
 import CanvasStage from "@/components/CanvasStage";
 import FeatureIntroDialog from "@/components/FeatureIntroDialog";
 import { LayoutEditProvider, useLayoutEdit } from "@/components/LayoutEdit";
@@ -515,13 +515,21 @@ export default function HomePage() {
               <Sparkles className="h-5 w-5" />
             </Link>
           )}
-          {/* [왜 이 아이콘을 2026-11-06에 통째로 뺐는가] "관리자 코드 넣으면
-              튕긴다 / 앱 켜면 바로 꺼진다" 크래시가 mask-image를 지워도
-              계속돼, 범위를 더 좁히려고 이 아이콘 자체를 일단 완전히 뺐다
-              (사장님 모드가 될 때 header-icons에 새로 생기는 유일한 owner-only
-              요소라 가장 의심됨). 원인이 확실해지기 전까지 단가 설정은
-              SimulationPanel(3단계 영수증)의 onSecretHold로만 열린다 —
-              완전히 막힌 건 아니지만 불편하다, 원인 찾으면 되돌릴 것. */}
+          {/* 단가 설정 입구. [왜 2026-11-06에 뺐다가 되돌리는가] 한동안 이
+              아이콘이 범인으로 의심돼 뺐었는데, 실제 원인은 사장님 모드가 될
+              때 같이 실행되던 푸시 알림 등록(설치된 앱에서만 도는 네이티브
+              호출)이었다 — 그건 이미 꺼 뒀으니 이 아이콘은 안전하다. 메뉴
+              맨 뒤에 둔다("메뉴 맨뒤쪽에 넣어줘" 요청). */}
+          {ownerToken && (
+            <button
+              type="button"
+              onClick={() => setPricingOpen(true)}
+              aria-label="단가 설정"
+              className="glass-pill flex h-11 w-11 shrink-0 items-center justify-center text-slate-700 transition-transform active:scale-90"
+            >
+              <Settings className="h-5 w-5" />
+            </button>
+          )}
         </Movable>
       </header>
 
