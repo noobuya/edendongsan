@@ -112,6 +112,29 @@ export function useMovable(rawId: string): MovableResult {
   );
   const resizeState = useRef<{ pointerId: number; startX: number; startY: number; base: number } | null>(null);
   const opacityState = useRef<{ pointerId: number; startY: number; baseOpacity: number } | null>(null);
+  const elRef = useRef<HTMLElement | null>(null);
+
+  // [왜 — 2026-11-06 "폴더 가로모드일 때 UI가 화면 밖으로 나간다"] 이동은
+  // 끄는 거리에 제한이 없어서, 화면이 넓은 가로(펼친 폴더)에서 맞춰 둔 값을
+  // 세로로 접거나 다른 기기에서 열면(또는 그냥 너무 멀리 끌면) 요소가 통째로
+  // 화면 밖으로 나가 버릴 수 있다 — 실제로 capture-prompt@landscape에 그런
+  // 값(가로 -410px)이 저장돼 있어 가로 모드에서 거의 안 보였다. 손을 놓는
+  // 순간 요소의 실제 화면 위치를 재서, 네 변 중 하나라도 화면을 완전히
+  // 벗어났으면 최소 여백만큼은 보이게 슬쩍 되돌린다 — 평소 움직임은 전혀
+  // 건드리지 않고, "완전히 사라지는" 경우만 막는다.
+  const OFFSCREEN_MARGIN_PX = 24;
+  function clampOnscreen(dx: number, dy: number): { dx: number; dy: number } {
+    const el = elRef.current;
+    if (!el || typeof window === "undefined") return { dx, dy };
+    const rect = el.getBoundingClientRect();
+    let fixDx = 0;
+    let fixDy = 0;
+    if (rect.right < OFFSCREEN_MARGIN_PX) fixDx = OFFSCREEN_MARGIN_PX - rect.right;
+    else if (rect.left > window.innerWidth - OFFSCREEN_MARGIN_PX) fixDx = window.innerWidth - OFFSCREEN_MARGIN_PX - rect.left;
+    if (rect.bottom < OFFSCREEN_MARGIN_PX) fixDy = OFFSCREEN_MARGIN_PX - rect.bottom;
+    else if (rect.top > window.innerHeight - OFFSCREEN_MARGIN_PX) fixDy = window.innerHeight - OFFSCREEN_MARGIN_PX - rect.top;
+    return { dx: dx + fixDx, dy: dy + fixDy };
+  }
 
   /** 제스처 하나(이동/크기/투명도)가 시작될 때 한 번 호출 — window에
    *  pointermove/up/cancel을 걸고, 끝나면(onEnd) 스스로 떼어 낸다. */
@@ -139,6 +162,7 @@ export function useMovable(rawId: string): MovableResult {
   // 보면 된다(이 단계에서 손가락이 많이 움직이는 일은 드물다).
   function handlePointerDown(e: React.PointerEvent) {
     if (resizeState.current || opacityState.current) return;
+    elRef.current = e.currentTarget as HTMLElement;
     const pointerId = e.pointerId;
     const startX = e.clientX;
     const startY = e.clientY;
@@ -164,8 +188,12 @@ export function useMovable(rawId: string): MovableResult {
         (ev) => {
           const drag = dragState.current;
           if (drag && drag.pointerId === ev.pointerId) {
-            const { id: curId, get: curGet, commit: curCommit } = latest.current;
-            curCommit(curId, curGet(curId));
+            const { id: curId, get: curGet, update: curUpdate, commit: curCommit } = latest.current;
+            const settled = curGet(curId);
+            const { dx, dy } = clampOnscreen(settled.dx, settled.dy);
+            const final = { ...settled, dx, dy };
+            if (dx !== settled.dx || dy !== settled.dy) curUpdate(curId, final);
+            curCommit(curId, final);
             dragState.current = null;
           }
           setArmed(false);
