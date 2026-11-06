@@ -21,7 +21,16 @@ import {
 
 // 실리콘 제거·재시공 추가 옵션을 고를 수 있는 품목 — 기존 자재를 뜯어내는 시공만
 // 해당된다(estimator_app/app.py의 ADDON_ITEMS.SILICONE_RECOAT.applicable_to와 일치).
-const SILICONE_ADDON_CODES = new Set(["DOOR_SET", "SASH_SMALL", "SASH_LARGE", "MOLDING_FLAT", "MOLDING_CROWN"]);
+const SILICONE_ADDON_CODES = new Set([
+  "DOOR_SET",
+  "SASH_SMALL",
+  "SASH_LARGE",
+  "MOLDING_FLAT",
+  "MOLDING_CROWN",
+  "WARDROBE_SET",
+  "WELL_MOLDING",
+  "SHOE_CABINET",
+]);
 const DEFAULT_DOOR_DETAIL: DoorDetail = { design_type: "flat", width_mm: 900, height_mm: 2100 };
 
 // 평수별 전체 견적의 표준 단가(원/평). 현장 실측 후 확정되는 범위 가격이다.

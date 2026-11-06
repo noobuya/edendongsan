@@ -75,6 +75,43 @@ DEFAULT_ITEMS = {
         "material_cost": 180000, "labor_cost": 720000,
         "replacement_cost_reference": 600000,
     },
+    # 붙박이장 — 문짝(눕혀 붙여 빠름)과 몸통(세워둔 채 좁은 틈, 더 더딤)을 메인 AI
+    # 견적(backend/app/pricing_store.py의 "wardrobe" 1품 처리량, 문 14㎡/몸통 7㎡)과
+    # 같은 비율로 봐서, 표준 2도어 붙박이장 한 조(문 약 2.7㎡ + 몸통 약 3㎡) 기준으로
+    # 잡았다. 실제 크기는 현장마다 다르니 사장님이 단가 설정에서 조정할 것.
+    "WARDROBE_SET": {
+        "group": "필름 시공",
+        "label": "붙박이장 리폼 세트", "icon": "🗄️",
+        "chip": ["#818cf8", "#6366f1"], "design_type": None, "film_meters": 6.0,
+        "material_cost": 70000, "labor_cost": 160000,
+        "replacement_cost_reference": 500000,
+    },
+    # 신발장 — 붙박이장과 같은 문짝+몸통 구조지만 크기가 작다(표준 1~2도어,
+    # 문 약 1.8㎡ + 몸통 약 1.5㎡). 위 WARDROBE_SET과 같은 1품 처리량 비율로 축소.
+    "SHOE_CABINET": {
+        "group": "필름 시공",
+        "label": "신발장 리폼 세트", "icon": "👞",
+        "chip": ["#fde68a", "#eab308"], "design_type": None, "film_meters": 3.5,
+        "material_cost": 40000, "labor_cost": 90000,
+        "replacement_cost_reference": 300000,
+    },
+    # 냉장고장 — 냉장고를 감싸는 좌우 측판·상판(필요 시 장식 도어 포함)만 대상이다.
+    # 메인 AI 견적의 "tall_cabinet_m2"(1품 4.5㎡)와 같은 결로, 표준 크기 한 조 기준.
+    "FRIDGE_CABINET": {
+        "group": "필름 시공",
+        "label": "냉장고장 리폼 세트", "icon": "🧊",
+        "chip": ["#7dd3fc", "#0284c7"], "design_type": None, "film_meters": 4.0,
+        "material_cost": 45000, "labor_cost": 180000,
+    },
+    # 우물몰딩 — 천장을 사각으로 턱지게 짜고 그 둘레를 두르는 몰딩(천장 코퍼/우물천장).
+    # 벽 몰딩(위 MOLDING_CROWN)보다 전부 머리 위에서 작업해 더 더디므로 인건비를 더 높게 잡았다.
+    "WELL_MOLDING": {
+        "group": "필름 시공",
+        "label": "우물몰딩 리폼 세트", "icon": "🖼️",
+        "chip": ["#f0abfc", "#d946ef"], "design_type": "우물천장형", "film_meters": 20.0,
+        "material_cost": 160000, "labor_cost": 760000,
+        "replacement_cost_reference": 600000,
+    },
     # 현관 방화문 — 스틸 규격 문이라 "민자/알판" 개념이 없고, 단면/양면 시공 여부로만 갈린다.
     "FIRE_DOOR_SINGLE": {
         "group": "필름 시공",
@@ -182,7 +219,7 @@ ADDON_ITEMS = {
         "label": "기존 실리콘 제거 및 재시공",
         "material_cost": 15000,
         "labor_cost": 25000,
-        "applicable_to": ["DOOR_SET", "SASH_SMALL", "SASH_LARGE", "MOLDING_FLAT", "MOLDING_CROWN"],
+        "applicable_to": ["DOOR_SET", "SASH_SMALL", "SASH_LARGE", "MOLDING_FLAT", "MOLDING_CROWN", "WARDROBE_SET", "WELL_MOLDING", "SHOE_CABINET"],
     },
 }
 
