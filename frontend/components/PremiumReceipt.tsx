@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { AlertTriangle, CalendarClock, CheckCircle2, Download, Hammer, Leaf, Lock, MessageCircle, Share2, ShieldCheck, Sparkles, X } from "lucide-react";
+import { AlertTriangle, CalendarClock, Check, CheckCircle2, Download, Hammer, Leaf, Lock, MessageCircle, Pencil, Share2, ShieldCheck, Sparkles, X } from "lucide-react";
 import BusinessBadge from "@/components/BusinessBanner";
 import QuoteIcon, { toneOfWorkItem } from "@/components/quote/QuoteIcon";
 import BusinessStamp from "@/components/BusinessStamp";
@@ -252,6 +252,13 @@ export function PremiumReceiptView({
   const [adjustNote, setAdjustNote] = useState("");
   const [adjusting, setAdjusting] = useState(false);
   const [adjustError, setAdjustError] = useState<string | null>(null);
+  // [왜 — 2026-11-07 "나온 가격을 클릭해 수동으로 수정하게 해줘"] 아래 숨은
+  // 패널(협의 공급가액)과 별개로, 맨 위 큰 총액 글자 바로 옆에 연필 아이콘을
+  // 눌러 그 자리에서 바로 금액을 고칠 수 있게 한다 — 사장님만 보인다
+  // (onAdjustTotal이 있을 때만). 확정하면 같은 onAdjustTotal을 타므로 서버가
+  // 품목별 subtotal도 같은 비율로 맞춰 돌려준다(quotes_store.py 참고).
+  const [editingTotal, setEditingTotal] = useState(false);
+  const [totalEditValue, setTotalEditValue] = useState("");
 
   // navigator.share가 없거나 실패했을 때의 안전한 대안 — 캡처한 이미지를 화면에 먼저
   // 보여주고, "갤러리에 저장" → "전화번호 입력" → "문자 앱 열기" 순서로 이어간다.
@@ -412,6 +419,31 @@ export function PremiumReceiptView({
     }
   }
 
+  // 큰 총액 글자를 직접 눌러 고치는 쪽 — 위 협의 공급가액(부가세 전 금액 기준)과
+  // 달리 화면에 그대로 보이는 "최종 금액"을 입력받아 그대로 넘긴다.
+  const totalEditNum = totalEditValue === "" ? null : Math.max(0, parseInt(totalEditValue, 10) || 0);
+
+  function startEditTotal() {
+    setTotalEditValue(String(total));
+    setAdjustError(null);
+    setEditingTotal(true);
+  }
+
+  async function handleDirectEdit() {
+    if (!onAdjustTotal || totalEditNum === null) return;
+    setAdjusting(true);
+    setAdjustError(null);
+    try {
+      await onAdjustTotal(totalEditNum, "총액 직접 수정");
+      setEditingTotal(false);
+      showToast("견적 금액을 수정했습니다 — 품목별 금액도 같이 맞춰졌습니다");
+    } catch (e) {
+      setAdjustError(e instanceof Error ? e.message : "금액을 수정하지 못했습니다.");
+    } finally {
+      setAdjusting(false);
+    }
+  }
+
   return (
     <div className="space-y-3">
       {/* 이 카드가 통째로 이미지로 저장·공유된다. 원가 관련 요소를 넣지 않는다. */}
@@ -438,14 +470,64 @@ export function PremiumReceiptView({
         {/* 합계를 맨 위에 — 고객이 가장 먼저 보고 싶은 숫자다. */}
         <div className="mt-7">
           <p className="text-[14px] font-medium text-[#5b6573]">총 예상 견적</p>
-          <p
-            {...secret}
-            style={{ WebkitTouchCallout: "none", touchAction: "manipulation" }}
-            className="mt-1 cursor-pointer select-none text-[38px] font-extrabold leading-none tracking-[-0.03em] tabular-nums"
-          >
-            {total.toLocaleString("ko-KR")}
-            <span className="ml-1 text-[20px] font-bold text-[#5b6573]">원</span>
-          </p>
+          {editingTotal ? (
+            <div className="mt-1 flex items-center gap-2">
+              <input
+                type="number"
+                inputMode="numeric"
+                autoFocus
+                value={totalEditValue}
+                onChange={(e) => setTotalEditValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void handleDirectEdit();
+                  if (e.key === "Escape") setEditingTotal(false);
+                }}
+                className="w-full min-w-0 border-0 border-b-2 border-indigo-500 bg-transparent text-[38px] font-extrabold leading-none tracking-[-0.03em] tabular-nums outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => void handleDirectEdit()}
+                disabled={adjusting || totalEditNum === null}
+                aria-label="금액 확정"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white disabled:opacity-40"
+              >
+                <Check className="h-4 w-4" strokeWidth={2.5} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingTotal(false)}
+                aria-label="수정 취소"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600"
+              >
+                <X className="h-4 w-4" strokeWidth={2.5} />
+              </button>
+            </div>
+          ) : (
+            <div className="mt-1 flex items-center gap-2">
+              <p
+                {...secret}
+                style={{ WebkitTouchCallout: "none", touchAction: "manipulation" }}
+                className="cursor-pointer select-none text-[38px] font-extrabold leading-none tracking-[-0.03em] tabular-nums"
+              >
+                {total.toLocaleString("ko-KR")}
+                <span className="ml-1 text-[20px] font-bold text-[#5b6573]">원</span>
+              </p>
+              {/* 사장님 기기에서만 보인다(onAdjustTotal이 있을 때만 — PremiumReceipt
+                  wrapper가 ownerToken일 때만 넘긴다). 눌러서 바로 수정하면 품목별
+                  금액도 같은 비율로 맞춰진다(quotes_store.set_negotiated_total 참고). */}
+              {onAdjustTotal && (
+                <button
+                  type="button"
+                  onClick={startEditTotal}
+                  aria-label="금액 직접 수정"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 active:scale-90"
+                >
+                  <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
+                </button>
+              )}
+            </div>
+          )}
+          {adjustError && editingTotal && <p className="mt-1.5 text-[12.5px] font-semibold text-rose-600">{adjustError}</p>}
           <p className="mt-2 text-[13px] text-[#5b6573]">
             {vat !== null ? "부가세 포함 금액입니다" : "현장 실측 후 최종 확정됩니다"}
           </p>

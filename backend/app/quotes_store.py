@@ -97,9 +97,15 @@ def set_negotiated_total(job_id: str, new_total_cost: int, note: str = "") -> di
 
     공급가액·부가세는 estimator.py의 계산(vat = round(supply * rate), total =
     supply + vat)을 거꾸로 풀어 다시 채운다 — 영수증이 두 숫자를 따로 보여주는
-    경우(vat가 있는 견적) 새 총액과 어긋나지 않게 하기 위해서다. 자재비/인건비/
-    경비(원가 쪽)와 개별 line_items는 그대로 둔다 — 협의는 "얼마를 받을지"만
-    바꾸는 것이고, 실제로 들어간 원가나 품목 구성이 바뀌는 건 아니다."""
+    경우(vat가 있는 견적) 새 총액과 어긋나지 않게 하기 위해서다.
+
+    [왜 — 2026-11-07 사장님 요청 "가격을 수동으로 고치면 안의 내용도 그 가격에
+    맞게 고쳐지게"] 전엔 품목별 line_items는 그대로 두고 총액만 바꿔서, 고객
+    영수증에 "품목 합계 ≠ 총액"인 어색한 상태가 남았다. 이제 품목별 subtotal도
+    같은 비율로 같이 늘리거나 줄여 합계가 새 총액과 맞게 만든다. 자재비/인건비/
+    경비(원가 분석, 사장님 전용)는 그대로 둔다 — 실제로 들어간 원가 자체가
+    바뀐 건 아니고, 협의 마진(화면의 "협의가 기준 예상 수익")은 이미 이 원가
+    기준으로 따로 계산되므로 원가까지 같이 바꾸면 그 계산이 어긋난다."""
     quote = load_quote(job_id)
     if quote is None or not quote.get("estimate"):
         return None
@@ -112,6 +118,17 @@ def set_negotiated_total(job_id: str, new_total_cost: int, note: str = "") -> di
     vat_rate = pricing_store.effective()["vat_rate_percent"] / 100
     supply_amount = round(new_total_cost / (1 + vat_rate)) if vat_rate else new_total_cost
     vat = new_total_cost - supply_amount
+
+    ratio = new_total_cost / current_total if current_total else 1
+    line_items = estimate.get("line_items") or []
+    for li in line_items:
+        li["subtotal"] = round(li.get("subtotal", 0) * ratio)
+    # 반올림으로 생기는 1~2원 차이는 가장 비싼 품목에 몰아 합계를 정확히 맞춘다.
+    if line_items:
+        drift = new_total_cost - vat - sum(li["subtotal"] for li in line_items)
+        if drift:
+            biggest = max(line_items, key=lambda li: li["subtotal"])
+            biggest["subtotal"] += drift
 
     estimate.setdefault("price_adjustments", []).append(
         {
