@@ -403,6 +403,10 @@ export interface PatternSwatch {
   /** 그 브랜드의 실제 제품 코드(예: "W015") — 발주할 때 그대로 참고할 수 있게
    *  화면에 코드까지 노출한다. */
   code?: string;
+  /** [왜 — 2026-11-07 "현장에서 고객이 '따뜻한 느낌 뭐 있어요?' 물을 때 바로
+   *  보여줄 수 있게"] 색의 느낌별로 즉석에서 걸러 보여주는 용도. 우드는 질감이
+   *  먼저 눈에 들어와 별도 분류로 둔다(실제로는 대부분 따뜻한 쪽이다). */
+  tone: "warm" | "cool" | "neutral" | "wood";
 }
 
 export type PaymentStatus = "pending" | "deposit_paid" | "balance_paid";

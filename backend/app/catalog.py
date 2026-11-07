@@ -44,36 +44,42 @@ GLASS_TINT_TYPES = {
 # prompt_keyword는 SDXL 인페인팅(app/services/inpainting.py)에 넘기는 영문 소재 설명이다.
 PATTERNS = {
     "matte-white": {
+        "tone": "neutral",
         "name": "매트 화이트",
         "color_hex": "#F2F1ED",
         "texture_path": "assets/patterns/matte-white.png",
         "prompt_keyword": "matte white interior film finish",
     },
     "cream-white": {
+        "tone": "warm",
         "name": "크림 화이트",
         "color_hex": "#F5EEDC",
         "texture_path": "assets/patterns/cream-white.png",
         "prompt_keyword": "cream white interior film finish",
     },
     "light-gray": {
+        "tone": "cool",
         "name": "라이트 그레이",
         "color_hex": "#C7CBCE",
         "texture_path": "assets/patterns/light-gray.png",
         "prompt_keyword": "light gray matte interior film finish",
     },
     "dark-gray": {
+        "tone": "cool",
         "name": "다크 그레이",
         "color_hex": "#55585C",
         "texture_path": "assets/patterns/dark-gray.png",
         "prompt_keyword": "dark gray matte interior film finish",
     },
     "matte-black": {
+        "tone": "neutral",
         "name": "매트 블랙",
         "color_hex": "#2B2B2E",
         "texture_path": "assets/patterns/matte-black.png",
         "prompt_keyword": "matte black interior film finish",
     },
     "oak-wood": {
+        "tone": "wood",
         "name": "오크 우드",
         "color_hex": "#B08B5A",
         "texture_path": "assets/patterns/oak-wood.png",
@@ -81,6 +87,7 @@ PATTERNS = {
         "wood_grain": True,
     },
     "walnut-wood": {
+        "tone": "wood",
         "name": "월넛 우드",
         "color_hex": "#5C3A28",
         "texture_path": "assets/patterns/walnut-wood.png",
@@ -88,18 +95,21 @@ PATTERNS = {
         "wood_grain": True,
     },
     "deep-navy": {
+        "tone": "cool",
         "name": "딥 네이비",
         "color_hex": "#1F2A44",
         "texture_path": "assets/patterns/deep-navy.png",
         "prompt_keyword": "matte deep navy interior film finish",
     },
     "olive-green": {
+        "tone": "warm",
         "name": "올리브 그린",
         "color_hex": "#6B6B3A",
         "texture_path": "assets/patterns/olive-green.png",
         "prompt_keyword": "matte olive green interior film finish",
     },
     "warm-beige": {
+        "tone": "warm",
         "name": "웜 베이지",
         "color_hex": "#D9C7AC",
         "texture_path": "assets/patterns/warm-beige.png",
@@ -114,75 +124,89 @@ PATTERNS = {
     # 톤을 결정한다. 기존 10개와 id를 겹치지 않게 "bodaq-" 접두사를 붙여, 이미 저장된
     # 옛 견적서의 옵션 id가 깨지지 않는다.)
     "bodaq-s261": {
+        "tone": "cool",
         "name": "딥 슬레이트 (BODAQ S261)",
         "color_hex": "#3A4048",
         "prompt_keyword": "deep slate grey-blue matte interior film finish",
     },
     "bodaq-s262": {
+        "tone": "neutral",
         "name": "애시 그레이 (BODAQ S262)",
         "color_hex": "#A9A9A2",
         "prompt_keyword": "ash grey matte interior film finish",
     },
     "bodaq-s263": {
+        "tone": "cool",
         "name": "실버 미스트 (BODAQ S263)",
         "color_hex": "#C9CCCE",
         "prompt_keyword": "silver mist light grey matte interior film finish",
     },
     "bodaq-s264": {
+        "tone": "warm",
         "name": "페블 그레이 (BODAQ S264)",
         "color_hex": "#B9B4AC",
         "prompt_keyword": "pebble grey warm matte interior film finish",
     },
     "bodaq-s265": {
+        "tone": "cool",
         "name": "옵시디언 블루 (BODAQ S265)",
         "color_hex": "#1C2430",
         "prompt_keyword": "obsidian deep blue-black matte interior film finish",
     },
     "bodaq-s266": {
+        "tone": "cool",
         "name": "딥 포레스트 (BODAQ S266)",
         "color_hex": "#21382C",
         "prompt_keyword": "deep forest green matte interior film finish",
     },
     "bodaq-blc05": {
+        "tone": "neutral",
         "name": "퓨어 화이트 (BODAQ BLC05)",
         "color_hex": "#FAFAF7",
         "prompt_keyword": "pure white premium matte interior film finish",
     },
     "bodaq-smt02": {
+        "tone": "warm",
         "name": "웜 에크루 (BODAQ SMT02)",
         "color_hex": "#DCCBA8",
         "prompt_keyword": "warm ecru super matte interior film finish",
     },
     "bodaq-smt04": {
+        "tone": "warm",
         "name": "드라이드 세이지 (BODAQ SMT04)",
         "color_hex": "#8C9575",
         "prompt_keyword": "dried sage green super matte interior film finish",
     },
     "bodaq-w015": {
+        "tone": "wood",
         "name": "헤리티지 골든 오크 (BODAQ W015)",
         "color_hex": "#B98A4E",
         "prompt_keyword": "heritage golden oak wood grain interior film finish",
         "wood_grain": True,
     },
     "bodaq-w141": {
+        "tone": "wood",
         "name": "리치 월넛 (BODAQ W141)",
         "color_hex": "#4A2F22",
         "prompt_keyword": "rich walnut dark wood grain interior film finish",
         "wood_grain": True,
     },
     "bodaq-w883": {
+        "tone": "wood",
         "name": "에스프레소 로스트 오크 (BODAQ W883)",
         "color_hex": "#3B2A20",
         "prompt_keyword": "espresso roast dark oak wood grain interior film finish",
         "wood_grain": True,
     },
     "bodaq-w956": {
+        "tone": "wood",
         "name": "드리프트우드 오크 (BODAQ W956)",
         "color_hex": "#B8A891",
         "prompt_keyword": "driftwood grey-tan oak wood grain interior film finish",
         "wood_grain": True,
     },
     "bodaq-w011": {
+        "tone": "wood",
         "name": "화이트워시드 오크 (BODAQ W011)",
         "color_hex": "#E4DBC9",
         "prompt_keyword": "whitewashed light oak wood grain interior film finish",

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowLeft, ArrowRight, Bot, Briefcase, Calculator, FolderOpen, Images, Loader2, Newspaper, Ruler, Settings, Sparkles, Users } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, Bot, Briefcase, Calculator, FolderOpen, Images, Loader2, Newspaper, Palette, Ruler, Settings, Sparkles, Users } from "lucide-react";
 import CanvasStage from "@/components/CanvasStage";
 import FeatureIntroDialog from "@/components/FeatureIntroDialog";
 import { LayoutEditProvider, useLayoutEdit } from "@/components/LayoutEdit";
@@ -452,6 +452,16 @@ export default function HomePage() {
             className="glass-pill flex h-11 w-11 shrink-0 items-center justify-center text-slate-700 transition-transform active:scale-90"
           >
             <Ruler className="h-5 w-5" />
+          </Link>
+          {/* 현장에서 고객이 색상을 물을 때 즉석에서 톤별로 걸러 보여주는 색상표 —
+              AI 렌더링은 사진·시간이 필요해 이 자리에선 쓰지 않고, 이미 있는 실제
+              카탈로그(현대보닥)를 바로 보여준다(app/colors/page.tsx 참고). */}
+          <Link
+            href="/colors"
+            aria-label="색상 상담"
+            className="glass-pill flex h-11 w-11 shrink-0 items-center justify-center text-slate-700 transition-transform active:scale-90"
+          >
+            <Palette className="h-5 w-5" />
           </Link>
           <Link
             href="/blog"
