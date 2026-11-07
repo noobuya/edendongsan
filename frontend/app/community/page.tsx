@@ -55,15 +55,10 @@ export default function CommunityPage() {
 
   const visibleEstimates = activeTag ? estimates?.filter((e) => e.item_names.includes(activeTag)) : estimates;
 
-  const swipe = useSwipeNavigate("/community");
+  useSwipeNavigate("/community");
 
   return (
-    <main
-      className="mx-auto min-h-dvh max-w-4xl px-4 py-10 xs:px-6"
-      onPointerDown={swipe.onPointerDown}
-      onPointerUp={swipe.onPointerUp}
-      onPointerCancel={swipe.onPointerCancel}
-    >
+    <main className="mx-auto min-h-dvh max-w-4xl px-4 py-10 xs:px-6">
       <div className="mb-6">
         <BusinessBanner />
       </div>

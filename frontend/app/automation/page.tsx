@@ -277,15 +277,10 @@ export default function AutomationPage() {
     setJobsLoaded(false);
   }
 
-  const swipe = useSwipeNavigate("/automation", !feedbackJobId);
+  useSwipeNavigate("/automation", !feedbackJobId);
 
   return (
-    <main
-      className="min-h-dvh bg-[#f2f4f6] pb-20 text-slate-900"
-      onPointerDown={swipe.onPointerDown}
-      onPointerUp={swipe.onPointerUp}
-      onPointerCancel={swipe.onPointerCancel}
-    >
+    <main className="min-h-dvh bg-[#f2f4f6] pb-20 text-slate-900">
       <header className="sticky top-0 z-10 bg-[#f2f4f6]/90 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-xl items-center gap-3 px-4">
           <Link

@@ -681,15 +681,10 @@ export default function ColorsPage() {
     return ALL_PATTERN_SWATCHES.filter((s) => s.tone === answer && s.brand).slice(0, 3);
   }, [answer]);
 
-  const swipe = useSwipeNavigate("/colors", !opened);
+  useSwipeNavigate("/colors", !opened);
 
   return (
-    <main
-      className="min-h-screen min-h-[100dvh] bg-[#f2f4f6] text-[#191f28]"
-      onPointerDown={swipe.onPointerDown}
-      onPointerUp={swipe.onPointerUp}
-      onPointerCancel={swipe.onPointerCancel}
-    >
+    <main className="min-h-screen min-h-[100dvh] bg-[#f2f4f6] text-[#191f28]">
       <div className="mx-auto max-w-[480px] px-4 pb-16 pt-4">
         <header className="mb-5">
           <Link

@@ -495,18 +495,13 @@ export default function RecruitingPage() {
     }
   }
 
-  const swipe = useSwipeNavigate(
+  useSwipeNavigate(
     "/recruiting",
     openPhotosFor === null && openApplicantsFor === null && openReviewFor === null
   );
 
   return (
-    <main
-      className="min-h-dvh bg-[#f2f4f6] pb-20 text-slate-900"
-      onPointerDown={swipe.onPointerDown}
-      onPointerUp={swipe.onPointerUp}
-      onPointerCancel={swipe.onPointerCancel}
-    >
+    <main className="min-h-dvh bg-[#f2f4f6] pb-20 text-slate-900">
       <header className="sticky top-0 z-10 bg-[#f2f4f6]/90 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-xl items-center gap-3 px-4">
           <Link href="/" aria-label="처음으로" className="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-slate-200/70">

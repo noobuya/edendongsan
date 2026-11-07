@@ -366,15 +366,10 @@ export default function HomePage() {
   const stagePhotoUrl =
     step === 3 && job?.rendered_image_url ? resolveAssetUrl(job.rendered_image_url) : previewUrl;
 
-  const swipe = useSwipeNavigate("/", step === 1 && !cameraOpen);
+  useSwipeNavigate("/", step === 1 && !cameraOpen);
 
   return (
-    <main
-      className="relative h-dvh"
-      onPointerDown={swipe.onPointerDown}
-      onPointerUp={swipe.onPointerUp}
-      onPointerCancel={swipe.onPointerCancel}
-    >
+    <main className="relative h-dvh">
       {/* 첫 화면 배치 편집(2026-11-05 "배치가 엉망이다 — 설정모드에서 길게 눌러
           위치·크기를 조정") — 사장님 기기에서 PricingSheet의 "배치 편집" 스위치로
           켠다. 이 Provider는 DOM에 아무것도 그리지 않으므로(Context.Provider만)

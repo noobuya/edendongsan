@@ -45,15 +45,10 @@ export default function BlogListPage() {
     return () => clearTimeout(handle);
   }, [query]);
 
-  const swipe = useSwipeNavigate("/blog");
+  useSwipeNavigate("/blog");
 
   return (
-    <main
-      className="mx-auto min-h-dvh max-w-4xl px-4 py-10 xs:px-6"
-      onPointerDown={swipe.onPointerDown}
-      onPointerUp={swipe.onPointerUp}
-      onPointerCancel={swipe.onPointerCancel}
-    >
+    <main className="mx-auto min-h-dvh max-w-4xl px-4 py-10 xs:px-6">
       <div className="mb-6">
         <BusinessBanner />
       </div>
