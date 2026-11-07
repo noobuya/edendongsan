@@ -45,6 +45,78 @@ function guessTone(query: string): PatternSwatch["tone"] | null {
   return null;
 }
 
+// [왜 — 2026-11-08 "바닥 색상·벽지 종류·분위기를 입력하면 오늘의집 트렌드
+// 기준으로 보닥/KCC 품번을 추천해줘"] 두 가지는 못 한다: (1) 오늘의집에서
+// "지금 1위"인 트렌드를 실시간으로 확인할 방법이 없다 — 틀린 걸 자신 있게
+// 말하면 고객에게 거짓을 전하는 것이다. (2) KCC는 실제 제품코드를 확인하지
+// 못해 지어 넣으면 발주 사고로 이어진다(/colors 맨 위 주석 참고). 그래서
+// "요즘 많이 찾는 조합" 같은 일반적인 인테리어 원리 설명 + 검증된 보닥
+// 품번으로만 추천한다. 밝기(luminance)로 "화이트우드"는 밝은 우드,
+// "클래식"은 짙은 우드를 가려 고른다.
+function luminance(hex: string): number {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+
+interface MoodPreset {
+  key: string;
+  label: string;
+  tone: PatternSwatch["tone"];
+  wood: "light" | "dark" | null;
+  reason: (floor: string, wallpaper: string) => string;
+}
+const MOOD_PRESETS: MoodPreset[] = [
+  {
+    key: "whitewood",
+    label: "화이트우드",
+    tone: "wood",
+    wood: "light",
+    reason: (floor, wallpaper) =>
+      `${floor || "밝은"} 바닥, ${wallpaper || "화이트 톤"} 벽지에는 밝은 우드가 공간을 넓고 화사하게 보이게 하면서도 나무 질감으로 포인트를 줍니다. 최근 많이 찾는 조합으로, 과하지 않게 따뜻한 느낌을 더해줍니다.`,
+  },
+  {
+    key: "modern",
+    label: "모던",
+    tone: "cool",
+    wood: null,
+    reason: (floor, wallpaper) =>
+      `${floor || "무난한"} 바닥, ${wallpaper || "그레이 계열"} 벽지와는 차가운 쿨톤이 또렷하고 정돈된 느낌을 줍니다. 그레이·네이비 계열은 거실·주방에서 모던한 분위기를 낼 때 흔히 쓰입니다.`,
+  },
+  {
+    key: "minimal",
+    label: "미니멀",
+    tone: "neutral",
+    wood: null,
+    reason: (floor, wallpaper) =>
+      `${floor || "밝은"} 바닥, ${wallpaper || "화이트"} 벽지에는 화이트·그레이 계열의 뉴트럴 색이 시선을 분산시키지 않아 깔끔하게 정리된 느낌을 유지합니다.`,
+  },
+  {
+    key: "cozy",
+    label: "웜 내추럴",
+    tone: "warm",
+    wood: null,
+    reason: (floor, wallpaper) =>
+      `${floor || "베이지"} 바닥, ${wallpaper || "웜톤"} 벽지와는 베이지·에크루 계열이 톤을 맞춰 아늑하고 편안한 느낌을 살려줍니다.`,
+  },
+  {
+    key: "classic",
+    label: "클래식",
+    tone: "wood",
+    wood: "dark",
+    reason: (floor, wallpaper) =>
+      `${floor || "짙은"} 바닥, ${wallpaper || "무게감 있는"} 벽지에는 짙은 월넛·에스프레소 톤이 고급스럽고 중후한 느낌을 줍니다. 거실 몰딩이나 중문에 포인트로도 잘 어울립니다.`,
+  },
+];
+
+function pickByMood(preset: MoodPreset): PatternSwatch[] {
+  let pool = ALL_PATTERN_SWATCHES.filter((s) => s.tone === preset.tone && s.brand);
+  if (preset.wood === "light") pool = [...pool].sort((a, b) => luminance(b.colorHex) - luminance(a.colorHex));
+  else if (preset.wood === "dark") pool = [...pool].sort((a, b) => luminance(a.colorHex) - luminance(b.colorHex));
+  return pool.slice(0, 3);
+}
+
 function groupByBrand(swatches: PatternSwatch[]): { label: string; items: PatternSwatch[] }[] {
   const groups: { label: string; items: PatternSwatch[] }[] = [];
   for (const s of swatches) {
@@ -96,6 +168,11 @@ export default function ColorsPage() {
   // null = 아직 검색 안 함, "none" = 검색했지만 못 알아들음, 그 외엔 짚어낸 톤.
   const [answer, setAnswer] = useState<PatternSwatch["tone"] | "none" | null>(null);
 
+  // 맞춤 추천(바닥·벽지·분위기) 입력값.
+  const [floorColor, setFloorColor] = useState("");
+  const [wallpaper, setWallpaper] = useState("");
+  const [mood, setMood] = useState<MoodPreset | null>(null);
+
   function handleSearch() {
     const guessed = guessTone(query.trim());
     if (guessed) {
@@ -136,7 +213,74 @@ export default function ColorsPage() {
           </p>
         </header>
 
-        <div className="flex gap-2">
+        <section className="rounded-[24px] bg-white p-5 shadow-[0_1px_2px_rgba(25,31,40,0.04)]">
+          <h2 className="text-[16px] font-bold">맞춤 추천</h2>
+          <p className="mt-1 text-[13px] text-[#5b6573]">
+            바닥·벽지를 적어 두면(생략 가능) 분위기에 맞춰 추천 멘트에 그대로 반영됩니다.
+          </p>
+          <div className="mt-3 space-y-2.5">
+            <input
+              type="text"
+              value={floorColor}
+              onChange={(e) => setFloorColor(e.target.value)}
+              placeholder="바닥 색상 (예: 화이트, 라이트 우드)"
+              className="h-11 w-full rounded-xl border border-[#e5e8eb] bg-[#f8f9fa] px-3.5 text-[14px] outline-none focus:border-indigo-500"
+            />
+            <input
+              type="text"
+              value={wallpaper}
+              onChange={(e) => setWallpaper(e.target.value)}
+              placeholder="벽지 종류 (예: 무지 화이트, 베이지 톤)"
+              className="h-11 w-full rounded-xl border border-[#e5e8eb] bg-[#f8f9fa] px-3.5 text-[14px] outline-none focus:border-indigo-500"
+            />
+          </div>
+          <p className="mb-2 mt-3.5 text-[12.5px] font-bold text-[#8b95a1]">원하는 분위기</p>
+          <div className="flex flex-wrap gap-2">
+            {MOOD_PRESETS.map((m) => (
+              <button
+                key={m.key}
+                type="button"
+                onClick={() => setMood(m)}
+                className={`h-9 rounded-full px-3.5 text-[13.5px] font-bold transition-colors ${
+                  mood?.key === m.key ? "bg-indigo-600 text-white" : "bg-[#f2f4f6] text-[#4e5968]"
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+
+          {mood && (
+            <div className="mt-4 rounded-2xl bg-indigo-600 px-4 py-4 text-white">
+              <p className="text-[13.5px] leading-relaxed">{mood.reason(floorColor.trim(), wallpaper.trim())}</p>
+              <div className="mt-3 flex gap-3">
+                {pickByMood(mood).map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setOpened(s)}
+                    className="flex-1 overflow-hidden rounded-xl bg-white text-left text-[#191f28] active:scale-95"
+                  >
+                    <div className="h-12 w-full" style={{ backgroundColor: s.colorHex }} />
+                    <div className="px-2 py-1.5">
+                      <p className="truncate text-[12px] font-bold leading-tight">{s.name}</p>
+                      <p className="text-[11px] text-[#8b95a1]">{s.brand} · {s.code}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+              {/* [왜 이 문구를 꼭 붙이는가] "오늘의집 1위" 식 단정은 실시간 확인이
+                  안 돼 거짓이 될 수 있다 — 추천은 믹스하되, 근거는 일반적인
+                  인테리어 원리라고 정직하게 밝힌다. */}
+              <p className="mt-3 text-[11.5px] text-indigo-100">
+                일반적인 인테리어 조합 원리를 바탕으로 한 추천이며, 실시간 유행 순위를
+                확인한 것은 아닙니다. 발주 가능한 보닥 품번만 안내합니다.
+              </p>
+            </div>
+          )}
+        </section>
+
+        <div className="mt-5 flex gap-2">
           <input
             type="text"
             value={query}
