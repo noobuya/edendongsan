@@ -43,6 +43,45 @@ const QUICK_MATERIAL_RATIO = 0.2;
 
 type Mode = "quick" | "detail";
 
+// [왜 — 2026-11-07 "평수별에도 모든 시공을 세분화 토글스위치로 넣어줘"]
+// 전엔 "샷시 포함"·"싱크대 포함" 둘뿐이었다 — 현장에서 "몰딩은 안 합니다",
+// "중문은 뺍니다" 같은 요청이 품목마다 다 나와서, 부분 상세 견적(estimator_app
+// DEFAULT_ITEMS)에 있는 품목 전부를 평수별 범위 견적에도 켜고 끌 수 있는
+// 스위치로 추가한다. "핵심" 그룹(문·샷시/몰딩/걸레받이)은 기본 켜짐 상태가
+// 기존 "전체 시공" 기준값(100%)이라 꺼지면 그만큼 깎고(offMult), 나머지
+// "추가" 품목은 기본 꺼짐 상태에서 켜면 그만큼 더한다(onMult) — 집집마다
+// 있는지 없는지 다른, 평수에 비례하지 않는 품목이라 하나(또는 표준 세트) 기준
+// 가격을 비율로 환산해 얹었다(estimator_app 기본 단가 ÷ 24평 기준 범위 중간값).
+// 실측 전 참고용 범위이므로 정확한 금액이 필요하면 부분 상세 견적을 쓴다.
+interface QuickToggleDef {
+  key: string;
+  label: string;
+  desc: string;
+  group: "핵심 시공" | "필름 추가 시공" | "전기·조명·설비";
+  defaultOn: boolean;
+  onMult: number;
+  offMult: number;
+}
+const QUICK_TOGGLES: QuickToggleDef[] = [
+  { key: "sash", label: "문 · 샷시 포함", desc: "문짝·샷시(창틀) 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.85 },
+  { key: "molding", label: "몰딩 포함", desc: "천장·벽 몰딩 라인 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
+  { key: "baseboard", label: "걸레받이 포함", desc: "바닥과 맞닿는 걸레받이 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.96 },
+  { key: "sink", label: "싱크대 포함", desc: "ㄱ자 싱크대 필름 시공 추가", group: "필름 추가 시공", defaultOn: false, onMult: 1.15, offMult: 1 },
+  { key: "middleDoor", label: "중문", desc: "중문 리폼 시공 추가", group: "필름 추가 시공", defaultOn: false, onMult: 1.08, offMult: 1 },
+  { key: "fireDoor", label: "현관 방화문", desc: "현관 방화문 리폼 시공 추가", group: "필름 추가 시공", defaultOn: false, onMult: 1.05, offMult: 1 },
+  { key: "wardrobe", label: "붙박이장", desc: "붙박이장 리폼 시공 추가", group: "필름 추가 시공", defaultOn: false, onMult: 1.06, offMult: 1 },
+  { key: "shoeCabinet", label: "신발장", desc: "신발장 리폼 시공 추가", group: "필름 추가 시공", defaultOn: false, onMult: 1.04, offMult: 1 },
+  { key: "fridgeCabinet", label: "냉장고장", desc: "냉장고장 리폼 시공 추가", group: "필름 추가 시공", defaultOn: false, onMult: 1.06, offMult: 1 },
+  { key: "wellMolding", label: "우물몰딩", desc: "우물천장 몰딩 시공 추가(방 1개 기준)", group: "필름 추가 시공", defaultOn: false, onMult: 1.2, offMult: 1 },
+  { key: "fan", label: "실링팬", desc: "실링팬 설치 추가", group: "전기·조명·설비", defaultOn: false, onMult: 1.06, offMult: 1 },
+  { key: "downlight", label: "다운라이트", desc: "다운라이트 타공·배선 추가(5개 기준)", group: "전기·조명·설비", defaultOn: false, onMult: 1.06, offMult: 1 },
+  { key: "sinkBowl", label: "싱크볼 교체", desc: "싱크볼 교환 시공 추가", group: "전기·조명·설비", defaultOn: false, onMult: 1.08, offMult: 1 },
+  { key: "toilet", label: "변기 교체", desc: "변기 설치 시공 추가", group: "전기·조명·설비", defaultOn: false, onMult: 1.08, offMult: 1 },
+];
+const QUICK_TOGGLE_DEFAULTS: Record<string, boolean> = Object.fromEntries(
+  QUICK_TOGGLES.map((t) => [t.key, t.defaultOn])
+);
+
 function won(n: number): string {
   return `${Math.round(n).toLocaleString("ko-KR")}원`;
 }
@@ -138,14 +177,12 @@ export default function QuotePage() {
   const [priceOverrides, setPriceOverrides] = useState<Record<string, number>>({});
 
   const [pyeong, setPyeong] = useState(24);
-  const [withSash, setWithSash] = useState(true);
-  const [withSink, setWithSink] = useState(false);
-  // [왜 — 2026-11-07 "몰딩은 안 합니다, 걸레받이는 안 합니다" 같은 현장 요구사항]
-  // 전엔 "샷시 포함" 하나가 문·샷시·몰딩을 통째로 묶었다 — 몰딩만 빼거나
-  // 걸레받이만 빼는 흔한 요청을 반영할 손잡이가 없었다. 둘을 별도 스위치로
-  // 분리한다(기본은 둘 다 포함 — 예전 "전체 시공" 기준과 같다).
-  const [withMolding, setWithMolding] = useState(true);
-  const [withBaseboard, setWithBaseboard] = useState(true);
+  // 품목 토글 전부를 하나의 객체로 — 14개를 따로따로 useState로 두면 다루기
+  // 어렵다. key는 QUICK_TOGGLES의 key와 같다.
+  const [quickToggles, setQuickToggles] = useState<Record<string, boolean>>(QUICK_TOGGLE_DEFAULTS);
+  function toggleQuick(key: string) {
+    setQuickToggles((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sim, setSim] = useState<{ open: boolean; seed: number; ratio: number; meters: number | null }>({
@@ -211,15 +248,16 @@ export default function QuotePage() {
   }, [sheetOpen]);
 
   const range = useMemo(() => {
-    let mult = withSash ? 1 : 0.85;
-    if (withSink) mult *= 1.15;
-    if (!withMolding) mult *= 0.93;
-    if (!withBaseboard) mult *= 0.96;
+    let mult = 1;
+    for (const t of QUICK_TOGGLES) {
+      const on = quickToggles[t.key] ?? t.defaultOn;
+      mult *= on ? t.onMult : t.offMult;
+    }
     return {
       min: round10k(pyeong * PYEONG_BASE_MIN * mult),
       max: round10k(pyeong * PYEONG_BASE_MAX * mult),
     };
-  }, [pyeong, withSash, withSink, withMolding, withBaseboard]);
+  }, [pyeong, quickToggles]);
 
   const itemCount = Object.values(selections).reduce((a, b) => a + b, 0);
 
@@ -435,36 +473,26 @@ export default function QuotePage() {
                 </div>
               </div>
 
-              <div className="mt-5 divide-y divide-[#eef0f2] border-t border-[#eef0f2]">
-                <div className="flex min-h-[64px] items-center justify-between gap-4 py-2.5">
-                  <div>
-                    <p className="text-[16px] font-semibold">문 · 샷시 포함</p>
-                    <p className="text-[13px] text-[#5b6573]">문짝·샷시(창틀) 필름 시공 추가</p>
+              {(["핵심 시공", "필름 추가 시공", "전기·조명·설비"] as const).map((groupName) => (
+                <div key={groupName} className="mt-5">
+                  <p className="px-1 text-[12.5px] font-bold uppercase tracking-wide text-[#8b95a1]">{groupName}</p>
+                  <div className="mt-1.5 divide-y divide-[#eef0f2] border-t border-[#eef0f2]">
+                    {QUICK_TOGGLES.filter((t) => t.group === groupName).map((t) => (
+                      <div key={t.key} className="flex min-h-[64px] items-center justify-between gap-4 py-2.5">
+                        <div>
+                          <p className="text-[16px] font-semibold">{t.label}</p>
+                          <p className="text-[13px] text-[#5b6573]">{t.desc}</p>
+                        </div>
+                        <Switch
+                          checked={quickToggles[t.key] ?? t.defaultOn}
+                          onChange={() => toggleQuick(t.key)}
+                          label={t.label}
+                        />
+                      </div>
+                    ))}
                   </div>
-                  <Switch checked={withSash} onChange={setWithSash} label="문 · 샷시 포함" />
                 </div>
-                <div className="flex min-h-[64px] items-center justify-between gap-4 py-2.5">
-                  <div>
-                    <p className="text-[16px] font-semibold">몰딩 포함</p>
-                    <p className="text-[13px] text-[#5b6573]">천장·벽 몰딩 라인 필름 시공</p>
-                  </div>
-                  <Switch checked={withMolding} onChange={setWithMolding} label="몰딩 포함" />
-                </div>
-                <div className="flex min-h-[64px] items-center justify-between gap-4 py-2.5">
-                  <div>
-                    <p className="text-[16px] font-semibold">걸레받이 포함</p>
-                    <p className="text-[13px] text-[#5b6573]">바닥과 맞닿는 걸레받이 필름 시공</p>
-                  </div>
-                  <Switch checked={withBaseboard} onChange={setWithBaseboard} label="걸레받이 포함" />
-                </div>
-                <div className="flex min-h-[64px] items-center justify-between gap-4 py-2.5">
-                  <div>
-                    <p className="text-[16px] font-semibold">싱크대 포함</p>
-                    <p className="text-[13px] text-[#5b6573]">싱크대 필름 시공 추가</p>
-                  </div>
-                  <Switch checked={withSink} onChange={setWithSink} label="싱크대 포함" />
-                </div>
-              </div>
+              ))}
               {/* [왜 — 2026-11-07] "욕실문은 문틀만, 안방엔 우물몰딩만"처럼 방 하나·
                   부위 하나만 다르게 하는 요청은 평수 범위 견적(전체 평수에 걸친
                   대략적 단가)으로는 정확히 표현할 수 없다 — 그런 요청은 아래
@@ -478,10 +506,13 @@ export default function QuotePage() {
 
             <section className="rounded-[24px] bg-indigo-600 p-6 text-white">
               <h2 className="text-[15px] font-semibold text-white">
-                {pyeong}평 {withSash ? "전체" : "문·샷시 제외"}
-                {!withMolding ? " · 몰딩 제외" : ""}
-                {!withBaseboard ? " · 걸레받이 제외" : ""}
-                {withSink ? " · 싱크대 포함" : ""} 프리미엄 리폼 세트
+                {pyeong}평 맞춤 구성 프리미엄 리폼 세트
+                {(() => {
+                  const extras = QUICK_TOGGLES.filter(
+                    (t) => t.group !== "핵심 시공" && (quickToggles[t.key] ?? t.defaultOn)
+                  );
+                  return extras.length > 0 ? ` · 추가 ${extras.length}건` : "";
+                })()}
               </h2>
               <p
                 {...rangeSecret}
