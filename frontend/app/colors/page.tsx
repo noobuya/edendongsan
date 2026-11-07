@@ -464,6 +464,21 @@ function findMaterials(query: string): MaterialKnowledge[] {
   return MATERIAL_KB.filter((m) => m.keywords.some((k) => normalized.includes(k.replace(/\s/g, "").toLowerCase())));
 }
 
+/** 브랜드+품번이 같으면 하나만 남긴다 — 바닥·벽지 매칭에서 같은 품번이
+ *  중복으로 뽑히는 경우가 있어(예: 두 자재가 같은 추천 품번을 공유) 칩이
+ *  겹쳐 보이지 않게 정리한다. */
+function dedupePicks(picks: BrandPick[]): BrandPick[] {
+  const seen = new Set<string>();
+  const out: BrandPick[] = [];
+  for (const p of picks) {
+    const key = `${p.brand}-${p.code}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(p);
+  }
+  return out;
+}
+
 function groupByBrand(swatches: PatternSwatch[]): { label: string; items: PatternSwatch[] }[] {
   const groups: { label: string; items: PatternSwatch[] }[] = [];
   for (const s of swatches) {
@@ -508,6 +523,50 @@ function SwatchDetail({ swatch, onClose }: { swatch: PatternSwatch; onClose: () 
   );
 }
 
+/** 플래너 2~3단계용 — 부위 하나(문/샷시/싱크대)의 추천 이유와 선택 칩을 보여준다.
+ *  고객이 칩을 누르면 그 부위의 최종 색이 확정된다(칩 테두리로 선택 표시). */
+function PlannerPartCard({
+  label,
+  reason,
+  candidates,
+  selected,
+  onSelect,
+}: {
+  label: string;
+  reason: string;
+  candidates: BrandPick[];
+  selected: BrandPick | null;
+  onSelect: (pick: BrandPick) => void;
+}) {
+  return (
+    <div className="rounded-2xl bg-[#f8f9fa] p-4">
+      <p className="text-[13.5px] font-bold text-[#191f28]">{label}</p>
+      <p className="mt-1 text-[13px] leading-relaxed text-[#5b6573]">{reason}</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {candidates.map((p) => {
+          const isSelected = selected?.brand === p.brand && selected?.code === p.code;
+          return (
+            <button
+              key={`${p.brand}-${p.code}`}
+              type="button"
+              onClick={() => onSelect(p)}
+              className={`flex items-center gap-1.5 rounded-full border-2 px-2.5 py-1.5 transition-colors ${
+                isSelected ? "border-indigo-600 bg-indigo-50" : "border-transparent bg-white"
+              }`}
+            >
+              <span className="h-4 w-4 shrink-0 rounded-full border border-black/5" style={{ backgroundColor: p.approxHex }} />
+              <span className="whitespace-nowrap text-[11px] font-bold">
+                {p.brand} {p.code}
+              </span>
+              {isSelected && <span className="text-[11px] font-bold text-indigo-600">✓</span>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function ColorsPage() {
   const [tone, setTone] = useState<PatternSwatch["tone"] | "all">("all");
   const [opened, setOpened] = useState<PatternSwatch | null>(null);
@@ -524,6 +583,76 @@ export default function ColorsPage() {
   const [materialQuery, setMaterialQuery] = useState("");
   // null = 아직 분석 안 함, [] = 분석했지만 아는 자재가 없음.
   const [materialMatches, setMaterialMatches] = useState<MaterialKnowledge[] | null>(null);
+
+  // [왜 — 2026-11-08 "4단계 UX 흐름"] 바닥·벽지를 먼저 받고 → 부위별(문/샷시/
+  // 싱크대) 추천을 보여준 뒤 → 고객이 칩을 눌러 확정하면 → 그 조합을 CSS로
+  // 그린 배색 미리보기를 보여준다. 사진처럼 합성하는 AI 렌더링이 아니라
+  // 색상 블록으로 "느낌"만 바로 보여주는 것 — 느리고 비용 드는 이미지 생성
+  // 없이 현장에서 즉시 쓸 수 있어야 한다는 원칙([[image-backup-before-overwrite]]
+  // 와 같은 결의 "AI 이미지 생성은 비용·속도 문제" 판단을 그대로 따른다).
+  const [plannerFloor, setPlannerFloor] = useState("");
+  const [plannerWall, setPlannerWall] = useState("");
+  const [plannerBaseConfirmed, setPlannerBaseConfirmed] = useState(false);
+  const [plannerPicks, setPlannerPicks] = useState<{ door: BrandPick | null; sash: BrandPick | null; sink: BrandPick | null }>({
+    door: null,
+    sash: null,
+    sink: null,
+  });
+  const [showPlannerMockup, setShowPlannerMockup] = useState(false);
+
+  const plannerAnalysis = useMemo(() => {
+    const floorMatches = findMaterials(plannerFloor);
+    const wallMatches = findMaterials(plannerWall);
+    const sinkEntry = [...floorMatches, ...wallMatches].find((m) => m.keywords.includes("싱크대"));
+    const wallLabel = plannerWall.trim() || "벽지";
+    const floorLabel = plannerFloor.trim() || "바닥";
+
+    const doorCandidates = dedupePicks([
+      ...wallMatches.flatMap((m) => m.picks),
+      ...floorMatches.flatMap((m) => m.picks),
+      findPick("S245"),
+      findPick("S208"),
+    ]).slice(0, 4);
+    const sashCandidates = dedupePicks([
+      ...floorMatches.flatMap((m) => m.picks),
+      ...wallMatches.flatMap((m) => m.picks),
+      findPick("S245"),
+      findPick("S208"),
+    ]).slice(0, 4);
+    // 싱크대는 "상부는 밝게, 하부는 무게감"이 고정 룰이라 상부는 항상
+    // 화이트로 두고, 고객은 하부장 포인트 색만 고른다.
+    const sinkCandidates = dedupePicks(
+      sinkEntry ? sinkEntry.picks.slice(2) : [findPick("S208"), findPick("W293"), findPick("S212")]
+    ).slice(0, 4);
+
+    return {
+      floorMatches,
+      wallMatches,
+      wallLabel,
+      floorLabel,
+      door: {
+        candidates: doorCandidates,
+        reason: `방문·문틀은 ${wallLabel}와 통일감을 주는 밝기로 고르면 공간이 넓어 보이고, 또렷하게 대비를 주면 포인트가 됩니다.`,
+      },
+      sash: {
+        candidates: sashCandidates,
+        reason: `샷시·몰딩은 ${floorLabel} 바닥의 분위기를 이어가는 색으로 고르면 통일감이 생깁니다.`,
+      },
+      sink: {
+        candidates: sinkCandidates,
+        reason: sinkEntry
+          ? sinkEntry.recommendLine
+          : "싱크대는 상부장을 밝은 화이트로, 하부장을 무게감 있는 색으로 매칭하는 투톤이 실패 없는 조합입니다. 상부는 화이트로 고정하고, 아래에서 하부장 색만 골라 보세요.",
+      },
+    };
+  }, [plannerFloor, plannerWall]);
+
+  const plannerReady = plannerPicks.door && plannerPicks.sash && plannerPicks.sink;
+  // 배색 미리보기 바탕색 — 입력한 바닥·벽지가 아는 자재면 그 품번 색을, 모르면
+  // 무난한 기본 바닥/벽 색을 쓴다(사진 합성이 아니라 CSS 색 블록이라 항상 뭔가
+  // 보여줄 수 있어야 한다).
+  const plannerFloorHex = plannerAnalysis.floorMatches[0]?.picks[0]?.approxHex ?? "#D8C9AE";
+  const plannerWallHex = plannerAnalysis.wallMatches[0]?.picks[0]?.approxHex ?? "#F2F1ED";
 
   function handleSearch() {
     const guessed = guessTone(query.trim());
@@ -635,6 +764,141 @@ export default function ColorsPage() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+        </section>
+
+        <section className="mt-5 rounded-[24px] bg-white p-5 shadow-[0_1px_2px_rgba(25,31,40,0.04)]">
+          <h2 className="text-[16px] font-bold">AI 시공 색상 플래너</h2>
+          <p className="mt-1 text-[13px] text-[#5b6573]">
+            바닥·벽지를 먼저 적고, 부위별 추천 색을 눌러 고르면 전체 배색을 한눈에 볼 수 있습니다.
+          </p>
+
+          {/* 1단계: 기본 바탕 */}
+          <div className="mt-3 space-y-2">
+            <input
+              type="text"
+              value={plannerFloor}
+              onChange={(e) => {
+                setPlannerFloor(e.target.value);
+                setPlannerBaseConfirmed(false);
+                setShowPlannerMockup(false);
+              }}
+              placeholder="바닥재 (예: 포세린 타일, 오크 마루)"
+              className="h-12 w-full rounded-2xl border border-[#e5e8eb] bg-[#f8f9fa] px-4 text-[15px] outline-none focus:border-indigo-500"
+            />
+            <input
+              type="text"
+              value={plannerWall}
+              onChange={(e) => {
+                setPlannerWall(e.target.value);
+                setPlannerBaseConfirmed(false);
+                setShowPlannerMockup(false);
+              }}
+              placeholder="벽지 (예: 디아망, 유럽 미장)"
+              className="h-12 w-full rounded-2xl border border-[#e5e8eb] bg-[#f8f9fa] px-4 text-[15px] outline-none focus:border-indigo-500"
+            />
+            {!plannerBaseConfirmed && (
+              <button
+                type="button"
+                onClick={() => setPlannerBaseConfirmed(true)}
+                disabled={!plannerFloor.trim() || !plannerWall.trim()}
+                className="h-12 w-full rounded-2xl bg-indigo-600 text-[15px] font-bold text-white disabled:bg-[#d1d6db]"
+              >
+                부위별 추천 보기
+              </button>
+            )}
+          </div>
+
+          {/* 2~3단계: 부위별 설명 + 선택 칩 */}
+          {plannerBaseConfirmed && (
+            <div className="mt-4 space-y-3">
+              <PlannerPartCard
+                label="방문·문틀"
+                reason={plannerAnalysis.door.reason}
+                candidates={plannerAnalysis.door.candidates}
+                selected={plannerPicks.door}
+                onSelect={(p) => {
+                  setPlannerPicks((prev) => ({ ...prev, door: p }));
+                  setShowPlannerMockup(false);
+                }}
+              />
+              <PlannerPartCard
+                label="샷시·몰딩"
+                reason={plannerAnalysis.sash.reason}
+                candidates={plannerAnalysis.sash.candidates}
+                selected={plannerPicks.sash}
+                onSelect={(p) => {
+                  setPlannerPicks((prev) => ({ ...prev, sash: p }));
+                  setShowPlannerMockup(false);
+                }}
+              />
+              <PlannerPartCard
+                label="싱크대 하부장 (상부장은 화이트로 고정)"
+                reason={plannerAnalysis.sink.reason}
+                candidates={plannerAnalysis.sink.candidates}
+                selected={plannerPicks.sink}
+                onSelect={(p) => {
+                  setPlannerPicks((prev) => ({ ...prev, sink: p }));
+                  setShowPlannerMockup(false);
+                }}
+              />
+
+              {/* 4단계: 배색 미리보기 */}
+              <button
+                type="button"
+                onClick={() => setShowPlannerMockup(true)}
+                disabled={!plannerReady}
+                className="h-12 w-full rounded-2xl bg-indigo-600 text-[15px] font-bold text-white disabled:bg-[#d1d6db]"
+              >
+                {plannerReady ? "AI 가상 시공 결과 보기" : "3곳 모두 색을 골라주세요"}
+              </button>
+
+              {showPlannerMockup && plannerPicks.door && plannerPicks.sash && plannerPicks.sink && (
+                <div className="rounded-2xl bg-[#f8f9fa] p-4">
+                  <p className="text-[12.5px] font-bold text-indigo-600">배색 미리보기 (사진 합성이 아닌 색상 구성입니다)</p>
+                  <div
+                    className="relative mt-3 aspect-[4/3] w-full overflow-hidden rounded-xl"
+                    style={{ backgroundColor: plannerWallHex }}
+                  >
+                    {/* 바닥 */}
+                    <div className="absolute inset-x-0 bottom-0 h-[24%]" style={{ backgroundColor: plannerFloorHex }} />
+                    {/* 방문 */}
+                    <div
+                      className="absolute bottom-[24%] left-[8%] h-[52%] w-[16%] rounded-t-sm shadow-sm"
+                      style={{ backgroundColor: plannerPicks.door.approxHex }}
+                    />
+                    {/* 샷시(창) */}
+                    <div
+                      className="absolute right-[10%] top-[14%] h-[30%] w-[30%] rounded-sm shadow-sm"
+                      style={{ backgroundColor: plannerPicks.sash.approxHex }}
+                    >
+                      <div className="grid h-full w-full grid-cols-2 grid-rows-2">
+                        <div className="border border-white/50" />
+                        <div className="border border-white/50" />
+                        <div className="border border-white/50" />
+                        <div className="border border-white/50" />
+                      </div>
+                    </div>
+                    {/* 싱크대 상/하부장 */}
+                    <div className="absolute bottom-[24%] right-[8%] w-[22%] shadow-sm">
+                      <div className="h-[7%] w-full" style={{ backgroundColor: "#FAFAF8" }} />
+                      <div className="h-[13%] w-full" style={{ backgroundColor: plannerPicks.sink.approxHex }} />
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-[#4e5968]">
+                      방문 {plannerPicks.door.brand} {plannerPicks.door.code}
+                    </span>
+                    <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-[#4e5968]">
+                      샷시 {plannerPicks.sash.brand} {plannerPicks.sash.code}
+                    </span>
+                    <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-[#4e5968]">
+                      싱크대 하부 {plannerPicks.sink.brand} {plannerPicks.sink.code}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </section>
