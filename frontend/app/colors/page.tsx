@@ -120,6 +120,7 @@ const RECOMMEND_DB: Record<string, BrandPick[]> = {
   ],
   cozy: [
     { brand: "현대보닥", code: "S115", name: "크림 화이트", approxHex: "#F2E8D5" },
+    { brand: "현대보닥", code: "S212", name: "웜 베이지", approxHex: "#D9C2A0" },
     { brand: "LX Z:IN", code: "ES86", name: "크림 화이트", approxHex: "#F1E7D3" },
     { brand: "KCC", code: "PTW04", name: "웜 화이트", approxHex: "#F3E9D8" },
     { brand: "영림", code: "PS130", name: "크림 화이트", approxHex: "#F1E7D3" },
@@ -156,6 +157,17 @@ function brandPickSentence(picks: BrandPick[]): string {
   return `${parts.slice(0, -1).join(", ")}와 ${parts[parts.length - 1]}를 추천합니다.`;
 }
 
+/** RECOMMEND_DB 전체에서 품번 하나를 찾는다 — 자재별 추천이 분위기 묶음을
+ *  넘나들며(예: 그란데 바닥은 cozy의 웜베이지와 minimal의 퓨어화이트를 같이
+ *  쓴다) 같은 색 데이터를 또 베끼지 않게 한다. */
+function findPick(code: string): BrandPick {
+  for (const list of Object.values(RECOMMEND_DB)) {
+    const found = list.find((p) => p.code === code);
+    if (found) return found;
+  }
+  throw new Error(`알 수 없는 품번: ${code}`);
+}
+
 // [왜 — 2026-11-08 "고객이 '벽지는 디아망으로 할 거예요'라고 말하면 자재
 // 특성부터 분석해서 필름을 추천해줘"] 요청한 3단계(① 자재 특성 ② 왜 이
 // 필름인지 논리 ③ 품번)는 그대로 쓰지만, 1단계를 "오늘의집 데이터"로
@@ -169,7 +181,8 @@ interface MaterialKnowledge {
   kind: "벽지" | "바닥";
   trait: string; // 1단계: 자재 특성
   logic: string; // 2단계: 그래서 이런 필름이어야 하는 이유
-  moodKey: string; // 3단계에서 RECOMMEND_DB를 찾을 분위기 키
+  picks: BrandPick[]; // 3단계에서 보여줄 품번(칩)
+  recommendLine: string; // 3단계 한 줄 — 자재마다 추천 방식이 달라(단일/양자택일/교차브랜드) 직접 쓴다.
 }
 const MATERIAL_KB: MaterialKnowledge[] = [
   {
@@ -179,7 +192,8 @@ const MATERIAL_KB: MaterialKnowledge[] = [
       "디아망은 LX Z:IN의 대표 실크 벽지로, 깊은 음영의 엠보싱 질감과 차분한 무광 톤이 특징입니다. 과한 반사 없이 은은한 음영을 내는 자재라, 질감 벽지를 찾는 시공 현장에서 꾸준히 사랑받는 선택입니다.",
     logic:
       "질감이 깊고 음영이 있는 벽지에 광택이나 나뭇결이 두드러지는 필름을 더하면 서로 부딪혀 촌스러워 보입니다. 빛 반사가 적은 완전 무광 솔리드 필름을 매칭하는 쪽이 실패 없는 조합으로 꼽힙니다.",
-    moodKey: "modern",
+    picks: RECOMMEND_DB.modern,
+    recommendLine: brandPickSentence(RECOMMEND_DB.modern),
   },
   {
     keywords: ["블랙마루", "블랙 마루", "흑단마루", "블랙 계열", "블랙계열"],
@@ -187,21 +201,75 @@ const MATERIAL_KB: MaterialKnowledge[] = [
     trait: "짙은 블랙 계열 마루는 공간에 무게감과 고급스러움을 주는 자재로, 호텔식·모던 인테리어를 원하는 분들이 자주 선택합니다.",
     logic:
       "바닥이 이미 어둡고 무게감 있으므로, 문·몰딩까지 같이 짙게 가면 공간이 답답해 보일 위험이 있습니다. 중간 톤의 무채색 필름으로 균형을 잡아주는 쪽이 실패 없는 정석으로 꼽힙니다.",
-    moodKey: "modern",
+    picks: RECOMMEND_DB.modern,
+    recommendLine: brandPickSentence(RECOMMEND_DB.modern),
   },
   {
     keywords: ["화이트마루", "화이트 마루", "오크마루", "오크 마루"],
     kind: "바닥",
     trait: "화이트·오크 계열의 밝은 마루는 공간을 넓고 화사하게 보이게 하며, 어떤 벽지·필름과도 무난하게 어울리는 베이스입니다.",
     logic: "밝은 바닥에는 같은 계열의 밝은 우드나 화이트 계열 필름을 매칭해야 톤이 끊기지 않고 공간이 넓어 보입니다.",
-    moodKey: "whitewood",
+    picks: RECOMMEND_DB.whitewood,
+    recommendLine: brandPickSentence(RECOMMEND_DB.whitewood),
   },
   {
     keywords: ["콘크리트", "노출콘크리트", "노출 콘크리트"],
     kind: "벽지",
     trait: "노출 콘크리트 질감은 차갑고 거친 느낌을 주는 자재로, 인더스트리얼·시크한 분위기를 낼 때 주로 선택합니다.",
     logic: "거친 질감의 벽에는 매끈한 광택 필름보다 같은 계열의 무채색 매트 필름이 톤을 해치지 않고 시크한 분위기를 완성합니다.",
-    moodKey: "modern",
+    picks: RECOMMEND_DB.modern,
+    recommendLine: brandPickSentence(RECOMMEND_DB.modern),
+  },
+  // [왜 — 2026-11-08 사장님이 추가로 제공한 현장 자재 5종] 동화자연마루·
+  // 포세린 타일·엑스컴포트 장판·일반 실크벽지·템바보드 — 전부 실제로 흔히
+  // 쓰이는 건축자재명이다. 특성 설명·매칭 논리·품번은 사장님이 현장 기준으로
+  // 직접 준 것을 그대로 쓴다(findPick으로 위 RECOMMEND_DB의 같은 품번을
+  // 재사용해 색 미리보기까지 일치시킴).
+  {
+    keywords: ["나투스진", "그란데", "사하라 라이트", "동화자연마루"],
+    kind: "바닥",
+    trait:
+      "동화자연마루 나투스진 그란데(사하라 라이트 등 광폭 스톤 마루)는 나무 소재지만 겉모습은 대리석·스톤 타일처럼 넓고 리얼한 질감입니다. 타일의 고급스러움과 마루의 따뜻한 보행감을 동시에 갖춰 최근 바닥재로 많이 선택됩니다.",
+    logic:
+      "바닥이 타일 느낌의 스톤 질감이므로, 문·샷시에 붉은 기가 도는 우드 필름을 쓰면 바닥과 톤이 어긋나 언밸런스해 보입니다. 바닥 톤에 맞춘 뉴트럴한 색으로 모던함을 살리는 쪽이 실패 없는 정석입니다.",
+    picks: [findPick("S212"), findPick("S245")],
+    recommendLine: "뉴트럴한 웜 베이지(현대보닥 S212) 또는 완전 무광 퓨어 화이트(현대보닥 S245)로 모던함을 극대화하는 것이 정석입니다.",
+  },
+  {
+    keywords: ["포세린", "포세린타일", "포세린 타일"],
+    kind: "바닥",
+    trait:
+      "포세린 타일(600각 무광 그레이·베이지 타일)은 하이엔드 갤러리나 고급 호텔 라운지에서 쓰는 프리미엄 바닥재입니다. 빛 반사가 없는 매트하고 차분한 표면이 공간을 넓고 차분하게 만들어 줍니다.",
+    logic: "바닥의 매트한 질감과 통일감을 주려면 필름도 빛 반사가 거의 없는 완전 무광 솔리드를 매칭해야 공간의 럭셔리함이 유지됩니다.",
+    picks: [findPick("S245"), findPick("S208")],
+    recommendLine: "완전 무광 퓨어 화이트(현대보닥 S245) 또는 다크 그레이(현대보닥 S208)를 추천합니다.",
+  },
+  {
+    keywords: ["엑스컴포트", "엑스 컴포트"],
+    kind: "바닥",
+    trait:
+      "LX 하우시스 엑스컴포트는 층간소음 방지를 위해 시공하는 5.0mm 두께의 프리미엄 장판입니다. 푹신한 보행감에 타일 같은 무늬를 리얼하게 구현해, 아이·반려동물이 있는 집에서 자주 선택합니다.",
+    logic: "부드럽고 포근한 공간을 원하는 의도가 큰 자재라, 쨍한 순백색보다 우유빛이 도는 색으로 눈이 편안한 웜 내추럴 공간을 완성하는 쪽이 어울립니다.",
+    picks: [findPick("S115")],
+    recommendLine: "우유빛이 도는 크림 화이트(현대보닥 S115)를 추천합니다.",
+  },
+  {
+    keywords: ["실크벽지", "실크 벽지", "개나리", "신한 화이트", "신한화이트"],
+    kind: "벽지",
+    trait:
+      "일반 실크 벽지(개나리·신한 화이트/크림 벽지 등)는 디아망처럼 질감이 깊지는 않지만 평활도가 높고 깔끔해, 어떤 가구와도 잘 어울리는 가장 대중적인 베이스 벽지입니다.",
+    logic: "벽지가 튀지 않고 배경 역할을 하므로 필름으로 포인트를 주기 좋습니다. 밝은 오크로 화이트우드 감성을 내거나, 벽지와 같은 톤으로 미니멀하게 감추는 두 방향 모두 잘 맞습니다.",
+    picks: [findPick("W861"), findPick("S115")],
+    recommendLine: "밝은 오크 우드(현대보닥 W861)로 화이트우드 감성을 내거나, 크림 화이트(현대보닥 S115)로 미니멀하게 감추는 두 방향 모두 좋습니다.",
+  },
+  {
+    keywords: ["템바보드"],
+    kind: "벽지",
+    trait:
+      "템바보드는 반달·직각 모양의 나무가 입체적으로 반복되는 포인트 패널로, 공간에 세련된 볼륨감과 리듬감을 줍니다.",
+    logic: "벽면 자체가 이미 입체적이고 시선을 끄는 포인트이므로, 주변 문짝·몰딩은 최대한 눈에 안 띄게 정리해야 템바보드가 완전히 돋보입니다.",
+    picks: [findPick("S245")],
+    recommendLine: "무광 퓨어 화이트(현대보닥 S245)로 주변을 정리해 템바보드 포인트를 살리는 것을 추천합니다.",
   },
 ];
 
@@ -411,31 +479,24 @@ export default function ColorsPage() {
 
           {materialMatches && materialMatches.length > 0 && (
             <div className="mt-3 space-y-3">
-              {materialMatches.map((m) => {
-                const picks = RECOMMEND_DB[m.moodKey] ?? [];
-                return (
-                  <div key={m.keywords[0]} className="rounded-2xl bg-[#f8f9fa] p-4">
-                    <p className="text-[12.5px] font-bold text-indigo-600">
-                      {m.kind} 특성
-                    </p>
-                    <p className="mt-1 text-[13.5px] leading-relaxed text-[#191f28]">{m.trait}</p>
-                    <p className="mt-3 text-[12.5px] font-bold text-indigo-600">왜 이 필름인지</p>
-                    <p className="mt-1 text-[13.5px] leading-relaxed text-[#191f28]">{m.logic}</p>
-                    <p className="mt-3 text-[12.5px] font-bold text-indigo-600">추천 품번</p>
-                    <p className="mt-1 text-[13.5px] font-semibold leading-relaxed text-[#191f28]">
-                      {brandPickSentence(picks)}
-                    </p>
-                    <div className="mt-2 flex gap-2">
-                      {picks.slice(0, 4).map((p) => (
-                        <div key={`${p.brand}-${p.code}`} className="flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1.5">
-                          <span className="h-4 w-4 shrink-0 rounded-full border border-black/5" style={{ backgroundColor: p.approxHex }} />
-                          <span className="whitespace-nowrap text-[11px] font-bold">{p.brand} {p.code}</span>
-                        </div>
-                      ))}
-                    </div>
+              {materialMatches.map((m) => (
+                <div key={m.keywords[0]} className="rounded-2xl bg-[#f8f9fa] p-4">
+                  <p className="text-[12.5px] font-bold text-indigo-600">{m.kind} 특성</p>
+                  <p className="mt-1 text-[13.5px] leading-relaxed text-[#191f28]">{m.trait}</p>
+                  <p className="mt-3 text-[12.5px] font-bold text-indigo-600">왜 이 필름인지</p>
+                  <p className="mt-1 text-[13.5px] leading-relaxed text-[#191f28]">{m.logic}</p>
+                  <p className="mt-3 text-[12.5px] font-bold text-indigo-600">추천 품번</p>
+                  <p className="mt-1 text-[13.5px] font-semibold leading-relaxed text-[#191f28]">{m.recommendLine}</p>
+                  <div className="mt-2 flex gap-2">
+                    {m.picks.slice(0, 4).map((p) => (
+                      <div key={`${p.brand}-${p.code}`} className="flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1.5">
+                        <span className="h-4 w-4 shrink-0 rounded-full border border-black/5" style={{ backgroundColor: p.approxHex }} />
+                        <span className="whitespace-nowrap text-[11px] font-bold">{p.brand} {p.code}</span>
+                      </div>
+                    ))}
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
           )}
         </section>
