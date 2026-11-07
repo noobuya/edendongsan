@@ -53,69 +53,107 @@ function guessTone(query: string): PatternSwatch["tone"] | null {
 // 확신 있는 전문가 톤으로 말한다(사장님 요청, 2026-11-08) — "순위" 같은
 // 특정 수치만 피하고 "선호도·정석 조합" 표현은 자신 있게 쓴다. 품번은
 // 검증된 보닥 카탈로그로만 추천한다. 밝기(luminance)로 "화이트우드"는
-// 밝은 우드, "클래식"은 짙은 우드를 가려 고른다.
-function luminance(hex: string): number {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return 0.299 * r + 0.587 * g + 0.114 * b;
-}
-
+// 밝은 우드, "클래식"은 짙은 우드를 가려 고른다 — 아래 RECOMMEND_DB가
+// 이미 분위기별로 정확한 품번을 담고 있어 이제 밝기순 정렬은 필요 없다.
 interface MoodPreset {
   key: string;
   label: string;
-  tone: PatternSwatch["tone"];
-  wood: "light" | "dark" | null;
   reason: (floor: string, wallpaper: string) => string;
 }
 const MOOD_PRESETS: MoodPreset[] = [
   {
     key: "whitewood",
     label: "화이트우드",
-    tone: "wood",
-    wood: "light",
     reason: (floor, wallpaper) =>
       `화이트우드는 요즘 인테리어 현장에서 가장 선호도가 높은 정석 조합입니다. ${floor || "밝은"} 바닥과 ${wallpaper || "화이트 톤"} 벽지에 밝은 우드를 매칭하면 공간이 넓고 화사해 보이면서도 나무 질감으로 포인트가 살아납니다.`,
   },
   {
     key: "modern",
     label: "모던",
-    tone: "cool",
-    wood: null,
     reason: (floor, wallpaper) =>
       `쿨톤 그레이·네이비는 모던한 분위기를 낼 때 가장 강력하게 추천하는 매칭입니다. ${floor || "무난한"} 바닥, ${wallpaper || "그레이 계열"} 벽지와 맞물려 또렷하고 정돈된 공간을 완성합니다.`,
   },
   {
     key: "minimal",
     label: "미니멀",
-    tone: "neutral",
-    wood: null,
     reason: (floor, wallpaper) =>
       `뉴트럴 화이트·그레이는 미니멀 인테리어에서 가장 안전하고 세련된 선택입니다. ${floor || "밝은"} 바닥, ${wallpaper || "화이트"} 벽지와 시선을 분산시키지 않고 깔끔하게 어우러집니다.`,
   },
   {
     key: "cozy",
     label: "웜 내추럴",
-    tone: "warm",
-    wood: null,
     reason: (floor, wallpaper) =>
       `베이지·에크루 계열은 아늑한 공간을 원할 때 가장 먼저 권하는 정석 조합입니다. ${floor || "베이지"} 바닥, ${wallpaper || "웜톤"} 벽지와 톤을 맞춰 편안한 느낌을 완성합니다.`,
   },
   {
     key: "classic",
     label: "클래식",
-    tone: "wood",
-    wood: "dark",
     reason: (floor, wallpaper) =>
       `짙은 월넛·에스프레소 톤은 하이엔드 인테리어에서 가장 강력하게 추천하는 매칭입니다. ${floor || "짙은"} 바닥, ${wallpaper || "무게감 있는"} 벽지와 어우러져 고급스럽고 중후한 느낌을 완성합니다.`,
   },
 ];
 
-function pickByMood(preset: MoodPreset): PatternSwatch[] {
-  let pool = ALL_PATTERN_SWATCHES.filter((s) => s.tone === preset.tone && s.brand);
-  if (preset.wood === "light") pool = [...pool].sort((a, b) => luminance(b.colorHex) - luminance(a.colorHex));
-  else if (preset.wood === "dark") pool = [...pool].sort((a, b) => luminance(a.colorHex) - luminance(b.colorHex));
-  return pool.slice(0, 3);
+interface BrandPick {
+  brand: string;
+  code: string;
+  name: string;
+  /** 공식 hex를 공개하지 않는 브랜드라 설명(색상명)을 보고 잡은 근사치 —
+   *  카탈로그의 기존 보닥 색상들과 같은 원칙(화면 미리보기용일 뿐, 발주는
+   *  브랜드·코드로 한다). */
+  approxHex: string;
+}
+/** [왜 — 2026-11-08 사장님이 직접 제공한 현장 품번 DB] 브랜드 4곳(현대보닥·
+ *  LX Z:IN·KCC·영림)의 베스트셀러 품번을 사장님이 현장 기준으로 알려준 그대로
+ *  쓴다 — 더 이상 추측하지 않는다. MOOD_PRESETS의 5개 분위기와 정확히
+ *  1:1로 맞물린다(화이트우드=밝은우드, 모던=무채색포인트, 미니멀=퓨어화이트,
+ *  웜내추럴=웜화이트/크림, 클래식=짙은우드). [주의] 위 ALL_PATTERN_SWATCHES의
+ *  기존 보닥 코드(예: 퓨어화이트=BLC05)와 아래 보닥 코드(퓨어화이트=S245)가
+ *  서로 다르다 — 사장님 확인 대기 중. 두 데이터는 서로 다른 화면(스와치
+ *  그리드 vs 이 맞춤 추천)에만 쓰여 지금은 충돌이 겉으로 드러나지 않지만,
+ *  사장님이 어느 쪽이 맞는지 알려주시면 하나로 합친다. */
+const RECOMMEND_DB: Record<string, BrandPick[]> = {
+  minimal: [
+    { brand: "현대보닥", code: "S245", name: "순백색 완전 무광", approxHex: "#FAFAF8" },
+    { brand: "LX Z:IN", code: "ES130", name: "솔리드 무광 화이트", approxHex: "#F8F8F6" },
+    { brand: "KCC", code: "PTW01", name: "무광 퓨어 화이트", approxHex: "#F7F7F5" },
+    { brand: "영림", code: "PS071", name: "무광 퓨어 화이트", approxHex: "#F7F7F5" },
+  ],
+  cozy: [
+    { brand: "현대보닥", code: "S115", name: "크림 화이트", approxHex: "#F2E8D5" },
+    { brand: "LX Z:IN", code: "ES86", name: "크림 화이트", approxHex: "#F1E7D3" },
+    { brand: "KCC", code: "PTW04", name: "웜 화이트", approxHex: "#F3E9D8" },
+    { brand: "영림", code: "PS130", name: "크림 화이트", approxHex: "#F1E7D3" },
+  ],
+  whitewood: [
+    { brand: "현대보닥", code: "W861", name: "잔잔한 내추럴 오크", approxHex: "#C9A878" },
+    { brand: "LX Z:IN", code: "NW071", name: "내추럴 오크", approxHex: "#CBAA7A" },
+    { brand: "KCC", code: "NW115", name: "내추럴 오크", approxHex: "#C8A877" },
+    { brand: "영림", code: "PX449", name: "내추럴 오크", approxHex: "#CAA979" },
+  ],
+  classic: [
+    { brand: "현대보닥", code: "W293", name: "다크 월넛", approxHex: "#4A3327" },
+    { brand: "LX Z:IN", code: "NW043", name: "다크 월넛", approxHex: "#48311F" },
+    { brand: "KCC", code: "NW062", name: "다크 우드", approxHex: "#432C1F" },
+    { brand: "영림", code: "PX434", name: "월넛", approxHex: "#4A3325" },
+  ],
+  modern: [
+    { brand: "현대보닥", code: "S208", name: "다크 그레이", approxHex: "#4B4F54" },
+    { brand: "현대보닥", code: "NS804", name: "콘크리트 스톤", approxHex: "#8C8B86" },
+    { brand: "LX Z:IN", code: "RS130", name: "다크 그레이", approxHex: "#4D5156" },
+    { brand: "KCC", code: "PTS21", name: "다크 그레이", approxHex: "#4A4E53" },
+    { brand: "영림", code: "PS044", name: "진그레이", approxHex: "#49494A" },
+  ],
+};
+
+/** "현대보닥 S115와 KCC PTW04를 추천합니다" 형식의 한 줄 — 브랜드가 겹치면
+ *  (예: "무채색 포인트"의 현대보닥 2종) 문장이 어색해지니, 브랜드당 하나만
+ *  골라 최대 3곳까지 말해준다(세부 품번은 아래 카드 전부에서 볼 수 있다). */
+function brandPickSentence(picks: BrandPick[]): string {
+  const seen = new Set<string>();
+  const unique = picks.filter((p) => (seen.has(p.brand) ? false : (seen.add(p.brand), true))).slice(0, 3);
+  const parts = unique.map((p) => `${p.brand} ${p.code}`);
+  if (parts.length === 1) return `${parts[0]}를 추천합니다.`;
+  return `${parts.slice(0, -1).join(", ")}와 ${parts[parts.length - 1]}를 추천합니다.`;
 }
 
 function groupByBrand(swatches: PatternSwatch[]): { label: string; items: PatternSwatch[] }[] {
@@ -253,21 +291,24 @@ export default function ColorsPage() {
 
           {mood && (
             <div className="mt-4 rounded-2xl bg-indigo-600 px-4 py-4 text-white">
-              <p className="text-[13.5px] leading-relaxed">{mood.reason(floorColor.trim(), wallpaper.trim())}</p>
-              <div className="mt-3 flex gap-3">
-                {pickByMood(mood).map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => setOpened(s)}
-                    className="flex-1 overflow-hidden rounded-xl bg-white text-left text-[#191f28] active:scale-95"
-                  >
-                    <div className="h-12 w-full" style={{ backgroundColor: s.colorHex }} />
-                    <div className="px-2 py-1.5">
-                      <p className="truncate text-[12px] font-bold leading-tight">{s.name}</p>
-                      <p className="text-[11px] text-[#8b95a1]">{s.brand} · {s.code}</p>
+              <p className="text-[13.5px] leading-relaxed">
+                {mood.reason(floorColor.trim(), wallpaper.trim())}{" "}
+                {brandPickSentence(RECOMMEND_DB[mood.key] ?? [])}
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-2.5">
+                {(RECOMMEND_DB[mood.key] ?? []).map((p) => (
+                  <div key={`${p.brand}-${p.code}`} className="flex items-center gap-2 rounded-xl bg-white px-2.5 py-2 text-[#191f28]">
+                    <span
+                      className="h-8 w-8 shrink-0 rounded-full border border-black/5"
+                      style={{ backgroundColor: p.approxHex }}
+                    />
+                    <div className="min-w-0">
+                      <p className="truncate text-[12px] font-bold leading-tight">
+                        {p.brand} {p.code}
+                      </p>
+                      <p className="truncate text-[11px] text-[#8b95a1]">{p.name}</p>
                     </div>
-                  </button>
+                  </div>
                 ))}
               </div>
             </div>
