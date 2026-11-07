@@ -111,5 +111,8 @@ def generate_hero_image(out_path: str) -> str:
     draw.text((margin, name_y), name, font=name_font, fill=(255, 255, 255), stroke_width=4, stroke_fill=(0, 0, 0))
     draw.text((margin, phone_y), phone, font=phone_font, fill=(255, 224, 102), stroke_width=3, stroke_fill=(0, 0, 0))
 
-    base.save(out_path, "PNG", optimize=True)
+    # [왜 — 2026-11-08 "화면이 늦게 뜬다"] 투명도가 필요 없는 꽉 채우는 배경
+    # 사진인데 PNG(무손실)로 저장해 2MB대였다 — JPEG로 같은 화질에서 훨씬
+    # 작게(보통 수백 KB) 줄여 로딩을 빠르게 한다.
+    base.save(out_path, "JPEG", quality=85, optimize=True)
     return out_path

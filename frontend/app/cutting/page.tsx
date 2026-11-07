@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useSwipeNavigate } from "@/lib/useSwipeNavigate";
 import {
   AlertTriangle,
   Archive,
@@ -703,6 +704,7 @@ export default function CuttingCalculatorPage() {
   // 쪽 useEffect(마운트 후에만 실행되므로 서버 HTML과 비교되지 않는다)가 끝난 뒤에야
   // 실제 데이터가 들어간 화면으로 바꾼다.
   const [mounted, setMounted] = useState(false);
+  const swipe = useSwipeNavigate("/cutting");
   useEffect(() => setMounted(true), []);
   // 프리셋을 누른 순간 카테고리가 바뀌면, 카테고리 변경 effect가 폼을 초기화하는 것보다
   // 프리셋 값을 나중에 채워야 한다. setState는 비동기라 같은 틱에 둘 다 부르면 순서를
@@ -1295,7 +1297,12 @@ export default function CuttingCalculatorPage() {
   }
 
   return (
-    <main className="min-h-screen min-h-[100dvh] bg-[#0b0d12] text-[#f2f4f6]">
+    <main
+      className="min-h-screen min-h-[100dvh] bg-[#0b0d12] text-[#f2f4f6]"
+      onPointerDown={swipe.onPointerDown}
+      onPointerUp={swipe.onPointerUp}
+      onPointerCancel={swipe.onPointerCancel}
+    >
       <div className="mx-auto max-w-[480px] px-4 pb-16 pt-4">
         <header className="mb-5">
           <Link

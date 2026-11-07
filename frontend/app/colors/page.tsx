@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Search, X } from "lucide-react";
 import { ALL_PATTERN_SWATCHES, TONE_LABELS } from "@/lib/patternSwatches";
+import { useSwipeNavigate } from "@/lib/useSwipeNavigate";
 import type { PatternSwatch } from "@/types";
 
 /** 현장에서 고객이 "따뜻한 느낌 필름지 뭐 있어요?"처럼 색상을 물을 때, 그 자리에서
@@ -448,8 +449,15 @@ export default function ColorsPage() {
     return ALL_PATTERN_SWATCHES.filter((s) => s.tone === answer && s.brand).slice(0, 3);
   }, [answer]);
 
+  const swipe = useSwipeNavigate("/colors", !opened);
+
   return (
-    <main className="min-h-screen min-h-[100dvh] bg-[#f2f4f6] text-[#191f28]">
+    <main
+      className="min-h-screen min-h-[100dvh] bg-[#f2f4f6] text-[#191f28]"
+      onPointerDown={swipe.onPointerDown}
+      onPointerUp={swipe.onPointerUp}
+      onPointerCancel={swipe.onPointerCancel}
+    >
       <div className="mx-auto max-w-[480px] px-4 pb-16 pt-4">
         <header className="mb-5">
           <Link

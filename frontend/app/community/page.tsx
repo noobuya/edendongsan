@@ -8,6 +8,7 @@ import BusinessBanner from "@/components/BusinessBanner";
 import { listSharedEstimates } from "@/lib/api";
 import type { SharedEstimate } from "@/types";
 import { useAndroidBack } from "@/lib/useAndroidBack";
+import { useSwipeNavigate } from "@/lib/useSwipeNavigate";
 
 function formatDate(sec: number): string {
   return new Date(sec * 1000).toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" });
@@ -54,8 +55,15 @@ export default function CommunityPage() {
 
   const visibleEstimates = activeTag ? estimates?.filter((e) => e.item_names.includes(activeTag)) : estimates;
 
+  const swipe = useSwipeNavigate("/community");
+
   return (
-    <main className="mx-auto min-h-dvh max-w-4xl px-4 py-10 xs:px-6">
+    <main
+      className="mx-auto min-h-dvh max-w-4xl px-4 py-10 xs:px-6"
+      onPointerDown={swipe.onPointerDown}
+      onPointerUp={swipe.onPointerUp}
+      onPointerCancel={swipe.onPointerCancel}
+    >
       <div className="mb-6">
         <BusinessBanner />
       </div>

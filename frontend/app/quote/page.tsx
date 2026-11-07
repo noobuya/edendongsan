@@ -7,6 +7,7 @@ import BrandHero from "@/components/BrandHero";
 import CrewSimulator from "@/components/CrewSimulator";
 import { PremiumReceiptView, useSecretTrigger, type ReceiptRow } from "@/components/PremiumReceipt";
 import PricingSheet from "@/components/PricingSheet";
+import { useSwipeNavigate } from "@/lib/useSwipeNavigate";
 import QuoteIcon, { toneOfGroup } from "@/components/quote/QuoteIcon";
 import {
   calculateEstimator,
@@ -371,9 +372,15 @@ export default function QuotePage() {
   }
 
   const fill = ((pyeong - PYEONG_MIN) / (PYEONG_MAX - PYEONG_MIN)) * 100;
+  const swipe = useSwipeNavigate("/quote", !sheetOpen && !pricingOpen);
 
   return (
-    <main className="fin-scope min-h-screen min-h-[100dvh] bg-[#f2f4f6] text-[#191f28]">
+    <main
+      className="fin-scope min-h-screen min-h-[100dvh] bg-[#f2f4f6] text-[#191f28]"
+      onPointerDown={swipe.onPointerDown}
+      onPointerUp={swipe.onPointerUp}
+      onPointerCancel={swipe.onPointerCancel}
+    >
       <div className="mx-auto max-w-[480px] px-4 pb-44 pt-4">
         <header className="mb-5">
           <Link

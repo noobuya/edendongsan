@@ -12,6 +12,7 @@ import { listBlogPosts } from "@/lib/api";
 import type { BlogSummary } from "@/types";
 import { readOwnerToken } from "@/lib/ownerToken";
 import { useAndroidBack } from "@/lib/useAndroidBack";
+import { useSwipeNavigate } from "@/lib/useSwipeNavigate";
 
 function formatDate(iso: string): string {
   if (!iso) return "";
@@ -44,8 +45,15 @@ export default function BlogListPage() {
     return () => clearTimeout(handle);
   }, [query]);
 
+  const swipe = useSwipeNavigate("/blog");
+
   return (
-    <main className="mx-auto min-h-dvh max-w-4xl px-4 py-10 xs:px-6">
+    <main
+      className="mx-auto min-h-dvh max-w-4xl px-4 py-10 xs:px-6"
+      onPointerDown={swipe.onPointerDown}
+      onPointerUp={swipe.onPointerUp}
+      onPointerCancel={swipe.onPointerCancel}
+    >
       <div className="mb-6">
         <BusinessBanner />
       </div>

@@ -42,6 +42,12 @@ router = APIRouter(prefix="/api/brand", tags=["brand"])
 
 KINDS = {"logo": "로고", "card": "명함", "hero": "대표 사진"}
 MAX_SIDE = 2000
+# [왜 — 2026-11-08 "화면이 늦게 뜬다, 검은 막이 천천히 걷어진다"] hero는 항상
+# 꽉 채우는 배경 사진이라 투명도가 필요 없는데, PNG(무손실)로 저장해 2MB대
+# 파일이 매번 통째로 내려가며 로딩이 느려졌다(검은 배경 위에 사진이 늦게
+# 뜨는 게 그 증상이었다). 로고·명함은 투명 배경이 있을 수 있어 PNG를 유지하고,
+# hero만 JPEG로 저장해 같은 화질에서 파일을 5~10배 줄인다.
+_EXT = {"hero": "jpg"}
 
 
 def brand_dir() -> Path:
@@ -50,8 +56,12 @@ def brand_dir() -> Path:
     return d
 
 
+def _ext(kind: str) -> str:
+    return _EXT.get(kind, "png")
+
+
 def brand_path(kind: str) -> Path | None:
-    p = brand_dir() / f"{kind}.png"
+    p = brand_dir() / f"{kind}.{_ext(kind)}"
     return p if p.exists() else None
 
 
@@ -77,12 +87,12 @@ async def generate_hero(x_admin_token: str | None = Header(default=None)):
     상호명·전화번호가 그 위에 정확하게 얹힌다(services/hero_generator.py)."""
     if not is_owner(x_admin_token):
         raise HTTPException(status_code=401, detail="사장님 기기에서만 만들 수 있어요.")
-    tmp = brand_dir() / "hero.tmp.png"
+    tmp = brand_dir() / "hero.tmp.jpg"
     try:
         await run_in_threadpool(generate_hero_image, str(tmp))
     except Exception as exc:  # noqa: BLE001 - Gemini 실패/키 미설정 등을 그대로 사용자에게
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    os.replace(tmp, brand_dir() / "hero.png")
+    os.replace(tmp, brand_dir() / "hero.jpg")
     return brand_info()
 
 
@@ -110,7 +120,8 @@ async def get_brand_image(kind: str):
     p = brand_path(kind)
     if p is None:
         raise HTTPException(status_code=404, detail=f"{KINDS[kind]} 이미지가 아직 없습니다.")
-    return FileResponse(p, media_type="image/png", headers={"Cache-Control": "public, max-age=300"})
+    media_type = "image/jpeg" if _ext(kind) == "jpg" else "image/png"
+    return FileResponse(p, media_type=media_type, headers={"Cache-Control": "public, max-age=300"})
 
 
 @router.post("/{kind}")
@@ -122,12 +133,19 @@ async def upload_brand_image(kind: str, image: UploadFile = File(...), x_admin_t
     raw = await image.read()
     try:
         with Image.open(io.BytesIO(raw)) as img:
-            # 로고의 투명 배경을 살리려고 RGBA PNG로 저장한다. 휴대폰 사진 방향(EXIF)은 반영.
-            normalized = ImageOps.exif_transpose(img).convert("RGBA")
+            # 휴대폰 사진 방향(EXIF)은 반영. hero는 투명도가 필요 없는 꽉 채우는
+            # 사진이라 RGB+JPEG로(용량이 PNG의 5~10배 작다), 로고·명함은 투명
+            # 배경이 있을 수 있어 RGBA+PNG를 유지한다.
+            oriented = ImageOps.exif_transpose(img)
+            normalized = oriented.convert("RGB") if kind == "hero" else oriented.convert("RGBA")
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         raise HTTPException(status_code=422, detail="사진 파일을 읽을 수 없습니다.") from exc
     normalized.thumbnail((MAX_SIDE, MAX_SIDE), Image.LANCZOS)
-    tmp = brand_dir() / f"{kind}.tmp.png"
-    normalized.save(tmp, "PNG", optimize=True)
-    os.replace(tmp, brand_dir() / f"{kind}.png")
+    ext = _ext(kind)
+    tmp = brand_dir() / f"{kind}.tmp.{ext}"
+    if ext == "jpg":
+        normalized.save(tmp, "JPEG", quality=85, optimize=True)
+    else:
+        normalized.save(tmp, "PNG", optimize=True)
+    os.replace(tmp, brand_dir() / f"{kind}.{ext}")
     return brand_info()

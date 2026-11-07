@@ -8,6 +8,7 @@ import BusinessBanner from "@/components/BusinessBanner";
 import { listPortfolio } from "@/lib/api";
 import type { PortfolioEntry } from "@/types";
 import { useAndroidBack } from "@/lib/useAndroidBack";
+import { useSwipeNavigate } from "@/lib/useSwipeNavigate";
 
 function formatDate(iso: string): string {
   if (!iso) return "";
@@ -35,8 +36,15 @@ export default function PortfolioPage() {
       .catch((err) => setError(err instanceof Error ? err.message : "포트폴리오를 불러오지 못했습니다."));
   }, []);
 
+  const swipe = useSwipeNavigate("/portfolio");
+
   return (
-    <main className="mx-auto min-h-dvh max-w-4xl px-4 py-10 xs:px-6">
+    <main
+      className="mx-auto min-h-dvh max-w-4xl px-4 py-10 xs:px-6"
+      onPointerDown={swipe.onPointerDown}
+      onPointerUp={swipe.onPointerUp}
+      onPointerCancel={swipe.onPointerCancel}
+    >
       <div className="mb-6">
         <BusinessBanner />
       </div>

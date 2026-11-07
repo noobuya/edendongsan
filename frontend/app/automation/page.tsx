@@ -15,6 +15,7 @@ import {
   type AutomationTask,
 } from "@/lib/api";
 import FeedbackForm from "@/components/automation/FeedbackForm";
+import { useSwipeNavigate } from "@/lib/useSwipeNavigate";
 
 const CODE_KEY = "eden-automation-code";
 // 승인 요청을 보낸 기기의 요청 번호. 이 번호로만 자기 요청 상태를 확인한다.
@@ -276,8 +277,15 @@ export default function AutomationPage() {
     setJobsLoaded(false);
   }
 
+  const swipe = useSwipeNavigate("/automation", !feedbackJobId);
+
   return (
-    <main className="min-h-dvh bg-[#f2f4f6] pb-20 text-slate-900">
+    <main
+      className="min-h-dvh bg-[#f2f4f6] pb-20 text-slate-900"
+      onPointerDown={swipe.onPointerDown}
+      onPointerUp={swipe.onPointerUp}
+      onPointerCancel={swipe.onPointerCancel}
+    >
       <header className="sticky top-0 z-10 bg-[#f2f4f6]/90 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-xl items-center gap-3 px-4">
           <Link
