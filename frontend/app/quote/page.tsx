@@ -131,10 +131,21 @@ export default function QuotePage() {
   const [result, setResult] = useState<EstimatorResult | null>(null);
   const [doorDetail, setDoorDetail] = useState<DoorDetail>(DEFAULT_DOOR_DETAIL);
   const [addons, setAddons] = useState<Record<string, string[]>>({});
+  // [왜 — 2026-11-07 "현장에서 시공부위 가격을 수동으로 고치게 해줘"] 현장에서
+  // 고객과 가격을 조율할 때, 자동 계산값 위에 품목별로(또는 총액 한 번에) 직접
+  // 숫자를 얹어 쓴다. 선택한 품목 구성 자체가 바뀌면(추가/삭제) 옛 수동값이
+  // 지금 구성과 안 맞으니 자동으로 지운다(아래 effect).
+  const [priceOverrides, setPriceOverrides] = useState<Record<string, number>>({});
 
   const [pyeong, setPyeong] = useState(24);
   const [withSash, setWithSash] = useState(true);
   const [withSink, setWithSink] = useState(false);
+  // [왜 — 2026-11-07 "몰딩은 안 합니다, 걸레받이는 안 합니다" 같은 현장 요구사항]
+  // 전엔 "샷시 포함" 하나가 문·샷시·몰딩을 통째로 묶었다 — 몰딩만 빼거나
+  // 걸레받이만 빼는 흔한 요청을 반영할 손잡이가 없었다. 둘을 별도 스위치로
+  // 분리한다(기본은 둘 다 포함 — 예전 "전체 시공" 기준과 같다).
+  const [withMolding, setWithMolding] = useState(true);
+  const [withBaseboard, setWithBaseboard] = useState(true);
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sim, setSim] = useState<{ open: boolean; seed: number; ratio: number; meters: number | null }>({
@@ -185,6 +196,8 @@ export default function QuotePage() {
       .catch(() => {
         /* 표시는 이전 계산값 유지 — 일시적 실패로 화면을 비우지 않는다. */
       });
+    // 품목 구성이 바뀌면 그 전에 손으로 고친 금액은 더 안 맞으니 비운다.
+    setPriceOverrides({});
   }, [selections, doorDetail, addons]);
 
   // 시트(견적서·내부 분석)가 열려 있는 동안 뒤 화면이 같이 스크롤되지 않게 한다.
@@ -200,13 +213,14 @@ export default function QuotePage() {
   const range = useMemo(() => {
     let mult = withSash ? 1 : 0.85;
     if (withSink) mult *= 1.15;
+    if (!withMolding) mult *= 0.93;
+    if (!withBaseboard) mult *= 0.96;
     return {
       min: round10k(pyeong * PYEONG_BASE_MIN * mult),
       max: round10k(pyeong * PYEONG_BASE_MAX * mult),
     };
-  }, [pyeong, withSash, withSink]);
+  }, [pyeong, withSash, withSink, withMolding, withBaseboard]);
 
-  const total = result?.total ?? 0;
   const itemCount = Object.values(selections).reduce((a, b) => a + b, 0);
 
   const groups = useMemo(() => {
@@ -279,6 +293,9 @@ export default function QuotePage() {
   // 항목을 하나 이상 담아야 나타나므로, 아무것도 안 담은 채로도 열 수 있게 제목에도 둔다.)
   const titleSecret = useSecretTrigger(() => setPricingOpen(true));
 
+  // 손으로 고친 금액(priceOverrides)이 있으면 그 품목만 그 값으로 바꿔 보여준다
+  // — 나머지는 자동 계산값 그대로. 총액은 이 (보정된) 줄들의 합이라, 품목을
+  // 고치면 총액도, 총액을 고치면(아래 handleEditTotal) 품목들도 서로 맞는다.
   const rows: ReceiptRow[] = (result?.breakdown ?? []).map((b) => ({
     key: b.code,
     icon: <QuoteIcon code={b.code} tone={toneOfGroup(items?.[b.code]?.group ?? "")} size={36} />,
@@ -286,8 +303,34 @@ export default function QuotePage() {
     tag: b.design_type,
     qtyLine: `${b.qty}개 × ${won(b.unit_price)}`,
     note: b.note,
-    amount: b.line_total,
+    amount: priceOverrides[b.code] ?? b.line_total,
   }));
+  const total = rows.reduce((sum, r) => sum + r.amount, 0);
+
+  function handleEditRowAmount(key: string, newAmount: number) {
+    setPriceOverrides((prev) => ({ ...prev, [key]: newAmount }));
+  }
+
+  // 총액을 직접 고치면, 지금 비율(새 총액 ÷ 지금 총액)을 모든 품목에 똑같이
+  // 곱해 품목별 금액도 같이 맞춘다 — PremiumReceiptView의 onAdjustTotal은
+  // 원래 서버에 저장하는 비동기 함수용이라, 여기서는 로컬 상태만 바꾸고
+  // 바로 끝낸 Promise를 돌려준다(이 화면은 저장할 "견적서"가 따로 없다).
+  async function handleEditTotal(newTotal: number) {
+    if (total <= 0 || rows.length === 0) return;
+    const ratio = newTotal / total;
+    const scaled = rows.map((r) => ({ key: r.key, amount: Math.round(r.amount * ratio) }));
+    // 반올림 오차는 가장 비싼 품목에 몰아 합계를 정확히 새 총액과 맞춘다.
+    const drift = newTotal - scaled.reduce((s, r) => s + r.amount, 0);
+    if (drift) {
+      const biggest = scaled.reduce((a, b) => (b.amount > a.amount ? b : a));
+      biggest.amount += drift;
+    }
+    setPriceOverrides((prev) => {
+      const next = { ...prev };
+      for (const r of scaled) next[r.key] = r.amount;
+      return next;
+    });
+  }
 
   const fill = ((pyeong - PYEONG_MIN) / (PYEONG_MAX - PYEONG_MIN)) * 100;
 
@@ -395,10 +438,24 @@ export default function QuotePage() {
               <div className="mt-5 divide-y divide-[#eef0f2] border-t border-[#eef0f2]">
                 <div className="flex min-h-[64px] items-center justify-between gap-4 py-2.5">
                   <div>
-                    <p className="text-[16px] font-semibold">샷시 포함</p>
-                    <p className="text-[13px] text-[#5b6573]">문 · 샷시 · 몰딩까지 전체 시공</p>
+                    <p className="text-[16px] font-semibold">문 · 샷시 포함</p>
+                    <p className="text-[13px] text-[#5b6573]">문짝·샷시(창틀) 필름 시공 추가</p>
                   </div>
-                  <Switch checked={withSash} onChange={setWithSash} label="샷시 포함" />
+                  <Switch checked={withSash} onChange={setWithSash} label="문 · 샷시 포함" />
+                </div>
+                <div className="flex min-h-[64px] items-center justify-between gap-4 py-2.5">
+                  <div>
+                    <p className="text-[16px] font-semibold">몰딩 포함</p>
+                    <p className="text-[13px] text-[#5b6573]">천장·벽 몰딩 라인 필름 시공</p>
+                  </div>
+                  <Switch checked={withMolding} onChange={setWithMolding} label="몰딩 포함" />
+                </div>
+                <div className="flex min-h-[64px] items-center justify-between gap-4 py-2.5">
+                  <div>
+                    <p className="text-[16px] font-semibold">걸레받이 포함</p>
+                    <p className="text-[13px] text-[#5b6573]">바닥과 맞닿는 걸레받이 필름 시공</p>
+                  </div>
+                  <Switch checked={withBaseboard} onChange={setWithBaseboard} label="걸레받이 포함" />
                 </div>
                 <div className="flex min-h-[64px] items-center justify-between gap-4 py-2.5">
                   <div>
@@ -408,11 +465,22 @@ export default function QuotePage() {
                   <Switch checked={withSink} onChange={setWithSink} label="싱크대 포함" />
                 </div>
               </div>
+              {/* [왜 — 2026-11-07] "욕실문은 문틀만, 안방엔 우물몰딩만"처럼 방 하나·
+                  부위 하나만 다르게 하는 요청은 평수 범위 견적(전체 평수에 걸친
+                  대략적 단가)으로는 정확히 표현할 수 없다 — 그런 요청은 아래
+                  "부분 상세 견적" 탭에서 그 품목만 골라 담으면 정확하게 나온다. */}
+              <p className="mt-4 rounded-xl bg-[#f2f4f6] px-3.5 py-3 text-[12.5px] leading-relaxed text-[#6b7684]">
+                "욕실문은 문틀만", "안방에만 우물몰딩"처럼 방·부위 하나만 다르게
+                해야 하면 이 범위 견적 대신 <b>부분 상세 견적</b> 탭에서 그 품목만
+                담아 보세요 — 정확한 금액이 나옵니다.
+              </p>
             </section>
 
             <section className="rounded-[24px] bg-indigo-600 p-6 text-white">
               <h2 className="text-[15px] font-semibold text-white">
-                {pyeong}평 {withSash ? "전체" : "샷시 제외"}
+                {pyeong}평 {withSash ? "전체" : "문·샷시 제외"}
+                {!withMolding ? " · 몰딩 제외" : ""}
+                {!withBaseboard ? " · 걸레받이 제외" : ""}
                 {withSink ? " · 싱크대 포함" : ""} 프리미엄 리폼 세트
               </h2>
               <p
@@ -612,6 +680,8 @@ export default function QuotePage() {
               deposit={result?.deposit}
               salesPitch={result?.sales_pitch}
               roiComparison={result?.roi_comparison}
+              onEditRowAmount={handleEditRowAmount}
+              onAdjustTotal={handleEditTotal}
             />
             <button
               type="button"

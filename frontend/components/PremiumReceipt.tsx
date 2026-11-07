@@ -158,6 +158,12 @@ interface ReceiptViewProps {
   /** AI가 처음 산출한 총액 — 한 번이라도 조정했으면 total과 함께 비교해 보여준다. */
   originalTotal?: number | null;
   adjustmentCount?: number;
+  /** [왜 — 2026-11-07 "부분상세견적에서 시공부위 가격을 수동으로 고치게 해줘"]
+   *  품목 한 줄의 금액을 직접 고칠 때 호출된다. 넘기지 않으면(기본) 품목 줄은
+   *  예전처럼 그냥 숫자만 보여준다 — 저장된 견적(PremiumReceipt 래퍼)은 아직
+   *  줄 단위 수정을 서버에 반영할 데가 없어 넘기지 않고, /quote(부분 상세
+   *  견적)만 이 자리에서 로컬로 바로 반영한다. */
+  onEditRowAmount?: (key: string, newAmount: number) => void;
 }
 
 /** 견적 API(메인 백엔드)의 EstimateBreakdown을 영수증으로 그린다. */
@@ -240,6 +246,7 @@ export function PremiumReceiptView({
   onAdjustTotal,
   originalTotal,
   adjustmentCount,
+  onEditRowAmount,
 }: ReceiptViewProps) {
   const { name: businessName, phone: businessPhone } = useBusinessInfo();
   const cardRef = useRef<HTMLDivElement>(null);
@@ -259,6 +266,9 @@ export function PremiumReceiptView({
   // 품목별 subtotal도 같은 비율로 맞춰 돌려준다(quotes_store.py 참고).
   const [editingTotal, setEditingTotal] = useState(false);
   const [totalEditValue, setTotalEditValue] = useState("");
+  // 품목 한 줄의 금액을 직접 고칠 때 — key가 null이면 아무 줄도 편집 중이 아니다.
+  const [editingRowKey, setEditingRowKey] = useState<string | null>(null);
+  const [rowEditValue, setRowEditValue] = useState("");
 
   // navigator.share가 없거나 실패했을 때의 안전한 대안 — 캡처한 이미지를 화면에 먼저
   // 보여주고, "갤러리에 저장" → "전화번호 입력" → "문자 앱 열기" 순서로 이어간다.
@@ -542,22 +552,71 @@ export function PremiumReceiptView({
         <hr className="my-5 border-t border-dashed border-[#d1d6db]" />
 
         <ul className="space-y-5">
-          {rows.map((r) => (
-            <li key={r.key} className="flex gap-3">
-              {r.icon}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-start justify-between gap-3">
-                  <p className="min-w-0 text-[15px] font-semibold leading-snug">{r.name}</p>
-                  <p className="shrink-0 text-[15px] font-bold tabular-nums">{won(r.amount)}</p>
+          {rows.map((r) => {
+            const isEditingRow = onEditRowAmount && editingRowKey === r.key;
+            return (
+              <li key={r.key} className="flex gap-3">
+                {r.icon}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="min-w-0 text-[15px] font-semibold leading-snug">{r.name}</p>
+                    {isEditingRow ? (
+                      <div className="flex shrink-0 items-center gap-1">
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          autoFocus
+                          value={rowEditValue}
+                          onChange={(e) => setRowEditValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              const n = Math.max(0, parseInt(rowEditValue, 10) || 0);
+                              onEditRowAmount?.(r.key, n);
+                              setEditingRowKey(null);
+                            }
+                            if (e.key === "Escape") setEditingRowKey(null);
+                          }}
+                          className="w-24 border-0 border-b-2 border-indigo-500 bg-transparent text-right text-[15px] font-bold tabular-nums outline-none"
+                        />
+                        <button
+                          type="button"
+                          aria-label="이 품목 금액 확정"
+                          onClick={() => {
+                            const n = Math.max(0, parseInt(rowEditValue, 10) || 0);
+                            onEditRowAmount?.(r.key, n);
+                            setEditingRowKey(null);
+                          }}
+                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white"
+                        >
+                          <Check className="h-3 w-3" strokeWidth={3} />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={!onEditRowAmount}
+                        onClick={() => {
+                          if (!onEditRowAmount) return;
+                          setRowEditValue(String(Math.round(r.amount)));
+                          setEditingRowKey(r.key);
+                        }}
+                        className={`shrink-0 text-[15px] font-bold tabular-nums ${
+                          onEditRowAmount ? "underline decoration-dotted decoration-[#c7ccd1] underline-offset-2" : ""
+                        }`}
+                      >
+                        {won(r.amount)}
+                      </button>
+                    )}
+                  </div>
+                  {r.tag && <p className="mt-0.5 text-[13px] text-[#5b6573]">{r.tag}</p>}
+                  {r.qtyLine && (
+                    <p className="mt-0.5 whitespace-nowrap text-[13px] tabular-nums text-[#5b6573]">{r.qtyLine}</p>
+                  )}
+                  <p className="mt-1.5 text-[12.5px] leading-[1.5] text-[#6b7684]">{r.note}</p>
                 </div>
-                {r.tag && <p className="mt-0.5 text-[13px] text-[#5b6573]">{r.tag}</p>}
-                {r.qtyLine && (
-                  <p className="mt-0.5 whitespace-nowrap text-[13px] tabular-nums text-[#5b6573]">{r.qtyLine}</p>
-                )}
-                <p className="mt-1.5 text-[12.5px] leading-[1.5] text-[#6b7684]">{r.note}</p>
-              </div>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
 
         {vat !== null && (
