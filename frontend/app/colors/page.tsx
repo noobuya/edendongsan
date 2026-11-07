@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, X } from "lucide-react";
+import { ArrowLeft, Search, X } from "lucide-react";
 import { ALL_PATTERN_SWATCHES, TONE_LABELS } from "@/lib/patternSwatches";
 import type { PatternSwatch } from "@/types";
 
@@ -25,6 +25,25 @@ const TONE_FILTERS: { key: PatternSwatch["tone"] | "all"; label: string }[] = [
   { key: "neutral", label: "뉴트럴" },
   { key: "wood", label: "우드톤" },
 ];
+
+// [왜 — 2026-11-07 "고객이 따뜻한 색을 원한다고 입력하면... 현대보닥 기준으로
+// 말해줘"] 고객 말을 그대로 받아 톤을 짐작한다. 느낌을 말로 설명하는 것보다
+// 실제 발주 가능한 보닥 품번으로 바로 짚어 주는 게 더 믿음직하다 — AI 호출
+// 없이 키워드만 보고 즉시 판단하므로 기다릴 필요가 없다(현장에서 "바로"
+// 보여줘야 하는 상황에 더 맞는다).
+const TONE_KEYWORDS: { tone: PatternSwatch["tone"]; words: string[] }[] = [
+  { tone: "warm", words: ["따뜻", "웜", "포근", "아늑", "베이지", "크림", "노란"] },
+  { tone: "cool", words: ["차가운", "차갑", "쿨", "시원", "모던", "블루", "네이비", "그레이"] },
+  { tone: "wood", words: ["나무", "우드", "원목", "내추럴", "오크", "월넛"] },
+  { tone: "neutral", words: ["무난", "깔끔", "심플", "화이트", "기본", "편안"] },
+];
+
+function guessTone(query: string): PatternSwatch["tone"] | null {
+  for (const { tone, words } of TONE_KEYWORDS) {
+    if (words.some((w) => query.includes(w))) return tone;
+  }
+  return null;
+}
 
 function groupByBrand(swatches: PatternSwatch[]): { label: string; items: PatternSwatch[] }[] {
   const groups: { label: string; items: PatternSwatch[] }[] = [];
@@ -73,12 +92,32 @@ function SwatchDetail({ swatch, onClose }: { swatch: PatternSwatch; onClose: () 
 export default function ColorsPage() {
   const [tone, setTone] = useState<PatternSwatch["tone"] | "all">("all");
   const [opened, setOpened] = useState<PatternSwatch | null>(null);
+  const [query, setQuery] = useState("");
+  // null = 아직 검색 안 함, "none" = 검색했지만 못 알아들음, 그 외엔 짚어낸 톤.
+  const [answer, setAnswer] = useState<PatternSwatch["tone"] | "none" | null>(null);
+
+  function handleSearch() {
+    const guessed = guessTone(query.trim());
+    if (guessed) {
+      setTone(guessed);
+      setAnswer(guessed);
+    } else {
+      setAnswer("none");
+    }
+  }
 
   const filtered = useMemo(
     () => (tone === "all" ? ALL_PATTERN_SWATCHES : ALL_PATTERN_SWATCHES.filter((s) => s.tone === tone)),
     [tone]
   );
   const groups = useMemo(() => groupByBrand(filtered), [filtered]);
+
+  // 답변은 항상 발주 가능한 실제 품번(현대보닥) 기준으로 말해준다 — 기본 10색은
+  // 품번이 없어 고객에게 "이건 뭐예요?" 되물어도 답해 줄 자재 정보가 없다.
+  const bodaqPicks = useMemo(() => {
+    if (!answer || answer === "none") return [];
+    return ALL_PATTERN_SWATCHES.filter((s) => s.tone === answer && s.brand).slice(0, 3);
+  }, [answer]);
 
   return (
     <main className="min-h-screen min-h-[100dvh] bg-[#f2f4f6] text-[#191f28]">
@@ -93,16 +132,68 @@ export default function ColorsPage() {
           </Link>
           <h1 className="mt-2 text-[26px] font-extrabold leading-tight tracking-[-0.03em]">색상 상담</h1>
           <p className="mt-1.5 text-[15px] text-[#5b6573]">
-            고객이 느낌을 말하면 눌러서 바로 걸러 보여주세요. 색을 누르면 크게 보입니다.
+            고객이 말한 느낌을 그대로 입력하거나, 아래에서 눌러 바로 걸러 보세요.
           </p>
         </header>
 
-        <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+            placeholder="예: 따뜻한 색, 차가운 느낌, 나무 느낌…"
+            className="h-12 min-w-0 flex-1 rounded-2xl border border-[#e5e8eb] bg-white px-4 text-[15px] outline-none focus:border-indigo-500"
+          />
+          <button
+            type="button"
+            onClick={handleSearch}
+            aria-label="색상 찾기"
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white active:scale-95"
+          >
+            <Search className="h-5 w-5" strokeWidth={2.25} />
+          </button>
+        </div>
+
+        {answer === "none" && (
+          <p className="mt-3 rounded-xl bg-amber-50 px-3.5 py-3 text-[13px] leading-relaxed text-amber-800">
+            무슨 느낌인지 못 알아들었어요. "따뜻한", "차가운", "나무", "무난한" 같은
+            말로 다시 말해 주시거나, 아래 칩을 눌러 직접 골라 보세요.
+          </p>
+        )}
+        {answer && answer !== "none" && (
+          <div className="mt-3 rounded-2xl bg-indigo-600 px-4 py-4 text-white">
+            <p className="text-[14px] leading-relaxed">
+              <b>"{query}"</b>이시면 <b>현대보닥</b> 중에서 이런 색이 잘 맞아요
+            </p>
+            <div className="mt-3 flex gap-3">
+              {bodaqPicks.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setOpened(s)}
+                  className="flex-1 overflow-hidden rounded-xl bg-white text-left text-[#191f28] active:scale-95"
+                >
+                  <div className="h-12 w-full" style={{ backgroundColor: s.colorHex }} />
+                  <div className="px-2 py-1.5">
+                    <p className="truncate text-[12px] font-bold leading-tight">{s.name}</p>
+                    <p className="text-[11px] text-[#8b95a1]">{s.code}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="no-scrollbar -mx-4 mt-4 flex gap-2 overflow-x-auto px-4 pb-1">
           {TONE_FILTERS.map((f) => (
             <button
               key={f.key}
               type="button"
-              onClick={() => setTone(f.key)}
+              onClick={() => {
+                setTone(f.key);
+                setAnswer(null);
+              }}
               className={`h-10 shrink-0 whitespace-nowrap rounded-full px-4 text-[14px] font-bold transition-colors ${
                 tone === f.key ? "bg-indigo-600 text-white" : "bg-white text-[#4e5968]"
               }`}
