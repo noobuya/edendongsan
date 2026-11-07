@@ -21,6 +21,22 @@
   overscroll-behavior-y: contain;
 }
 
+/* [왜 — 2026-11-08 "스와이프 내비게이션이 안 된다"] 터치로 가로 스와이프를 하면
+   브라우저가 한두 번 pointermove를 보낸 뒤 "이게 세로 스크롤인가?"를 판단하려고
+   pointercancel을 보내 버려(JS가 그 뒤를 전혀 못 본다) 손끝을 끝까지 못 쫓아갔다.
+   <main>처럼 특정 요소에만 touch-action을 걸어 봐도 안 됐다 — 이 앱 대부분의
+   화면은 실제 스크롤이 html/body(브라우저 기본 문서 스크롤)에서 일어나므로,
+   브라우저의 제스처 판정도 main이 아니라 거기서 일어난다(헤드리스 크로미움으로
+   Input.dispatchTouchEvent를 직접 보내 확인). pan-y만 줘서 세로 스크롤은 그대로
+   브라우저가 처리하고, 가로 방향만 JS(lib/useSwipeNavigate.ts)가 끝까지 받게 한다.
+   위 overscroll-behavior-y 주석의 사례(문서 루트에 걸면 중첩 스크롤 판정이 꼬이는
+   안드로이드 WebView 버그)와는 다른 속성·다른 브라우저 서브시스템이라 같은 버그가
+   재현되지는 않았지만, 혹시 스크롤이 이상해지면 이 블록부터 의심한다. */
+html,
+body {
+  touch-action: pan-y;
+}
+
 body {
   padding-top: env(safe-area-inset-top);
   padding-left: env(safe-area-inset-left);
