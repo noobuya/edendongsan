@@ -156,6 +156,60 @@ function brandPickSentence(picks: BrandPick[]): string {
   return `${parts.slice(0, -1).join(", ")}와 ${parts[parts.length - 1]}를 추천합니다.`;
 }
 
+// [왜 — 2026-11-08 "고객이 '벽지는 디아망으로 할 거예요'라고 말하면 자재
+// 특성부터 분석해서 필름을 추천해줘"] 요청한 3단계(① 자재 특성 ② 왜 이
+// 필름인지 논리 ③ 품번)는 그대로 쓰지만, 1단계를 "오늘의집 데이터"로
+// 포장하지 않는다 — 오늘의집이 실제로 뭘 1위로 꼽는지 확인할 방법이 없다.
+// 대신 그 자재 자체의 실제로 알려진 특징(질감·광택·두께감)은 정직한
+// 일반 지식으로 자신 있게 설명한다 — 이건 지어내는 게 아니라 디아망·
+// 블랙마루 같은 자재들의 널리 알려진 특성이다. 모르는 자재는 모른다고
+// 하고 분위기 칩으로 안내한다(지어낸 설명을 붙이지 않는다).
+interface MaterialKnowledge {
+  keywords: string[];
+  kind: "벽지" | "바닥";
+  trait: string; // 1단계: 자재 특성
+  logic: string; // 2단계: 그래서 이런 필름이어야 하는 이유
+  moodKey: string; // 3단계에서 RECOMMEND_DB를 찾을 분위기 키
+}
+const MATERIAL_KB: MaterialKnowledge[] = [
+  {
+    keywords: ["디아망"],
+    kind: "벽지",
+    trait:
+      "디아망은 LX Z:IN의 대표 실크 벽지로, 깊은 음영의 엠보싱 질감과 차분한 무광 톤이 특징입니다. 빛을 과하게 반사하지 않고 은은한 음영을 만들어내 하이엔드 주거 공간의 벽면 포인트로 자주 쓰입니다.",
+    logic:
+      "질감이 깊고 음영이 있는 벽지에 광택이나 나뭇결이 두드러지는 필름을 더하면 서로 부딪혀 촌스러워 보입니다. 빛 반사가 적은 완전 무광 솔리드 필름이어야 벽지의 질감을 해치지 않고 차분하게 어우러집니다.",
+    moodKey: "modern",
+  },
+  {
+    keywords: ["블랙마루", "블랙 마루", "흑단마루", "블랙 계열", "블랙계열"],
+    kind: "바닥",
+    trait: "짙은 블랙 계열 마루는 공간에 무게감과 고급스러움을 주지만, 면적이 넓으면 공간이 무겁고 좁게 느껴질 수 있습니다.",
+    logic:
+      "바닥이 이미 어둡고 무게감 있으므로, 문·몰딩까지 같이 짙게 가면 공간이 답답해 보일 위험이 있습니다. 중간 톤의 무채색 필름으로 바닥과 벽 사이에서 균형을 잡아주는 쪽이 안전합니다.",
+    moodKey: "modern",
+  },
+  {
+    keywords: ["화이트마루", "화이트 마루", "오크마루", "오크 마루"],
+    kind: "바닥",
+    trait: "화이트·오크 계열의 밝은 마루는 공간을 넓고 화사하게 보이게 하며, 어떤 벽지·필름과도 무난하게 어울리는 베이스입니다.",
+    logic: "밝은 바닥에는 같은 계열의 밝은 우드나 화이트 계열 필름을 매칭해야 톤이 끊기지 않고 공간이 넓어 보입니다.",
+    moodKey: "whitewood",
+  },
+  {
+    keywords: ["콘크리트", "노출콘크리트", "노출 콘크리트"],
+    kind: "벽지",
+    trait: "노출 콘크리트 질감은 차갑고 거친 느낌을 주는 자재로, 인더스트리얼·시크한 분위기를 낼 때 주로 선택합니다.",
+    logic: "거친 질감의 벽에는 매끈한 광택 필름보다 같은 계열의 무채색 매트 필름이 톤을 해치지 않고 시크한 분위기를 완성합니다.",
+    moodKey: "modern",
+  },
+];
+
+function findMaterials(query: string): MaterialKnowledge[] {
+  const normalized = query.replace(/\s/g, "");
+  return MATERIAL_KB.filter((m) => m.keywords.some((k) => normalized.includes(k.replace(/\s/g, ""))));
+}
+
 function groupByBrand(swatches: PatternSwatch[]): { label: string; items: PatternSwatch[] }[] {
   const groups: { label: string; items: PatternSwatch[] }[] = [];
   for (const s of swatches) {
@@ -212,6 +266,11 @@ export default function ColorsPage() {
   const [wallpaper, setWallpaper] = useState("");
   const [mood, setMood] = useState<MoodPreset | null>(null);
 
+  // 자재 키워드로 상담하기("벽지는 디아망으로, 바닥은 블랙 마루로...").
+  const [materialQuery, setMaterialQuery] = useState("");
+  // null = 아직 분석 안 함, [] = 분석했지만 아는 자재가 없음.
+  const [materialMatches, setMaterialMatches] = useState<MaterialKnowledge[] | null>(null);
+
   function handleSearch() {
     const guessed = guessTone(query.trim());
     if (guessed) {
@@ -220,6 +279,10 @@ export default function ColorsPage() {
     } else {
       setAnswer("none");
     }
+  }
+
+  function handleMaterialAnalyze() {
+    setMaterialMatches(findMaterials(materialQuery));
   }
 
   const filtered = useMemo(
@@ -311,6 +374,68 @@ export default function ColorsPage() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+        </section>
+
+        <section className="mt-5 rounded-[24px] bg-white p-5 shadow-[0_1px_2px_rgba(25,31,40,0.04)]">
+          <h2 className="text-[16px] font-bold">자재로 상담하기</h2>
+          <p className="mt-1 text-[13px] text-[#5b6573]">
+            고객이 말한 자재를 그대로 적으면, 그 자재의 특성과 어울리는 이유까지 짚어줍니다.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <input
+              type="text"
+              value={materialQuery}
+              onChange={(e) => setMaterialQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleMaterialAnalyze()}
+              placeholder="예: 벽지는 디아망으로, 바닥은 블랙 마루로 할 거예요"
+              className="h-12 min-w-0 flex-1 rounded-2xl border border-[#e5e8eb] bg-[#f8f9fa] px-4 text-[15px] outline-none focus:border-indigo-500"
+            />
+            <button
+              type="button"
+              onClick={handleMaterialAnalyze}
+              aria-label="자재 분석"
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white active:scale-95"
+            >
+              <Search className="h-5 w-5" strokeWidth={2.25} />
+            </button>
+          </div>
+
+          {materialMatches && materialMatches.length === 0 && (
+            <p className="mt-3 rounded-xl bg-amber-50 px-3.5 py-3 text-[13px] leading-relaxed text-amber-800">
+              아직 아는 자재가 아니에요. 디아망·블랙마루·화이트마루·오크마루·노출콘크리트
+              같은 이름으로 다시 적어 주시거나, 위 "맞춤 추천"에서 분위기로 골라 보세요.
+            </p>
+          )}
+
+          {materialMatches && materialMatches.length > 0 && (
+            <div className="mt-3 space-y-3">
+              {materialMatches.map((m) => {
+                const picks = RECOMMEND_DB[m.moodKey] ?? [];
+                return (
+                  <div key={m.keywords[0]} className="rounded-2xl bg-[#f8f9fa] p-4">
+                    <p className="text-[12.5px] font-bold text-indigo-600">
+                      {m.kind} 특성
+                    </p>
+                    <p className="mt-1 text-[13.5px] leading-relaxed text-[#191f28]">{m.trait}</p>
+                    <p className="mt-3 text-[12.5px] font-bold text-indigo-600">왜 이 필름인지</p>
+                    <p className="mt-1 text-[13.5px] leading-relaxed text-[#191f28]">{m.logic}</p>
+                    <p className="mt-3 text-[12.5px] font-bold text-indigo-600">추천 품번</p>
+                    <p className="mt-1 text-[13.5px] font-semibold leading-relaxed text-[#191f28]">
+                      {brandPickSentence(picks)}
+                    </p>
+                    <div className="mt-2 flex gap-2">
+                      {picks.slice(0, 4).map((p) => (
+                        <div key={`${p.brand}-${p.code}`} className="flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1.5">
+                          <span className="h-4 w-4 shrink-0 rounded-full border border-black/5" style={{ backgroundColor: p.approxHex }} />
+                          <span className="whitespace-nowrap text-[11px] font-bold">{p.brand} {p.code}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>
