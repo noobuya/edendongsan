@@ -655,21 +655,59 @@ export default function ColorsPage() {
   const [plannerFloor, setPlannerFloor] = useState("");
   const [plannerWall, setPlannerWall] = useState("");
   const [plannerBaseConfirmed, setPlannerBaseConfirmed] = useState(false);
-  const [plannerPicks, setPlannerPicks] = useState<{ door: BrandPick | null; sash: BrandPick | null; sink: BrandPick | null }>({
+  // [왜 — 2026-11-09 "추가는 걸레받이·몰딩·붙박이장·신발장·중문·현관문·장식장"]
+  // 방문/샷시/싱크대 3곳은 그대로 "기본"(필수)으로 두고, 나머지 7곳은 "추가
+  // (선택)"로 둔다 — 매번 10곳을 다 고르게 하면 현장에서 쓰기엔 너무 번거롭다.
+  // PLANNER_PART_LABELS는 탭·영수증에 쓰는 짧은 이름, estimatorCode가 있는
+  // 부위만 스마트 견적 합계에 들어간다(걸레받이·장식장은 이 코드베이스의
+  // 부분상세견적에 해당하는 단일 품목 가격이 없어 지어내지 않고 견적에서 뺀다).
+  const PLANNER_PART_LABELS = {
+    door: "방문",
+    sash: "샷시",
+    sink: "싱크대 하부장",
+    baseboard: "걸레받이",
+    molding: "몰딩",
+    wardrobe: "붙박이장",
+    shoe: "신발장",
+    middleDoor: "중문",
+    frontDoor: "현관문",
+    display: "장식장",
+  } as const;
+  type PlannerPartKey = keyof typeof PLANNER_PART_LABELS;
+  const PLANNER_EXTRA_ESTIMATOR_CODES: Partial<Record<PlannerPartKey, string>> = {
+    molding: "MOLDING_FLAT",
+    wardrobe: "WARDROBE_SET",
+    shoe: "SHOE_CABINET",
+    middleDoor: "MIDDLE_DOOR",
+    frontDoor: "FIRE_DOOR_SINGLE",
+  };
+  const [plannerPicks, setPlannerPicks] = useState<Record<PlannerPartKey, BrandPick | null>>({
     door: null,
     sash: null,
     sink: null,
+    baseboard: null,
+    molding: null,
+    wardrobe: null,
+    shoe: null,
+    middleDoor: null,
+    frontDoor: null,
+    display: null,
   });
+  const [plannerExtraOpen, setPlannerExtraOpen] = useState(false);
   const [showPlannerMockup, setShowPlannerMockup] = useState(false);
   // "AI 가상 시공(실제 사진 합성)"을 어느 부위로 시연할지 — 사진 업로드는
-  // 한 번에 하나씩만 자연스러우므로(현장에서 매번 3장을 다 찍진 않는다) 방문/
-  // 샷시/싱크대 중 하나를 고르게 한다.
-  const [plannerVcPart, setPlannerVcPart] = useState<"door" | "sash" | "sink">("sash");
+  // 한 번에 하나씩만 자연스러우므로(현장에서 매번 여러 장을 다 찍진 않는다)
+  // 지금까지 색을 고른 부위 중 하나를 고르게 한다.
+  const [plannerVcPart, setPlannerVcPart] = useState<PlannerPartKey>("sash");
 
   const plannerAnalysis = useMemo(() => {
     const floorMatches = findMaterials(plannerFloor);
     const wallMatches = findMaterials(plannerWall);
     const sinkEntry = [...floorMatches, ...wallMatches].find((m) => m.keywords.includes("싱크대"));
+    // 중문·현관문은 이미 자재 DB에 전용 룰이 있다(공간별 시공 룰 — "중문 포인트",
+    // "현관문") — 여기서 새로 지어내지 않고 그대로 재사용한다.
+    const middleDoorEntry = MATERIAL_KB.find((m) => m.keywords.includes("중문 포인트"));
+    const frontDoorEntry = MATERIAL_KB.find((m) => m.keywords.includes("현관문"));
     const wallLabel = plannerWall.trim() || "벽지";
     const floorLabel = plannerFloor.trim() || "바닥";
 
@@ -690,6 +728,19 @@ export default function ColorsPage() {
     const sinkCandidates = dedupePicks(
       sinkEntry ? sinkEntry.picks.slice(2) : [findPick("S208"), findPick("W293"), findPick("S212")]
     ).slice(0, 4);
+    const baseboardCandidates = dedupePicks([
+      ...wallMatches.flatMap((m) => m.picks),
+      ...floorMatches.flatMap((m) => m.picks),
+      findPick("S245"),
+    ]).slice(0, 4);
+    const moldingCandidates = dedupePicks([...wallMatches.flatMap((m) => m.picks), findPick("S245"), findPick("S208")]).slice(0, 4);
+    const wardrobeCandidates = dedupePicks([...wallMatches.flatMap((m) => m.picks), ...doorCandidates]).slice(0, 4);
+    const shoeCandidates = dedupePicks([findPick("S208"), ...floorMatches.flatMap((m) => m.picks), findPick("S115")]).slice(0, 4);
+    const middleDoorCandidates = dedupePicks(middleDoorEntry ? middleDoorEntry.picks : [findPick("S219"), findPick("S149")]).slice(0, 4);
+    const frontDoorCandidates = dedupePicks(
+      frontDoorEntry ? frontDoorEntry.picks : [findPick("S208"), findPick("S149"), findPick("S219")]
+    ).slice(0, 4);
+    const displayCandidates = dedupePicks([findPick("S219"), findPick("S149"), ...wallMatches.flatMap((m) => m.picks)]).slice(0, 4);
 
     return {
       floorMatches,
@@ -702,7 +753,7 @@ export default function ColorsPage() {
       },
       sash: {
         candidates: sashCandidates,
-        reason: `샷시·몰딩은 ${floorLabel} 바닥의 분위기를 이어가는 색으로 고르면 통일감이 생깁니다.`,
+        reason: `샷시는 ${floorLabel} 바닥의 분위기를 이어가는 색으로 고르면 통일감이 생깁니다.`,
       },
       sink: {
         candidates: sinkCandidates,
@@ -710,20 +761,45 @@ export default function ColorsPage() {
           ? sinkEntry.recommendLine
           : "싱크대는 상부장을 밝은 화이트로, 하부장을 무게감 있는 색으로 매칭하는 투톤이 실패 없는 조합입니다. 상부는 화이트로 고정하고, 아래에서 하부장 색만 골라 보세요.",
       },
+      baseboard: {
+        candidates: baseboardCandidates,
+        reason: "걸레받이는 벽과 통일감을 주면 눈에 덜 띄어 깔끔해지고, 바닥과 맞추면 바닥이 더 넓어 보이는 효과가 있습니다.",
+      },
+      molding: {
+        candidates: moldingCandidates,
+        reason: "몰딩은 벽·천장과 통일된 밝은 색으로 가면 층고가 높아 보이고, 진한 색으로 가면 입체감 있는 포인트가 됩니다.",
+      },
+      wardrobe: {
+        candidates: wardrobeCandidates,
+        reason: "붙박이장은 벽과 통일감을 주는 밝은 색이 기본이며, 방문과 같은 색으로 맞추면 공간이 한 톤으로 정리됩니다.",
+      },
+      shoe: {
+        candidates: shoeCandidates,
+        reason: "신발장은 현관 자리라 오염에 강한 톤이 좋습니다 — 바닥과 맞추면 통일감이, 다크 그레이로 가면 깔끔하게 정리됩니다.",
+      },
+      middleDoor: {
+        candidates: middleDoorCandidates,
+        reason: middleDoorEntry ? middleDoorEntry.logic : "중문은 딥 그린·딥 네이비 같은 묵직한 포인트 컬러를 쓰면 시선을 사로잡는 효과가 있습니다.",
+      },
+      frontDoor: {
+        candidates: frontDoorCandidates,
+        reason: frontDoorEntry ? frontDoorEntry.logic : "현관문은 오염에 취약해 화이트 계열은 피하고, 묵직한 색으로 가는 것이 정석입니다.",
+      },
+      display: {
+        candidates: displayCandidates,
+        reason: "장식장은 포인트를 주고 싶다면 과감한 색(딥그린·딥네이비)을, 차분하게 가고 싶다면 벽과 통일감을 주는 색을 추천합니다.",
+      },
     };
   }, [plannerFloor, plannerWall]);
 
   const plannerReady = plannerPicks.door && plannerPicks.sash && plannerPicks.sink;
-  // 배색 미리보기 바탕색 — 입력한 바닥·벽지가 아는 자재면 그 품번 색을, 모르면
-  // 무난한 기본 바닥/벽 색을 쓴다(사진 합성이 아니라 CSS 색 블록이라 항상 뭔가
-  // 보여줄 수 있어야 한다).
-  const plannerFloorHex = plannerAnalysis.floorMatches[0]?.picks[0]?.approxHex ?? "#D8C9AE";
-  const plannerWallHex = plannerAnalysis.wallMatches[0]?.picks[0]?.approxHex ?? "#F2F1ED";
 
   // [왜 — 2026-11-08 "스마트 자동 견적 계산기"] 가격은 estimator_app(부분상세견적)의
   // 실제 단가표 한 곳만 본다(lib/api.ts의 "화면에 같은 가격을 또 적어 두면 두 곳이
   // 어긋난다" 원칙) — 여기서 새로 숫자를 지어내지 않는다. 사장님이 단가를 바꾸면
-  // 이 견적도 그대로 따라간다.
+  // 이 견적도 그대로 따라간다. 걸레받이·장식장은 이 단가표에 해당하는 단일
+  // 품목이 없어(estimator_app/app.py 참고) 품번은 추천해도 견적 합계에는
+  // 넣지 않고 "현장 확인 후 별도 산정"으로 안내한다.
   const [estimatorItems, setEstimatorItems] = useState<Record<string, EstimatorItem> | null>(null);
   useEffect(() => {
     getEstimatorItems().then(setEstimatorItems).catch(() => setEstimatorItems(null));
@@ -734,8 +810,21 @@ export default function ColorsPage() {
     const sash = estimatorItems.SASH_SMALL;
     const sink = estimatorItems.SINK_L;
     if (!door || !sash || !sink) return null;
-    return { door, sash, sink, total: door.price + sash.price + sink.price };
-  }, [estimatorItems]);
+    const extraLines = (Object.keys(PLANNER_EXTRA_ESTIMATOR_CODES) as PlannerPartKey[])
+      .filter((key) => plannerPicks[key])
+      .map((key) => estimatorItems[PLANNER_EXTRA_ESTIMATOR_CODES[key]!])
+      .filter((item): item is EstimatorItem => !!item);
+    const extraTotal = extraLines.reduce((sum, item) => sum + item.price, 0);
+    const uncounted = (["baseboard", "display"] as PlannerPartKey[]).filter((key) => plannerPicks[key]);
+    return {
+      door,
+      sash,
+      sink,
+      extraLines,
+      uncounted,
+      total: door.price + sash.price + sink.price + extraTotal,
+    };
+  }, [estimatorItems, plannerPicks]);
   // 숫자는 "AI 가상 시공 결과 보기"를 눌러 mockup이 뜨는 순간부터 스르륵
   // 올라가야 의미가 있다 — 그 전까지는 목표값을 0으로 묶어 둔다.
   const plannerQuoteTotal = useCountUp(showPlannerMockup ? plannerQuote?.total ?? 0 : 0);
@@ -905,7 +994,7 @@ export default function ColorsPage() {
                 }}
               />
               <PlannerPartCard
-                label="샷시·몰딩"
+                label="샷시"
                 reason={plannerAnalysis.sash.reason}
                 candidates={plannerAnalysis.sash.candidates}
                 selected={plannerPicks.sash}
@@ -925,6 +1014,42 @@ export default function ColorsPage() {
                 }}
               />
 
+              {/* 추가 부위(선택) — 걸레받이·몰딩·붙박이장·신발장·중문·현관문·
+                  장식장. 기본 3곳과 달리 안 골라도 "AI 가상 시공 결과 보기"를
+                  누를 수 있다. */}
+              <button
+                type="button"
+                onClick={() => setPlannerExtraOpen((v) => !v)}
+                className="flex h-11 w-full items-center justify-between rounded-2xl bg-white px-4 text-[13.5px] font-bold text-[#4e5968]"
+              >
+                <span>
+                  추가 부위 선택(선택사항)
+                  {(["baseboard", "molding", "wardrobe", "shoe", "middleDoor", "frontDoor", "display"] as PlannerPartKey[]).filter(
+                    (k) => plannerPicks[k]
+                  ).length > 0 &&
+                    ` · ${
+                      (["baseboard", "molding", "wardrobe", "shoe", "middleDoor", "frontDoor", "display"] as PlannerPartKey[]).filter(
+                        (k) => plannerPicks[k]
+                      ).length
+                    }곳 선택됨`}
+                </span>
+                <span className="text-[11px] text-[#8b95a1]">{plannerExtraOpen ? "접기 ▲" : "펼치기 ▼"}</span>
+              </button>
+              {plannerExtraOpen &&
+                (["baseboard", "molding", "wardrobe", "shoe", "middleDoor", "frontDoor", "display"] as PlannerPartKey[]).map((key) => (
+                  <PlannerPartCard
+                    key={key}
+                    label={PLANNER_PART_LABELS[key]}
+                    reason={plannerAnalysis[key].reason}
+                    candidates={plannerAnalysis[key].candidates}
+                    selected={plannerPicks[key]}
+                    onSelect={(p) => {
+                      setPlannerPicks((prev) => ({ ...prev, [key]: p }));
+                      setShowPlannerMockup(false);
+                    }}
+                  />
+                ))}
+
               {/* 4단계: 배색 미리보기 */}
               <button
                 type="button"
@@ -938,30 +1063,26 @@ export default function ColorsPage() {
               {showPlannerMockup && plannerPicks.door && plannerPicks.sash && plannerPicks.sink && (
                 <div className="space-y-3">
                   {(() => {
-                    const vcPick =
-                      plannerVcPart === "door"
-                        ? plannerPicks.door
-                        : plannerVcPart === "sash"
-                          ? plannerPicks.sash
-                          : plannerPicks.sink;
-                    const vcLabel = plannerVcPart === "door" ? "방문" : plannerVcPart === "sash" ? "샷시" : "싱크대";
+                    const pickedParts = (Object.keys(PLANNER_PART_LABELS) as PlannerPartKey[]).filter((k) => plannerPicks[k]);
+                    const vcKey = pickedParts.includes(plannerVcPart) ? plannerVcPart : pickedParts[0];
+                    const vcPick = vcKey ? plannerPicks[vcKey] : null;
                     return (
                       <>
-                        <div className="flex gap-2">
-                          {(["door", "sash", "sink"] as const).map((part) => (
+                        <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+                          {pickedParts.map((part) => (
                             <button
                               key={part}
                               type="button"
                               onClick={() => setPlannerVcPart(part)}
-                              className={`h-10 flex-1 rounded-xl text-[13px] font-bold transition-colors ${
-                                plannerVcPart === part ? "bg-indigo-600 text-white" : "bg-white text-[#4e5968]"
+                              className={`h-10 shrink-0 whitespace-nowrap rounded-xl px-3 text-[13px] font-bold transition-colors ${
+                                vcKey === part ? "bg-indigo-600 text-white" : "bg-white text-[#4e5968]"
                               }`}
                             >
-                              {part === "door" ? "방문" : part === "sash" ? "샷시" : "싱크대"}
+                              {PLANNER_PART_LABELS[part]}
                             </button>
                           ))}
                         </div>
-                        <VirtualConstructionView key={plannerVcPart} pick={vcPick} partLabel={vcLabel} />
+                        {vcKey && vcPick && <VirtualConstructionView key={vcKey} pick={vcPick} partLabel={PLANNER_PART_LABELS[vcKey]} />}
                       </>
                     );
                   })()}
@@ -970,7 +1091,7 @@ export default function ColorsPage() {
                       중복해 보여주지 않는다(quoteTotal prop은 단독 사용 시를
                       위해 남겨 둔다). */}
 
-                  {/* 2. 선택 자재 요약 영수증 */}
+                  {/* 2. 선택 자재 요약 영수증 — 기본 3곳은 항상, 추가 부위는 고른 것만 보여준다. */}
                   <div className="rounded-2xl bg-[#f8f9fa] p-4">
                     <p className="text-[12.5px] font-bold text-indigo-600">선택 자재 요약</p>
                     <div className="mt-2 divide-y divide-[#e5e8eb] rounded-xl bg-white">
@@ -980,6 +1101,12 @@ export default function ColorsPage() {
                         { label: "방문", value: `${plannerPicks.door.brand} ${plannerPicks.door.code} (${plannerPicks.door.name})` },
                         { label: "샷시", value: `${plannerPicks.sash.brand} ${plannerPicks.sash.code} (${plannerPicks.sash.name})` },
                         { label: "싱크대 하부장", value: `${plannerPicks.sink.brand} ${plannerPicks.sink.code} (${plannerPicks.sink.name}) · 상부장 화이트 고정` },
+                        ...(["baseboard", "molding", "wardrobe", "shoe", "middleDoor", "frontDoor", "display"] as PlannerPartKey[])
+                          .filter((k) => plannerPicks[k])
+                          .map((k) => {
+                            const p = plannerPicks[k]!;
+                            return { label: PLANNER_PART_LABELS[k], value: `${p.brand} ${p.code} (${p.name})` };
+                          }),
                       ].map((row) => (
                         <div key={row.label} className="flex items-center justify-between gap-3 px-4 py-2.5">
                           <span className="shrink-0 text-[12.5px] font-bold text-[#8b95a1]">{row.label}</span>
@@ -991,7 +1118,7 @@ export default function ColorsPage() {
 
                   {/* 3. 스마트 자동 견적 계산기 — 숫자는 estimator_app 실제 단가표에서만 가져온다. */}
                   <div className="rounded-2xl bg-indigo-600 p-5 text-white">
-                    <p className="text-[12.5px] font-bold text-indigo-200">예상 견적 (방문·샷시·싱크대 기준)</p>
+                    <p className="text-[12.5px] font-bold text-indigo-200">예상 견적 (선택한 부위 기준)</p>
                     {plannerQuote ? (
                       <>
                         <p className="mt-1 text-[30px] font-extrabold tracking-tight">
@@ -1001,7 +1128,18 @@ export default function ColorsPage() {
                           <p>방문(도어 리폼 세트) {plannerQuote.door.price.toLocaleString("ko-KR")}원</p>
                           <p>샷시(방창 리폼 세트) {plannerQuote.sash.price.toLocaleString("ko-KR")}원</p>
                           <p>싱크대(ㄱ자 리폼 세트) {plannerQuote.sink.price.toLocaleString("ko-KR")}원</p>
+                          {plannerQuote.extraLines.map((item) => (
+                            <p key={item.label}>
+                              {item.label} {item.price.toLocaleString("ko-KR")}원
+                            </p>
+                          ))}
                         </div>
+                        {plannerQuote.uncounted.length > 0 && (
+                          <p className="mt-1.5 text-[11px] text-indigo-200">
+                            {plannerQuote.uncounted.map((k) => PLANNER_PART_LABELS[k]).join("·")}은 규격이 현장마다 달라 현장 확인 후
+                            별도 산정합니다(위 금액에 포함되지 않음).
+                          </p>
+                        )}
                       </>
                     ) : (
                       <p className="mt-1 text-[14px] text-indigo-100">단가를 불러오는 중입니다…</p>
