@@ -6,6 +6,7 @@ import { ArrowLeft, Search, X } from "lucide-react";
 import { ALL_PATTERN_SWATCHES, TONE_LABELS } from "@/lib/patternSwatches";
 import { useSwipeNavigate } from "@/lib/useSwipeNavigate";
 import { getEstimatorItems, type EstimatorItem } from "@/lib/api";
+import VirtualConstructionView from "@/components/colors/VirtualConstructionView";
 import type { PatternSwatch } from "@/types";
 
 /** 숫자가 0에서 목표값까지 스르륵 올라가는 효과 — 오늘의집·토스 앱 스타일.
@@ -660,6 +661,10 @@ export default function ColorsPage() {
     sink: null,
   });
   const [showPlannerMockup, setShowPlannerMockup] = useState(false);
+  // "AI 가상 시공(실제 사진 합성)"을 어느 부위로 시연할지 — 사진 업로드는
+  // 한 번에 하나씩만 자연스러우므로(현장에서 매번 3장을 다 찍진 않는다) 방문/
+  // 샷시/싱크대 중 하나를 고르게 한다.
+  const [plannerVcPart, setPlannerVcPart] = useState<"door" | "sash" | "sink">("sash");
 
   const plannerAnalysis = useMemo(() => {
     const floorMatches = findMaterials(plannerFloor);
@@ -932,52 +937,38 @@ export default function ColorsPage() {
 
               {showPlannerMockup && plannerPicks.door && plannerPicks.sash && plannerPicks.sink && (
                 <div className="space-y-3">
-                  {/* 1. AI 가상 쇼룸 뷰 — 상단 벽지 톤 / 중간 문·샷시 색 / 하단 바닥재
-                      비율로 배치한 2.5D 무드보드. 사진 합성이 아니라 색상 블록
-                      구성이라는 걸 라벨로 분명히 밝힌다. */}
-                  <div className="rounded-2xl bg-[#f8f9fa] p-4">
-                    <p className="text-[12.5px] font-bold text-indigo-600">AI 가상 쇼룸 뷰</p>
-                    <p className="mt-0.5 text-[11.5px] text-[#8b95a1]">사진을 합성한 AI 렌더링이 아닌, 선택한 색의 배치 구성(무드보드)입니다.</p>
-                    <div
-                      className="relative mt-3 aspect-[4/3] w-full overflow-hidden rounded-xl"
-                      style={{ backgroundColor: plannerWallHex }}
-                    >
-                      <span className="absolute left-2 top-2 rounded-full bg-black/35 px-2 py-0.5 text-[10px] font-bold text-white">
-                        벽지 톤
-                      </span>
-                      {/* 바닥 */}
-                      <div className="absolute inset-x-0 bottom-0 h-[24%]" style={{ backgroundColor: plannerFloorHex }}>
-                        <span className="absolute bottom-1.5 left-2 rounded-full bg-black/35 px-2 py-0.5 text-[10px] font-bold text-white">
-                          바닥재
-                        </span>
-                      </div>
-                      {/* 방문 */}
-                      <div
-                        className="absolute bottom-[24%] left-[8%] h-[52%] w-[16%] rounded-t-sm shadow-sm"
-                        style={{ backgroundColor: plannerPicks.door.approxHex }}
-                      />
-                      {/* 샷시(창) */}
-                      <div
-                        className="absolute right-[10%] top-[14%] h-[30%] w-[30%] rounded-sm shadow-sm"
-                        style={{ backgroundColor: plannerPicks.sash.approxHex }}
-                      >
-                        <span className="absolute -top-5 right-0 whitespace-nowrap rounded-full bg-black/35 px-2 py-0.5 text-[10px] font-bold text-white">
-                          문·샷시 {plannerPicks.door.code}
-                        </span>
-                        <div className="grid h-full w-full grid-cols-2 grid-rows-2">
-                          <div className="border border-white/50" />
-                          <div className="border border-white/50" />
-                          <div className="border border-white/50" />
-                          <div className="border border-white/50" />
+                  {(() => {
+                    const vcPick =
+                      plannerVcPart === "door"
+                        ? plannerPicks.door
+                        : plannerVcPart === "sash"
+                          ? plannerPicks.sash
+                          : plannerPicks.sink;
+                    const vcLabel = plannerVcPart === "door" ? "방문" : plannerVcPart === "sash" ? "샷시" : "싱크대";
+                    return (
+                      <>
+                        <div className="flex gap-2">
+                          {(["door", "sash", "sink"] as const).map((part) => (
+                            <button
+                              key={part}
+                              type="button"
+                              onClick={() => setPlannerVcPart(part)}
+                              className={`h-10 flex-1 rounded-xl text-[13px] font-bold transition-colors ${
+                                plannerVcPart === part ? "bg-indigo-600 text-white" : "bg-white text-[#4e5968]"
+                              }`}
+                            >
+                              {part === "door" ? "방문" : part === "sash" ? "샷시" : "싱크대"}
+                            </button>
+                          ))}
                         </div>
-                      </div>
-                      {/* 싱크대 상/하부장 */}
-                      <div className="absolute bottom-[24%] right-[8%] w-[22%] shadow-sm">
-                        <div className="h-[7%] w-full" style={{ backgroundColor: "#FAFAF8" }} />
-                        <div className="h-[13%] w-full" style={{ backgroundColor: plannerPicks.sink.approxHex }} />
-                      </div>
-                    </div>
-                  </div>
+                        <VirtualConstructionView key={plannerVcPart} pick={vcPick} partLabel={vcLabel} />
+                      </>
+                    );
+                  })()}
+                  {/* 스마트 견적서는 바로 아래 "3. 스마트 자동 견적 계산기" 섹션이
+                      전체 합계를 보여주므로, VirtualConstructionView 안에서는
+                      중복해 보여주지 않는다(quoteTotal prop은 단독 사용 시를
+                      위해 남겨 둔다). */}
 
                   {/* 2. 선택 자재 요약 영수증 */}
                   <div className="rounded-2xl bg-[#f8f9fa] p-4">
