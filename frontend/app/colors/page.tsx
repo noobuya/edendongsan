@@ -1,11 +1,33 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Search, X } from "lucide-react";
 import { ALL_PATTERN_SWATCHES, TONE_LABELS } from "@/lib/patternSwatches";
 import { useSwipeNavigate } from "@/lib/useSwipeNavigate";
+import { getEstimatorItems, type EstimatorItem } from "@/lib/api";
 import type { PatternSwatch } from "@/types";
+
+/** 숫자가 0에서 목표값까지 스르륵 올라가는 효과 — 오늘의집·토스 앱 스타일.
+ *  target이 바뀔 때마다(=새로 견적을 보여줄 때마다) 처음부터 다시 올라간다. */
+function useCountUp(target: number, durationMs = 900): number {
+  const [value, setValue] = useState(0);
+  useEffect(() => {
+    let raf = 0;
+    const start = performance.now();
+    const from = 0;
+    function tick(now: number) {
+      const t = Math.min(1, (now - start) / durationMs);
+      // easeOutCubic — 처음엔 빠르게, 끝에서 부드럽게 멈춘다.
+      const eased = 1 - Math.pow(1 - t, 3);
+      setValue(Math.round(from + (target - from) * eased));
+      if (t < 1) raf = requestAnimationFrame(tick);
+    }
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, durationMs]);
+  return value;
+}
 
 /** 현장에서 고객이 "따뜻한 느낌 필름지 뭐 있어요?"처럼 색상을 물을 때, 그 자리에서
  *  바로 걸러 보여주는 색상표. AI 렌더링(사진 위에 입히기)은 시간이 걸리고 비용이
@@ -693,6 +715,26 @@ export default function ColorsPage() {
   const plannerFloorHex = plannerAnalysis.floorMatches[0]?.picks[0]?.approxHex ?? "#D8C9AE";
   const plannerWallHex = plannerAnalysis.wallMatches[0]?.picks[0]?.approxHex ?? "#F2F1ED";
 
+  // [왜 — 2026-11-08 "스마트 자동 견적 계산기"] 가격은 estimator_app(부분상세견적)의
+  // 실제 단가표 한 곳만 본다(lib/api.ts의 "화면에 같은 가격을 또 적어 두면 두 곳이
+  // 어긋난다" 원칙) — 여기서 새로 숫자를 지어내지 않는다. 사장님이 단가를 바꾸면
+  // 이 견적도 그대로 따라간다.
+  const [estimatorItems, setEstimatorItems] = useState<Record<string, EstimatorItem> | null>(null);
+  useEffect(() => {
+    getEstimatorItems().then(setEstimatorItems).catch(() => setEstimatorItems(null));
+  }, []);
+  const plannerQuote = useMemo(() => {
+    if (!estimatorItems) return null;
+    const door = estimatorItems.DOOR_SET;
+    const sash = estimatorItems.SASH_SMALL;
+    const sink = estimatorItems.SINK_L;
+    if (!door || !sash || !sink) return null;
+    return { door, sash, sink, total: door.price + sash.price + sink.price };
+  }, [estimatorItems]);
+  // 숫자는 "AI 가상 시공 결과 보기"를 눌러 mockup이 뜨는 순간부터 스르륵
+  // 올라가야 의미가 있다 — 그 전까지는 목표값을 0으로 묶어 둔다.
+  const plannerQuoteTotal = useCountUp(showPlannerMockup ? plannerQuote?.total ?? 0 : 0);
+
   function handleSearch() {
     const guessed = guessTone(query.trim());
     if (guessed) {
@@ -889,47 +931,93 @@ export default function ColorsPage() {
               </button>
 
               {showPlannerMockup && plannerPicks.door && plannerPicks.sash && plannerPicks.sink && (
-                <div className="rounded-2xl bg-[#f8f9fa] p-4">
-                  <p className="text-[12.5px] font-bold text-indigo-600">배색 미리보기 (사진 합성이 아닌 색상 구성입니다)</p>
-                  <div
-                    className="relative mt-3 aspect-[4/3] w-full overflow-hidden rounded-xl"
-                    style={{ backgroundColor: plannerWallHex }}
-                  >
-                    {/* 바닥 */}
-                    <div className="absolute inset-x-0 bottom-0 h-[24%]" style={{ backgroundColor: plannerFloorHex }} />
-                    {/* 방문 */}
+                <div className="space-y-3">
+                  {/* 1. AI 가상 쇼룸 뷰 — 상단 벽지 톤 / 중간 문·샷시 색 / 하단 바닥재
+                      비율로 배치한 2.5D 무드보드. 사진 합성이 아니라 색상 블록
+                      구성이라는 걸 라벨로 분명히 밝힌다. */}
+                  <div className="rounded-2xl bg-[#f8f9fa] p-4">
+                    <p className="text-[12.5px] font-bold text-indigo-600">AI 가상 쇼룸 뷰</p>
+                    <p className="mt-0.5 text-[11.5px] text-[#8b95a1]">사진을 합성한 AI 렌더링이 아닌, 선택한 색의 배치 구성(무드보드)입니다.</p>
                     <div
-                      className="absolute bottom-[24%] left-[8%] h-[52%] w-[16%] rounded-t-sm shadow-sm"
-                      style={{ backgroundColor: plannerPicks.door.approxHex }}
-                    />
-                    {/* 샷시(창) */}
-                    <div
-                      className="absolute right-[10%] top-[14%] h-[30%] w-[30%] rounded-sm shadow-sm"
-                      style={{ backgroundColor: plannerPicks.sash.approxHex }}
+                      className="relative mt-3 aspect-[4/3] w-full overflow-hidden rounded-xl"
+                      style={{ backgroundColor: plannerWallHex }}
                     >
-                      <div className="grid h-full w-full grid-cols-2 grid-rows-2">
-                        <div className="border border-white/50" />
-                        <div className="border border-white/50" />
-                        <div className="border border-white/50" />
-                        <div className="border border-white/50" />
+                      <span className="absolute left-2 top-2 rounded-full bg-black/35 px-2 py-0.5 text-[10px] font-bold text-white">
+                        벽지 톤
+                      </span>
+                      {/* 바닥 */}
+                      <div className="absolute inset-x-0 bottom-0 h-[24%]" style={{ backgroundColor: plannerFloorHex }}>
+                        <span className="absolute bottom-1.5 left-2 rounded-full bg-black/35 px-2 py-0.5 text-[10px] font-bold text-white">
+                          바닥재
+                        </span>
+                      </div>
+                      {/* 방문 */}
+                      <div
+                        className="absolute bottom-[24%] left-[8%] h-[52%] w-[16%] rounded-t-sm shadow-sm"
+                        style={{ backgroundColor: plannerPicks.door.approxHex }}
+                      />
+                      {/* 샷시(창) */}
+                      <div
+                        className="absolute right-[10%] top-[14%] h-[30%] w-[30%] rounded-sm shadow-sm"
+                        style={{ backgroundColor: plannerPicks.sash.approxHex }}
+                      >
+                        <span className="absolute -top-5 right-0 whitespace-nowrap rounded-full bg-black/35 px-2 py-0.5 text-[10px] font-bold text-white">
+                          문·샷시 {plannerPicks.door.code}
+                        </span>
+                        <div className="grid h-full w-full grid-cols-2 grid-rows-2">
+                          <div className="border border-white/50" />
+                          <div className="border border-white/50" />
+                          <div className="border border-white/50" />
+                          <div className="border border-white/50" />
+                        </div>
+                      </div>
+                      {/* 싱크대 상/하부장 */}
+                      <div className="absolute bottom-[24%] right-[8%] w-[22%] shadow-sm">
+                        <div className="h-[7%] w-full" style={{ backgroundColor: "#FAFAF8" }} />
+                        <div className="h-[13%] w-full" style={{ backgroundColor: plannerPicks.sink.approxHex }} />
                       </div>
                     </div>
-                    {/* 싱크대 상/하부장 */}
-                    <div className="absolute bottom-[24%] right-[8%] w-[22%] shadow-sm">
-                      <div className="h-[7%] w-full" style={{ backgroundColor: "#FAFAF8" }} />
-                      <div className="h-[13%] w-full" style={{ backgroundColor: plannerPicks.sink.approxHex }} />
+                  </div>
+
+                  {/* 2. 선택 자재 요약 영수증 */}
+                  <div className="rounded-2xl bg-[#f8f9fa] p-4">
+                    <p className="text-[12.5px] font-bold text-indigo-600">선택 자재 요약</p>
+                    <div className="mt-2 divide-y divide-[#e5e8eb] rounded-xl bg-white">
+                      {[
+                        { label: "벽지", value: plannerWall.trim() || "미입력" },
+                        { label: "바닥", value: plannerFloor.trim() || "미입력" },
+                        { label: "방문", value: `${plannerPicks.door.brand} ${plannerPicks.door.code} (${plannerPicks.door.name})` },
+                        { label: "샷시", value: `${plannerPicks.sash.brand} ${plannerPicks.sash.code} (${plannerPicks.sash.name})` },
+                        { label: "싱크대 하부장", value: `${plannerPicks.sink.brand} ${plannerPicks.sink.code} (${plannerPicks.sink.name}) · 상부장 화이트 고정` },
+                      ].map((row) => (
+                        <div key={row.label} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                          <span className="shrink-0 text-[12.5px] font-bold text-[#8b95a1]">{row.label}</span>
+                          <span className="truncate text-right text-[13px] font-semibold text-[#191f28]">{row.value}</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-[#4e5968]">
-                      방문 {plannerPicks.door.brand} {plannerPicks.door.code}
-                    </span>
-                    <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-[#4e5968]">
-                      샷시 {plannerPicks.sash.brand} {plannerPicks.sash.code}
-                    </span>
-                    <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-[#4e5968]">
-                      싱크대 하부 {plannerPicks.sink.brand} {plannerPicks.sink.code}
-                    </span>
+
+                  {/* 3. 스마트 자동 견적 계산기 — 숫자는 estimator_app 실제 단가표에서만 가져온다. */}
+                  <div className="rounded-2xl bg-indigo-600 p-5 text-white">
+                    <p className="text-[12.5px] font-bold text-indigo-200">예상 견적 (방문·샷시·싱크대 기준)</p>
+                    {plannerQuote ? (
+                      <>
+                        <p className="mt-1 text-[30px] font-extrabold tracking-tight">
+                          {plannerQuoteTotal.toLocaleString("ko-KR")}원
+                        </p>
+                        <div className="mt-2 space-y-0.5 text-[12px] text-indigo-100">
+                          <p>방문(도어 리폼 세트) {plannerQuote.door.price.toLocaleString("ko-KR")}원</p>
+                          <p>샷시(방창 리폼 세트) {plannerQuote.sash.price.toLocaleString("ko-KR")}원</p>
+                          <p>싱크대(ㄱ자 리폼 세트) {plannerQuote.sink.price.toLocaleString("ko-KR")}원</p>
+                        </div>
+                      </>
+                    ) : (
+                      <p className="mt-1 text-[14px] text-indigo-100">단가를 불러오는 중입니다…</p>
+                    )}
+                    <p className="mt-3 text-[11.5px] leading-relaxed text-indigo-100">
+                      본 견적은 예상가이며, 현장 상태에 따라 변동될 수 있습니다. (1년 무상 A/S 포함)
+                    </p>
                   </div>
                 </div>
               )}
