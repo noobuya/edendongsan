@@ -541,6 +541,15 @@ function dedupePicks(picks: BrandPick[]): BrandPick[] {
   return out;
 }
 
+/** VirtualConstructionView에 넘길 질감·광택 추정 — 실제 제품 스펙 데이터가
+ *  없어 이름으로 추론한다(예: "메탈"/"스테인리스" 포함 → metal). 나중에
+ *  진짜 제품 DB에 광택 스펙이 생기면 이 함수를 그 값으로 교체해야 한다. */
+function inferMaterialTraits(pick: BrandPick): { texture: "solid" | "wood" | "metal"; glossiness: number } {
+  if (/메탈|스테인리스|헤어라인/.test(pick.name)) return { texture: "metal", glossiness: 65 };
+  if (/우드|오크|월넛|마루/.test(pick.name)) return { texture: "wood", glossiness: 20 };
+  return { texture: "solid", glossiness: 0 };
+}
+
 function groupByBrand(swatches: PatternSwatch[]): { label: string; items: PatternSwatch[] }[] {
   const groups: { label: string; items: PatternSwatch[] }[] = [];
   for (const s of swatches) {
@@ -1082,7 +1091,13 @@ export default function ColorsPage() {
                             </button>
                           ))}
                         </div>
-                        {vcKey && vcPick && <VirtualConstructionView key={vcKey} pick={vcPick} partLabel={PLANNER_PART_LABELS[vcKey]} />}
+                        {vcKey && vcPick && (
+                          <VirtualConstructionView
+                            key={vcKey}
+                            pick={{ ...vcPick, ...inferMaterialTraits(vcPick) }}
+                            partLabel={PLANNER_PART_LABELS[vcKey]}
+                          />
+                        )}
                       </>
                     );
                   })()}
