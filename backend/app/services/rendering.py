@@ -23,6 +23,8 @@ def recolor_surface(
     output_path: str,
     wood_grain: bool = False,
     grain_horizontal: bool = True,
+    metal: bool = False,
+    glossiness: float = 0.0,
 ) -> str:
     """마스크 영역을 목표 색으로 "실제 시공된 것처럼" 다시 칠한다.
 
@@ -41,13 +43,25 @@ def recolor_surface(
     남은 채 색만 바뀌어 "필름을 붙여놓은 스티커"가 아니라 실제로 그 색으로
     시공하고 다시 찍은 사진처럼 보인다. 그리고 네트워크 호출이 없어 항상
     즉시, 100% 결정적으로 성공한다.
-    """
+
+    [왜 — 2026-11-09 "초실사 재질 치환" 요청에 대한 실제 구현]
+    생성형 AI로 "기존 질감을 지우고 새 질감을 그려 넣는" 방식은 위에서 이미
+    실패한 디퓨전 인페인팅과 같은 종류의 문제(마스크 안 원본을 버리고 새로
+    그려 요청한 속성이 반영 안 됨)를 또 겪을 가능성이 커 채택하지 않았다.
+    대신 이 결정적 LAB 리컬러 위에 "절차적 질감 합성"을 얹는다 — wood_grain은
+    이미 이 방식(_wood_grain_layer)으로 돼 있었고, 여기 metal/glossiness를
+    같은 방식으로 추가한다. metal=True면 헤어라인(가늘고 촘촘한 결) 패턴을
+    얹고, glossiness(0~100)가 높을수록 (1) 원본의 미세한 잔무늬가 덜 비치고
+    (매끈한 재질일수록 바탕이 안 드러난다) (2) 대각선 스페큘러 하이라이트
+    띠가 강해진다(브러시드 메탈이 빛을 받아 길게 번지는 반사). 둘 다 진짜
+    3D 조명 재계산이 아니라 그럴듯한 근사치다 — 사진마다 실제 조명 방향이
+    다른데 이 함수는 항상 같은 가상의 "좌상단→우하단 대각선 광원"을 가정한다."""
     base = Image.open(base_image_path).convert("RGB")
     mask = Image.open(mask_path).convert("L")
     if mask.size != base.size:
         mask = mask.resize(base.size, Image.NEAREST)
 
-    recolored = _recolor_pixels(base, mask, color_hex, wood_grain, grain_horizontal)
+    recolored = _recolor_pixels(base, mask, color_hex, wood_grain, grain_horizontal, metal, glossiness)
 
     # 경계를 살짝 흐려 합성 자국이 칼로 오린 듯 보이지 않게 한다.
     feather = max(1.0, base.width * 0.0025)
@@ -97,6 +111,16 @@ _TEXTURE_KEEP = 0.28
 # 우드 필름은 결 자체가 자재의 무늬라 조금 더 남겨 자연스럽게 만든다.
 _TEXTURE_KEEP_WOOD = 0.45
 
+# [메탈/헤어라인 질감 — 2026-11-09 "초실사 재질 치환" 추가]
+# 헤어라인 메탈의 결은 나뭇결보다 훨씬 가늘고 촘촘하다(브러시 자국). 진폭은
+# 나뭇결보다 낮게(두드러지면 스크래치처럼 보임), 결 자체는 더 고주파로 만든다.
+_METAL_GRAIN_AMPLITUDE = 4.0
+# 광택(glossiness, 0~100)이 높을수록 대각선 스페큘러 하이라이트 띠가 강해진다.
+_METAL_SPECULAR_AMPLITUDE = 45.0
+# 광택이 높을수록(매끈한 재질일수록) 원본 표면의 미세한 잔무늬가 필름 아래로
+# 덜 비친다 — glossiness=100에서 TEXTURE_KEEP을 이 비율만큼 추가로 줄인다.
+_GLOSS_TEXTURE_SUPPRESSION = 0.6
+
 # [물감처럼 보이는 문제 — "시트지가 아니라 그냥 칠한 것 같다"]
 # 위 _TEXTURE_KEEP은 "원본 사진에 있던" 무늬를 얼마나 남길지를 정한다. 그런데
 # 가공 전 합판(MDF)처럼 원본 표면 자체가 거의 매끈해 잔무늬가 애초에 없으면,
@@ -128,7 +152,13 @@ def _soft_clip(values: np.ndarray, low: float = 0.0, high: float = 255.0, knee: 
 
 
 def _recolor_pixels(
-    base: Image.Image, mask: Image.Image, color_hex: str, wood_grain: bool, grain_horizontal: bool = True
+    base: Image.Image,
+    mask: Image.Image,
+    color_hex: str,
+    wood_grain: bool,
+    grain_horizontal: bool = True,
+    metal: bool = False,
+    glossiness: float = 0.0,
 ) -> Image.Image:
     lab = np.asarray(base.convert("LAB"), dtype=np.float32)
     sel = np.asarray(mask, dtype=np.float32) > 127
@@ -160,10 +190,19 @@ def _recolor_pixels(
         dtype=np.float32,
     )
     keep = _TEXTURE_KEEP_WOOD if wood_grain else _TEXTURE_KEEP
+    # 광택이 높을수록(매끈한 금속·하이그로시일수록) 원본 표면의 잔무늬가 필름
+    # 아래로 덜 비친다 — glossiness=100에서 keep을 최대 _GLOSS_TEXTURE_SUPPRESSION
+    # 만큼 더 줄인다.
+    gloss_ratio = min(max(glossiness, 0.0), 100.0) / 100.0
+    keep = keep * (1.0 - gloss_ratio * _GLOSS_TEXTURE_SUPPRESSION)
     new_l = low + (new_l - low) * keep
 
     if wood_grain:
         new_l = new_l + _wood_grain_layer(base.size, grain_horizontal) * _GRAIN_AMPLITUDE
+    if metal:
+        new_l = new_l + _metal_hairline_layer(base.size, grain_horizontal) * _METAL_GRAIN_AMPLITUDE
+        if gloss_ratio > 0:
+            new_l = new_l + _metal_specular_band(base.size) * gloss_ratio * _METAL_SPECULAR_AMPLITUDE
     # 우드/비우드 가리지 않고 항상 얹는다 — 원본 표면이 매끈해 잔무늬가 거의
     # 없던 경우(가공 전 MDF 등)에 특히 효과가 커서, 그런 사진일수록 "물감 칠"
     # 느낌이 강했던 문제를 직접 겨냥한다.
@@ -221,6 +260,8 @@ def recolor_regions(
     output_path: str,
     wood_grain: bool = False,
     grain_horizontal: bool = True,
+    metal: bool = False,
+    glossiness: float = 0.0,
 ) -> str:
     """recolor_surface와 목적은 같지만, 넘겨준 마스크 여럿을 하나로 합쳐 명암
     통계를 내지 않고 마스크 하나하나 따로 계산해 합성한다.
@@ -241,7 +282,7 @@ def recolor_regions(
         mask = Image.open(mask_path).convert("L")
         if mask.size != base.size:
             mask = mask.resize(base.size, Image.NEAREST)
-        recolored = _recolor_pixels(base, mask, color_hex, wood_grain, grain_horizontal)
+        recolored = _recolor_pixels(base, mask, color_hex, wood_grain, grain_horizontal, metal, glossiness)
         soft_mask = mask.filter(ImageFilter.GaussianBlur(feather))
         result = Image.composite(recolored, result, soft_mask)
     result.save(output_path)
@@ -400,6 +441,43 @@ def _wood_grain_layer(size: tuple[int, int], horizontal: bool = True) -> np.ndar
     arr = np.asarray(stretched, dtype=np.float32)
     spread = float(arr.std()) or 1.0
     return (arr - arr.mean()) / spread
+
+
+def _metal_hairline_layer(size: tuple[int, int], horizontal: bool = True) -> np.ndarray:
+    """헤어라인 메탈 특유의 아주 가늘고 촘촘한 브러시 결을 절차적으로 만든다
+    (-1~1 정규화). _wood_grain_layer와 같은 원리(저해상도 노이즈를 늘려 결
+    방향을 만든다)지만, 결 방향의 분할을 훨씬 촘촘하게(gw // 4, 나뭇결은
+    gw // 48) 잡아 나뭇결보다 훨씬 가늘고 빠르게 반복되는 줄무늬를 만든다 —
+    실제 헤어라인 마감은 결 하나하나가 눈에 잘 안 보일 정도로 가늘다."""
+    width, height = size
+    gen_size = size if horizontal else (height, width)
+    gw, gh = gen_size
+    rng = np.random.default_rng(20261109)
+    coarse = rng.standard_normal((max(4, gh // 2), max(4, gw // 4))).astype(np.float32)
+
+    noise_img = Image.fromarray(((coarse * 40) + 128).clip(0, 255).astype(np.uint8), mode="L")
+    stretched = noise_img.resize(gen_size, Image.BICUBIC).filter(ImageFilter.GaussianBlur(0.3))
+    if not horizontal:
+        stretched = stretched.transpose(Image.ROTATE_90)
+
+    arr = np.asarray(stretched, dtype=np.float32)
+    spread = float(arr.std()) or 1.0
+    return (arr - arr.mean()) / spread
+
+
+def _metal_specular_band(size: tuple[int, int]) -> np.ndarray:
+    """브러시드 메탈이 빛을 받아 대각선으로 길게 번지는 하이라이트 띠를
+    절차적으로 만든다 (0~1 정규화, 띠 중심에서 1에 가깝고 멀어질수록 0).
+
+    [이 근사가 진짜 조명 재계산이 아닌 이유] 사진마다 실제 조명 방향·위치가
+    다른데, 이 함수는 항상 같은 가상의 "좌상단 쪽에서 비스듬히" 광원을
+    가정한 고정 띠를 그린다. 진짜 조명 방향을 반영하려면 사진의 깊이·노멀을
+    추정해야 하는데, 그건 이 결정적 함수의 범위를 넘는 별도 작업이다."""
+    width, height = size
+    xx, yy = np.meshgrid(np.linspace(0.0, 1.0, width), np.linspace(0.0, 1.0, height))
+    diag = (xx + yy) / 2.0
+    band = np.exp(-((diag - 0.35) ** 2) / (2 * 0.05**2))
+    return band.astype(np.float32)
 
 
 def _film_microtexture_layer(size: tuple[int, int]) -> np.ndarray:

@@ -347,6 +347,8 @@ def run_pipeline(
                     pattern_applied_path,
                     wood_grain=_is_wood(options.film.pattern_id),
                     grain_horizontal=options.film.grain_horizontal,
+                    metal=_is_metal(options.film.pattern_id),
+                    glossiness=_glossiness_for(options.film.pattern_id),
                 )
                 current_path = pattern_applied_path
 
@@ -435,6 +437,8 @@ def run_inpaint_edit(job_id: str, region_id: str, pattern_id: str, grain_horizon
             edit_path,
             wood_grain=_is_wood(pattern_id),
             grain_horizontal=grain_horizontal,
+            metal=_is_metal(pattern_id),
+            glossiness=_glossiness_for(pattern_id),
         )
 
         job["current_image_path"] = edit_path
@@ -1009,6 +1013,8 @@ def _ensure_film_applied(
         corrected_path,
         wood_grain=_is_wood(options.film.pattern_id),
         grain_horizontal=options.film.grain_horizontal,
+        metal=_is_metal(options.film.pattern_id),
+        glossiness=_glossiness_for(options.film.pattern_id),
     )
     JOBS[job_id].setdefault("notices", []).append(
         "AI 시공 사진에 필름 색이 충분히 입혀지지 않아, 필름 대상 부위를 직접 다시 칠했어요."
@@ -1044,6 +1050,8 @@ def _ensure_wall_film_applied(
         swatch_path,
         corrected_path,
         wood_grain=_is_wood(options.wall_film.pattern_id),
+        metal=_is_metal(options.wall_film.pattern_id),
+        glossiness=_glossiness_for(options.wall_film.pattern_id),
     )
     JOBS[job_id].setdefault("notices", []).append(
         "AI 시공 사진에 벽면 색이 충분히 입혀지지 않아, 벽면을 직접 다시 칠했어요."
@@ -1063,6 +1071,28 @@ def _is_wood(pattern_id: str) -> bool:
     if pattern is not None and "wood_grain" in pattern:
         return bool(pattern["wood_grain"])
     return "wood" in pattern_id
+
+
+# [왜 — 2026-11-09 "초실사 재질 치환"] _is_wood와 같은 패턴. catalog.py에
+# "metal": True가 적혀 있으면 그걸 믿고, 없으면 이름으로 추정한다. 지금은
+# 실제 제품 품번이 정해진 메탈 계열 PATTERNS 항목이 아직 없다(사장님이
+# "현대보닥 메탈 시리즈"라고만 언급했지 정확한 코드를 안 줬다) — 그래서
+# 지금은 이름 추정 경로만 실제로 쓰이고, 나중에 진짜 메탈 품번이
+# catalog.py에 추가되면 그 즉시 metal=True 플래그를 믿는 경로로 넘어간다.
+def _is_metal(pattern_id: str) -> bool:
+    pattern = PATTERNS.get(pattern_id)
+    if pattern is not None and "metal" in pattern:
+        return bool(pattern["metal"])
+    return "metal" in pattern_id or "스테인리스" in pattern_id
+
+
+def _glossiness_for(pattern_id: str) -> float:
+    """0(완전 무광)~100(고광택) — catalog.py에 적어 둔 값을 쓰고, 없으면
+    메탈은 기본적으로 고광택(70)으로, 그 외는 무광(0)으로 가정한다."""
+    pattern = PATTERNS.get(pattern_id)
+    if pattern is not None and "glossiness" in pattern:
+        return float(pattern["glossiness"])
+    return 70.0 if _is_metal(pattern_id) else 0.0
 
 
 def _effective_color_hex(pattern_meta: dict, swatch_path: str | None) -> str:
@@ -1086,6 +1116,8 @@ def _recolor_for_category(
     output_path: str,
     wood_grain: bool,
     grain_horizontal: bool = True,
+    metal: bool = False,
+    glossiness: float = 0.0,
 ) -> None:
     """이 항목에 실제 견본 사진이 있으면 그 사진의 질감(색 얼룩·나뭇결 등)을
     그대로 거울 타일링해 입히고(recolor_regions_with_swatch), 없으면 카탈로그
@@ -1109,6 +1141,8 @@ def _recolor_for_category(
         output_path,
         wood_grain=wood_grain,
         grain_horizontal=grain_horizontal,
+        metal=metal,
+        glossiness=glossiness,
     )
 
 

@@ -427,6 +427,10 @@ def _recolor(
             # 나뭇결 처리가 빠진다 — PATTERNS에 명시적으로 적어 둔 wood_grain을 먼저 보고,
             # 없으면(기존 항목들) 그동안 쓰던 글자 포함 여부로 물러선다.
             wood_grain=pattern.get("wood_grain", "wood" in option_id) if pattern else False,
+            # metal/glossiness도 같은 방식 — pipeline._is_metal/_glossiness_for와
+            # 똑같은 판단 로직이지만 여긴 PATTERNS dict를 이미 들고 있어 직접 읽는다.
+            metal=pattern.get("metal", "metal" in option_id) if pattern else False,
+            glossiness=float(pattern.get("glossiness", 70.0 if pattern and pattern.get("metal") else 0.0)) if pattern else 0.0,
         )
     result = Image.open(out_path).convert("RGB")
     try:
