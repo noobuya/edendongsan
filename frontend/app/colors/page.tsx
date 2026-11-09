@@ -5,7 +5,8 @@ import Link from "next/link";
 import { ArrowLeft, Search, X } from "lucide-react";
 import { ALL_PATTERN_SWATCHES, TONE_LABELS } from "@/lib/patternSwatches";
 import { useSwipeNavigate } from "@/lib/useSwipeNavigate";
-import { getEstimatorItems, type EstimatorItem } from "@/lib/api";
+import { getEstimatorItems, getSwatchPhotos, type EstimatorItem } from "@/lib/api";
+import AssetImage from "@/components/AssetImage";
 import VirtualConstructionView from "@/components/colors/VirtualConstructionView";
 import type { PatternSwatch } from "@/types";
 
@@ -562,15 +563,20 @@ function groupByBrand(swatches: PatternSwatch[]): { label: string; items: Patter
 }
 
 /** 작은 원 하나로는 "느낌"이 잘 안 산다 — 눌러서 화면을 거의 채우는 큰 색 면으로
- *  보여줘야 고객이 실제로 어떤 느낌인지 가늠할 수 있다. */
-function SwatchDetail({ swatch, onClose }: { swatch: PatternSwatch; onClose: () => void }) {
+ *  보여줘야 고객이 실제로 어떤 느낌인지 가늠할 수 있다. 실물 견본 사진을 올려둔
+ *  품번이면(/admin/swatches) 근사 색 대신 그 사진을 그대로 보여준다. */
+function SwatchDetail({ swatch, photoUrl, onClose }: { swatch: PatternSwatch; photoUrl?: string; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black/40 p-4" onClick={onClose}>
       <div
         className="mt-auto w-full overflow-hidden rounded-[28px] bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="h-[46vh] w-full" style={{ backgroundColor: swatch.colorHex }} />
+        {photoUrl ? (
+          <AssetImage src={photoUrl} alt={swatch.name} className="h-[46vh] w-full object-cover" />
+        ) : (
+          <div className="h-[46vh] w-full" style={{ backgroundColor: swatch.colorHex }} />
+        )}
         <div className="flex items-start justify-between gap-3 p-6">
           <div>
             <p className="text-[20px] font-extrabold tracking-tight text-[#191f28]">{swatch.name}</p>
@@ -578,6 +584,7 @@ function SwatchDetail({ swatch, onClose }: { swatch: PatternSwatch; onClose: () 
               {swatch.brand ? `${swatch.brand}${swatch.code ? ` · ${swatch.code}` : ""}` : "기본 색상"}
               {" · "}
               {TONE_LABELS[swatch.tone]}
+              {photoUrl ? " · 실물 사진" : " · 근사 색"}
             </p>
           </div>
           <button
@@ -641,6 +648,12 @@ function PlannerPartCard({
 export default function ColorsPage() {
   const [tone, setTone] = useState<PatternSwatch["tone"] | "all">("all");
   const [opened, setOpened] = useState<PatternSwatch | null>(null);
+  // 사장님이 /admin/swatches에서 올린 실물 견본 사진 — 올려둔 품번만 들어있고,
+  // 없는 품번은 기존처럼 근사 색 블록으로 보여준다.
+  const [swatchPhotos, setSwatchPhotos] = useState<Record<string, string>>({});
+  useEffect(() => {
+    getSwatchPhotos().then(setSwatchPhotos).catch(() => setSwatchPhotos({}));
+  }, []);
   const [query, setQuery] = useState("");
   // null = 아직 검색 안 함, "none" = 검색했지만 못 알아들음, 그 외엔 짚어낸 톤.
   const [answer, setAnswer] = useState<PatternSwatch["tone"] | "none" | null>(null);
@@ -1262,7 +1275,11 @@ export default function ColorsPage() {
                   onClick={() => setOpened(s)}
                   className="flex-1 overflow-hidden rounded-xl bg-white text-left text-[#191f28] active:scale-95"
                 >
-                  <div className="h-12 w-full" style={{ backgroundColor: s.colorHex }} />
+                  {swatchPhotos[s.id] ? (
+                    <AssetImage src={swatchPhotos[s.id]} alt={s.name} className="h-12 w-full object-cover" />
+                  ) : (
+                    <div className="h-12 w-full" style={{ backgroundColor: s.colorHex }} />
+                  )}
                   <div className="px-2 py-1.5">
                     <p className="truncate text-[12px] font-bold leading-tight">{s.name}</p>
                     <p className="text-[11px] text-[#8b95a1]">{s.code}</p>
@@ -1305,7 +1322,11 @@ export default function ColorsPage() {
                     onClick={() => setOpened(s)}
                     className="overflow-hidden rounded-2xl bg-white text-left shadow-[0_1px_2px_rgba(25,31,40,0.04)] transition-transform active:scale-95"
                   >
-                    <div className="h-16 w-full" style={{ backgroundColor: s.colorHex }} />
+                    {swatchPhotos[s.id] ? (
+                      <AssetImage src={swatchPhotos[s.id]} alt={s.name} className="h-16 w-full object-cover" />
+                    ) : (
+                      <div className="h-16 w-full" style={{ backgroundColor: s.colorHex }} />
+                    )}
                     <div className="px-2.5 py-2">
                       <p className="truncate text-[12.5px] font-bold leading-tight">{s.name}</p>
                       {s.code && <p className="mt-0.5 text-[11px] text-[#8b95a1]">{s.code}</p>}
@@ -1321,7 +1342,7 @@ export default function ColorsPage() {
         </div>
       </div>
 
-      {opened && <SwatchDetail swatch={opened} onClose={() => setOpened(null)} />}
+      {opened && <SwatchDetail swatch={opened} photoUrl={swatchPhotos[opened.id]} onClose={() => setOpened(null)} />}
     </main>
   );
 }

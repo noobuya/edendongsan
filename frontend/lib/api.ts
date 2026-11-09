@@ -548,6 +548,42 @@ export async function generateHeroImage(ownerToken: string): Promise<BrandAssets
   return res.json();
 }
 
+/* ---- 실물 견본 사진(/admin/swatches) ----
+ * [왜 — 2026-11-10 "견본품 사진을 다 찍어서 올리면 학습해서 보여줄 수 있어?"]
+ * catalog.py/patternSwatches.ts의 색은 "공식 사이트가 hex를 공개 안 해 컬러명을
+ * 보고 근사치로 잡은 값"이다. 사장님이 실물 샘플북을 찍어 올리면 그 사진을
+ * 색 블록 대신 그대로 보여줘, 현장에서 고객에게 실제로 발주할 그 샘플을
+ * 보여줄 수 있게 한다. */
+
+/** 업로드된 품번만 {pattern_id: url}로 온다 — 없는 품번은 프론트가 approxHex
+ *  색 블록으로 대체한다. 공개 핑이라 인증이 필요 없다(고객도 보게 되는 화면). */
+export async function getSwatchPhotos(): Promise<Record<string, string>> {
+  const res = await apiFetch(`${API_BASE}/api/swatch-photos`);
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "견본 사진 목록을 불러오지 못했습니다."));
+  return res.json();
+}
+
+export async function uploadSwatchPhoto(patternId: string, file: File, ownerToken: string): Promise<Record<string, string>> {
+  const form = new FormData();
+  form.append("image", file);
+  const res = await apiFetch(`${API_BASE}/api/swatch-photos/${patternId}`, {
+    method: "POST",
+    body: form,
+    headers: ownerHeaders(ownerToken),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "사진을 올리지 못했습니다."));
+  return res.json();
+}
+
+export async function deleteSwatchPhoto(patternId: string, ownerToken: string): Promise<Record<string, string>> {
+  const res = await apiFetch(`${API_BASE}/api/swatch-photos/${patternId}`, {
+    method: "DELETE",
+    headers: ownerHeaders(ownerToken),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "사진을 지우지 못했습니다."));
+  return res.json();
+}
+
 /* ---- 업체 정보(상호명·전화번호 등, /admin/brand) ---- */
 export interface BusinessInfo {
   business_name: string;
