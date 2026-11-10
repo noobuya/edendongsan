@@ -584,6 +584,76 @@ export async function deleteSwatchPhoto(patternId: string, ownerToken: string): 
   return res.json();
 }
 
+/* ---- 실물 견본 "책자" 스캔(/admin/swatch-scan) ----
+ * [왜 — 2026-11-10 "책자가 100장짜리, 업체별로 넣으면 300쪽"] 위 swatch-photos는
+ * catalog.py의 고정 24개 품번 하나하나에 사진을 올리는 용도라 이 규모를 못
+ * 감당한다. 이쪽은 쪽 사진 한 장(또는 여러 장)을 올리면 AI가 그 쪽 안의 품번
+ * 칩들을 전부 찾아 자동으로 잘라 새 항목으로 쌓는, 완전히 별개의 동적 DB다. */
+export interface SwatchScanEntry {
+  id: string;
+  brand: string;
+  code: string;
+  name: string;
+  photo: string;
+  source: string;
+  status: "needs_review" | "confirmed";
+  created_at: number;
+}
+
+export interface SwatchScanResult {
+  found: SwatchScanEntry[];
+  errors: string[];
+  total: number;
+}
+
+/** 스캔된 품번 사진의 실제 URL — entry.photo(파일명)로 조립한다. */
+export function swatchScanPhotoUrl(photoFilename: string): string {
+  return `${API_BASE}/api/swatch-scan/photo/${photoFilename}`;
+}
+
+/** 지금까지 스캔된 전체 목록 — 공개 핑이라 인증이 필요 없다(고객도 보는 /colors가 씀). */
+export async function getSwatchScans(): Promise<SwatchScanEntry[]> {
+  const res = await apiFetch(`${API_BASE}/api/swatch-scan`);
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "견본 목록을 불러오지 못했습니다."));
+  return res.json();
+}
+
+/** 쪽 사진 한 장 또는 여러 장(책자 전체도 한 번에)을 올려 스캔한다. */
+export async function scanSwatchPages(brand: string, files: File[], ownerToken: string): Promise<SwatchScanResult> {
+  const form = new FormData();
+  files.forEach((file) => form.append("images", file));
+  const res = await apiFetch(`${API_BASE}/api/swatch-scan/${encodeURIComponent(brand)}`, {
+    method: "POST",
+    body: form,
+    headers: ownerHeaders(ownerToken),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "스캔에 실패했습니다."));
+  return res.json();
+}
+
+export async function updateSwatchScan(
+  id: string,
+  fields: { code?: string; name?: string; brand?: string },
+  ownerToken: string
+): Promise<SwatchScanEntry[]> {
+  const res = await apiFetch(`${API_BASE}/api/swatch-scan/${id}`, {
+    method: "PATCH",
+    headers: { ...ownerHeaders(ownerToken), "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "수정하지 못했습니다."));
+  return res.json();
+}
+
+export async function deleteSwatchScan(id: string, ownerToken: string): Promise<SwatchScanEntry[]> {
+  const res = await apiFetch(`${API_BASE}/api/swatch-scan/${id}`, {
+    method: "DELETE",
+    headers: ownerHeaders(ownerToken),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "지우지 못했습니다."));
+  return res.json();
+}
+
 /* ---- 업체 정보(상호명·전화번호 등, /admin/brand) ---- */
 export interface BusinessInfo {
   business_name: string;

@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.database import Base, engine, migrate_recruiting_db
-from app.routers import admin, admin_automation, automation, blog, blog_compose, brand, community, finance, jobs, journal, layout, ledger, manual_mask, pricing, portfolio, proposals, push, quotes, recruiting, swatch_photos, upload, warranty, weather
+from app.routers import admin, admin_automation, automation, blog, blog_compose, brand, community, finance, jobs, journal, layout, ledger, manual_mask, pricing, portfolio, proposals, push, quotes, recruiting, swatch_photos, swatch_scan, upload, warranty, weather
 
 settings = get_settings()
 app = FastAPI(title="AI 시공 견적/렌더링 API")
@@ -60,6 +60,7 @@ app.include_router(layout.router)
 app.include_router(weather.router)
 app.include_router(push.router)
 app.include_router(swatch_photos.router)
+app.include_router(swatch_scan.router)
 
 
 # 프론트가 켜질 때마다 "서버에 닿는지"만 확인하는 공개 핑. 인증이나 고객 데이터가

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Search, X } from "lucide-react";
 import { ALL_PATTERN_SWATCHES, TONE_LABELS } from "@/lib/patternSwatches";
 import { useSwipeNavigate } from "@/lib/useSwipeNavigate";
-import { getEstimatorItems, getSwatchPhotos, type EstimatorItem } from "@/lib/api";
+import { getEstimatorItems, getSwatchPhotos, getSwatchScans, swatchScanPhotoUrl, type EstimatorItem, type SwatchScanEntry } from "@/lib/api";
 import AssetImage from "@/components/AssetImage";
 import VirtualConstructionView from "@/components/colors/VirtualConstructionView";
 import type { PatternSwatch } from "@/types";
@@ -654,6 +654,24 @@ export default function ColorsPage() {
   useEffect(() => {
     getSwatchPhotos().then(setSwatchPhotos).catch(() => setSwatchPhotos({}));
   }, []);
+
+  // /admin/swatch-scan에서 책자 쪽을 스캔해 쌓은 실물 견본들 — 24개 고정 목록과는
+  // 별개로 계속 늘어난다. 코드를 못 읽은(needs_review) 항목은 흐리게 표시해 아직
+  // 확인 전이라는 걸 알 수 있게 한다.
+  const [scannedEntries, setScannedEntries] = useState<SwatchScanEntry[]>([]);
+  const [openedScan, setOpenedScan] = useState<SwatchScanEntry | null>(null);
+  useEffect(() => {
+    getSwatchScans().then(setScannedEntries).catch(() => setScannedEntries([]));
+  }, []);
+  const scannedByBrand = useMemo(() => {
+    const map = new Map<string, SwatchScanEntry[]>();
+    for (const e of scannedEntries) {
+      const list = map.get(e.brand) ?? [];
+      list.push(e);
+      map.set(e.brand, list);
+    }
+    return [...map.entries()];
+  }, [scannedEntries]);
   const [query, setQuery] = useState("");
   // null = 아직 검색 안 함, "none" = 검색했지만 못 알아들음, 그 외엔 짚어낸 톤.
   const [answer, setAnswer] = useState<PatternSwatch["tone"] | "none" | null>(null);
@@ -1340,9 +1358,75 @@ export default function ColorsPage() {
             <p className="py-10 text-center text-[14px] text-[#8b95a1]">해당 느낌의 색상이 아직 없습니다</p>
           )}
         </div>
+
+        {scannedByBrand.length > 0 && (
+          <div className="mt-8 space-y-6">
+            <p className="px-1 text-[13px] font-bold text-[#191f28]">
+              실물 견본 책자 스캔 ({scannedEntries.length}개 — /admin/swatch-scan에서 계속 추가됩니다)
+            </p>
+            {scannedByBrand.map(([brandName, list]) => (
+              <section key={brandName}>
+                <p className="mb-2.5 px-1 text-[12.5px] font-bold uppercase tracking-wide text-[#8b95a1]">
+                  {brandName} ({list.length})
+                </p>
+                <div className="grid grid-cols-3 gap-3">
+                  {list.map((e) => (
+                    <button
+                      key={e.id}
+                      type="button"
+                      onClick={() => setOpenedScan(e)}
+                      className={`overflow-hidden rounded-2xl bg-white text-left shadow-[0_1px_2px_rgba(25,31,40,0.04)] transition-transform active:scale-95 ${
+                        e.status === "needs_review" ? "opacity-60" : ""
+                      }`}
+                    >
+                      <AssetImage src={swatchScanPhotoUrl(e.photo)} alt={e.name || e.code} className="h-16 w-full object-cover" />
+                      <div className="px-2.5 py-2">
+                        <p className="truncate text-[12.5px] font-bold leading-tight">{e.name || "(이름 확인 필요)"}</p>
+                        <p className="mt-0.5 text-[11px] text-[#8b95a1]">{e.code || "코드 확인 필요"}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
       </div>
 
       {opened && <SwatchDetail swatch={opened} photoUrl={swatchPhotos[opened.id]} onClose={() => setOpened(null)} />}
+
+      {openedScan && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-black/40 p-4" onClick={() => setOpenedScan(null)}>
+          <div
+            className="mt-auto w-full overflow-hidden rounded-[28px] bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <AssetImage
+              src={swatchScanPhotoUrl(openedScan.photo)}
+              alt={openedScan.name || openedScan.code}
+              className="h-[46vh] w-full object-cover"
+            />
+            <div className="flex items-start justify-between gap-3 p-6">
+              <div>
+                <p className="text-[20px] font-extrabold tracking-tight text-[#191f28]">
+                  {openedScan.name || "(이름 확인 필요)"}
+                </p>
+                <p className="mt-1 text-[13px] text-[#5b6573]">
+                  {openedScan.brand} · {openedScan.code || "코드 확인 필요"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOpenedScan(null)}
+                aria-label="닫기"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#f2f4f6] text-[#4e5968]"
+              >
+                <X className="h-5 w-5" strokeWidth={2} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
