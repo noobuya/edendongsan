@@ -107,11 +107,13 @@ DEFAULT_ITEMS = {
     },
     # 신발장 — 붙박이장과 같은 문짝+몸통 구조지만 크기가 작다(표준 1~2도어,
     # 문 약 1.8㎡ + 몸통 약 1.5㎡). 위 WARDROBE_SET과 같은 1품 처리량 비율로 축소.
+    # [가격 정정 — 2026-11-21] "짝당 5만 원"도 세트 전체가 아니라 문짝 한 짝
+    # 단가였다(SINK_L과 같은 착오) — 원래 값으로 되돌린다.
     "SHOE_CABINET": {
         "group": "필름 시공",
         "label": "신발장 리폼 세트", "icon": "👞",
         "chip": ["#fde68a", "#eab308"], "design_type": None, "film_meters": 3.5,
-        "material_cost": 15000, "labor_cost": 35000,
+        "material_cost": 40000, "labor_cost": 90000,
         "replacement_cost_reference": 300000,
     },
     # 냉장고장 — 냉장고를 감싸는 좌우 측판·상판(필요 시 장식 도어 포함)만 대상이다.
