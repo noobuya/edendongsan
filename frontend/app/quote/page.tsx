@@ -38,8 +38,8 @@ const DEFAULT_DOOR_DETAIL: DoorDetail = { design_type: "flat", width_mm: 900, he
 // 평수별 전체 견적의 표준 단가(원/평) — "핵심 시공" 전부(문/샷시/몰딩/걸레받이 +
 // 2026-11-20부터 싱크대/중문/방화문/붙박이장/신발장/냉장고장/우물몰딩까지)가
 // 기본 포함된 올인클루시브 가격이다. 현장 실측 후 확정되는 범위 가격이다.
-const PYEONG_BASE_MIN = 221_700;
-const PYEONG_BASE_MAX = 262_000;
+const PYEONG_BASE_MIN = 192_500;
+const PYEONG_BASE_MAX = 227_500;
 const PYEONG_MIN = 10;
 const PYEONG_MAX = 60;
 const PYEONG_TICKS = [10, 24, 33, 40, 60];
@@ -92,6 +92,11 @@ type Mode = "quick" | "detail";
 // 계산했다(문/샷시 offMult는 estimator_app 가격이 안 바뀌었으니 원래 값으로
 // 되돌림). sinkStraight(일자)의 onMult 1.1은 이번에 안 건드렸다 — SINK_L과
 // 짝을 맞추려면 더 낮춰야 할 수 있는데, 숫자를 못 받아서 비워둔다.
+//
+// [왜 — 2026-11-21 "우물몰딩 92만 원은 필름 시공이라 절대 나올 수 없다, 15만
+// 원이면 충분"]
+// estimator_app WELL_MOLDING을 92만→15만 원으로 정정 — 아래 wellMolding의
+// offMult와 PYEONG_BASE_MIN/MAX도 줄어든 비중에 맞게 다시 계산했다.
 interface QuickToggleDef {
   key: string;
   label: string;
@@ -114,7 +119,7 @@ const QUICK_TOGGLES: QuickToggleDef[] = [
   { key: "wardrobe", label: "붙박이장 포함", desc: "붙박이장 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.99 },
   { key: "shoeCabinet", label: "신발장 포함", desc: "신발장 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.99 },
   { key: "fridgeCabinet", label: "냉장고장 포함", desc: "냉장고장 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.94 },
-  { key: "wellMolding", label: "우물몰딩 포함", desc: "우물천장 몰딩 시공(방 1개 기준)", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.83 },
+  { key: "wellMolding", label: "우물몰딩 포함", desc: "우물천장 몰딩 시공(방 1개 기준)", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.96 },
   { key: "fan", label: "실링팬", desc: "실링팬 설치 추가", group: "전기·조명·설비", defaultOn: false, onMult: 1.06, offMult: 1 },
   { key: "downlight", label: "다운라이트", desc: "다운라이트 타공·배선 추가(5개 기준)", group: "전기·조명·설비", defaultOn: false, onMult: 1.06, offMult: 1 },
   { key: "sinkBowl", label: "싱크볼 교체", desc: "싱크볼 교환 시공 추가", group: "전기·조명·설비", defaultOn: false, onMult: 1.08, offMult: 1 },
