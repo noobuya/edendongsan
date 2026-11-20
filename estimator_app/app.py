@@ -75,6 +75,17 @@ DEFAULT_ITEMS = {
         "material_cost": 180000, "labor_cost": 720000,
         "replacement_cost_reference": 600000,
     },
+    # 걸레받이 — 바닥과 벽이 만나는 띠(위 몰딩과는 별도 라인, 같은 방에 둘 다 있으면
+    # 각각 방 둘레만큼 필요하다). 몰딩은 디자인(민자/웨인스코팅)에 따라 둘로 나뉘지만
+    # 걸레받이는 대부분 민자 단일 형태라 세트를 하나만 둔다. 바닥 높이라 머리 위
+    # 작업이 없고 평몰딩(MOLDING_FLAT)보다 품이 덜 들어, 같은 18m 기준으로 평몰딩의
+    # 약 75% 선으로 잡았다 — 실제 체감과 다르면 단가 설정에서 조정할 것.
+    "BASEBOARD": {
+        "group": "필름 시공",
+        "label": "걸레받이 라인 세트", "icon": "🪵",
+        "chip": ["#d6d3d1", "#a8a29e"], "design_type": None, "film_meters": 18.0,
+        "material_cost": 90000, "labor_cost": 360000,
+    },
     # 붙박이장 — 문짝(눕혀 붙여 빠름)과 몸통(세워둔 채 좁은 틈, 더 더딤)을 메인 AI
     # 견적(backend/app/pricing_store.py의 "wardrobe" 1품 처리량, 문 14㎡/몸통 7㎡)과
     # 같은 비율로 봐서, 표준 2도어 붙박이장 한 조(문 약 2.7㎡ + 몸통 약 3㎡) 기준으로
@@ -103,8 +114,10 @@ DEFAULT_ITEMS = {
         "chip": ["#7dd3fc", "#0284c7"], "design_type": None, "film_meters": 4.0,
         "material_cost": 45000, "labor_cost": 180000,
     },
-    # 우물몰딩 — 천장을 사각으로 턱지게 짜고 그 둘레를 두르는 몰딩(천장 코퍼/우물천장).
-    # 벽 몰딩(위 MOLDING_CROWN)보다 전부 머리 위에서 작업해 더 더디므로 인건비를 더 높게 잡았다.
+    # 우물몰딩 — 목공으로 몰딩을 새로 짜는 공사가 아니라, 천장이 사각으로 턱지게
+    # 짜인 기존 몰딩(천장 코퍼/우물천장)에 필름을 붙이는 작업이다. 벽 몰딩(위
+    # MOLDING_CROWN, 한 줄로 이어지는 라인)보다 턱진 면을 여러 각도로 따라가며
+    # 머리 위에서 재단·부착해야 해 더 더디므로 인건비를 더 높게 잡았다.
     "WELL_MOLDING": {
         "group": "필름 시공",
         "label": "우물몰딩 리폼 세트", "icon": "🖼️",
@@ -219,7 +232,7 @@ ADDON_ITEMS = {
         "label": "기존 실리콘 제거 및 재시공",
         "material_cost": 15000,
         "labor_cost": 25000,
-        "applicable_to": ["DOOR_SET", "SASH_SMALL", "SASH_LARGE", "MOLDING_FLAT", "MOLDING_CROWN", "WARDROBE_SET", "WELL_MOLDING", "SHOE_CABINET"],
+        "applicable_to": ["DOOR_SET", "SASH_SMALL", "SASH_LARGE", "MOLDING_FLAT", "MOLDING_CROWN", "BASEBOARD", "WARDROBE_SET", "WELL_MOLDING", "SHOE_CABINET"],
     },
 }
 
