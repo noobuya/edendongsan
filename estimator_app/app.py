@@ -98,22 +98,25 @@ DEFAULT_ITEMS = {
     # 견적(backend/app/pricing_store.py의 "wardrobe" 1품 처리량, 문 14㎡/몸통 7㎡)과
     # 같은 비율로 봐서, 표준 2도어 붙박이장 한 조(문 약 2.7㎡ + 몸통 약 3㎡) 기준으로
     # 잡았다. 실제 크기는 현장마다 다르니 사장님이 단가 설정에서 조정할 것.
+    # [가격 정정 — 2026-11-21] 사장님 지시대로 "짝(문짝)당 단가 × 짝 수"로
+    # 다시 계산 — 붙박이장은 긴 짝(5만 원) × 표준 2도어 = 10만 원. 자재:공임
+    # 비율은 기존 비율(약 3:7) 유지.
     "WARDROBE_SET": {
         "group": "필름 시공",
         "label": "붙박이장 리폼 세트", "icon": "🗄️",
         "chip": ["#818cf8", "#6366f1"], "design_type": None, "film_meters": 6.0,
-        "material_cost": 15000, "labor_cost": 35000,
+        "material_cost": 30000, "labor_cost": 70000,
         "replacement_cost_reference": 500000,
     },
     # 신발장 — 붙박이장과 같은 문짝+몸통 구조지만 크기가 작다(표준 1~2도어,
     # 문 약 1.8㎡ + 몸통 약 1.5㎡). 위 WARDROBE_SET과 같은 1품 처리량 비율로 축소.
-    # [가격 정정 — 2026-11-21] "짝당 5만 원"도 세트 전체가 아니라 문짝 한 짝
-    # 단가였다(SINK_L과 같은 착오) — 원래 값으로 되돌린다.
+    # [가격 정정 — 2026-11-21] 같은 "짝당 단가 × 짝 수" 기준 — 신발장은 몸통이
+    # 붙박이장의 절반 크기라 긴 짝(5만 원) × 1도어 = 5만 원으로 잡았다.
     "SHOE_CABINET": {
         "group": "필름 시공",
         "label": "신발장 리폼 세트", "icon": "👞",
         "chip": ["#fde68a", "#eab308"], "design_type": None, "film_meters": 3.5,
-        "material_cost": 40000, "labor_cost": 90000,
+        "material_cost": 15000, "labor_cost": 35000,
         "replacement_cost_reference": 300000,
     },
     # 냉장고장 — 냉장고를 감싸는 좌우 측판·상판(필요 시 장식 도어 포함)만 대상이다.
