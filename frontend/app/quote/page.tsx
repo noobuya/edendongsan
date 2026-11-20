@@ -48,12 +48,22 @@ type Mode = "quick" | "detail";
 // 전엔 "샷시 포함"·"싱크대 포함" 둘뿐이었다 — 현장에서 "몰딩은 안 합니다",
 // "중문은 뺍니다" 같은 요청이 품목마다 다 나와서, 부분 상세 견적(estimator_app
 // DEFAULT_ITEMS)에 있는 품목 전부를 평수별 범위 견적에도 켜고 끌 수 있는
-// 스위치로 추가한다. "핵심" 그룹(문·샷시/몰딩/걸레받이)은 기본 켜짐 상태가
+// 스위치로 추가한다. "핵심" 그룹(문/샷시/몰딩/걸레받이)은 기본 켜짐 상태가
 // 기존 "전체 시공" 기준값(100%)이라 꺼지면 그만큼 깎고(offMult), 나머지
 // "추가" 품목은 기본 꺼짐 상태에서 켜면 그만큼 더한다(onMult) — 집집마다
 // 있는지 없는지 다른, 평수에 비례하지 않는 품목이라 하나(또는 표준 세트) 기준
 // 가격을 비율로 환산해 얹었다(estimator_app 기본 단가 ÷ 24평 기준 범위 중간값).
 // 실측 전 참고용 범위이므로 정확한 금액이 필요하면 부분 상세 견적을 쓴다.
+//
+// [왜 — 2026-11-20 "문샷시 분리, 싱크대 ㄱ자/일자/아일랜드장 분리"]
+// 문(DOOR_SET)과 샷시(SASH_SMALL/LARGE)는 "현장에서 문만 있고 샷시가 없는
+// 집"(또는 반대)이 있어 하나로 묶으면 끌 수가 없었다 — 기존 결합 offMult
+// 0.85를 estimator_app 기본 단가 비중(문 20만 : 샷시 평균 16.5만)으로 쪼갰다.
+// 싱크대도 ㄱ자/일자(둘 중 하나, 같은 카운터의 모양)와 아일랜드장(둘과
+// 별개로 추가되는 독립 유닛)은 가격이 서로 다른데 하나의 onMult로는 표현이
+// 안 됐다 — ㄱ자(기존 SINK_L 기준)보다 일자가 더 작고, 아일랜드장은 더 작은
+// 독립 모듈로 보고 비율만 낮춰 잡았다. 셋 다 독립 토글이라 동시에 켜질 수
+// 있으니, 보통은 ㄱ자/일자 중 하나만 켜고 아일랜드가 있으면 추가로 켠다.
 interface QuickToggleDef {
   key: string;
   label: string;
@@ -64,10 +74,13 @@ interface QuickToggleDef {
   offMult: number;
 }
 const QUICK_TOGGLES: QuickToggleDef[] = [
-  { key: "sash", label: "문 · 샷시 포함", desc: "문짝·샷시(창틀) 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.85 },
+  { key: "door", label: "문 포함", desc: "문짝 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.92 },
+  { key: "sash", label: "샷시 포함", desc: "샷시(창틀) 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
   { key: "molding", label: "몰딩 포함", desc: "천장·벽 몰딩 라인 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
   { key: "baseboard", label: "걸레받이 포함", desc: "바닥과 맞닿는 걸레받이 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.96 },
-  { key: "sink", label: "싱크대 포함", desc: "ㄱ자 싱크대 필름 시공 추가", group: "필름 추가 시공", defaultOn: false, onMult: 1.15, offMult: 1 },
+  { key: "sinkL", label: "ㄱ자 싱크대 포함", desc: "ㄱ자 싱크대 필름 시공 추가", group: "필름 추가 시공", defaultOn: false, onMult: 1.15, offMult: 1 },
+  { key: "sinkStraight", label: "일자 싱크대 포함", desc: "일자(스트레이트) 싱크대 필름 시공 추가", group: "필름 추가 시공", defaultOn: false, onMult: 1.1, offMult: 1 },
+  { key: "sinkIsland", label: "아일랜드장 포함", desc: "아일랜드 식탁·수납장 필름 시공 추가", group: "필름 추가 시공", defaultOn: false, onMult: 1.08, offMult: 1 },
   { key: "middleDoor", label: "중문", desc: "중문 리폼 시공 추가", group: "필름 추가 시공", defaultOn: false, onMult: 1.08, offMult: 1 },
   { key: "fireDoor", label: "현관 방화문", desc: "현관 방화문 리폼 시공 추가", group: "필름 추가 시공", defaultOn: false, onMult: 1.05, offMult: 1 },
   { key: "wardrobe", label: "붙박이장", desc: "붙박이장 리폼 시공 추가", group: "필름 추가 시공", defaultOn: false, onMult: 1.06, offMult: 1 },
