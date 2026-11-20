@@ -34,35 +34,36 @@ DEFAULT_ITEMS = {
     # 민자/알판 두 SKU를 하나로 합쳤다 — "민자/알판·무늬" 토글(design_type_surcharge)과
     # 문 크기(가로×세로)에 따라 할증이 자동으로 더해지는 동적 단가다(_door_set_pricing 참고).
     # material_cost/labor_cost는 "민자" 기준 기본값이고, 할증은 계산 시점에 따로 더한다.
-    # [가격 정정 — 2026-11-20] 사장님이 문짝문틀 15만 원, 샷시는 짝당(짧은 장
-    # 2.5만 원 / 긴 장 5만 원)으로 직접 낮춰 정정 — 자재:공임 비율(2:8)은 기존과
-    # 동일하게 유지하고 합계만 새 기준에 맞췄다.
     "DOOR_SET": {
         "group": "필름 시공",
         "label": "도어 리폼 세트", "icon": "🚪",
         "chip": ["#60a5fa", "#3b82f6"], "design_type": None, "film_meters": 4.0,
-        "material_cost": 30000, "labor_cost": 120000,
+        "material_cost": 40000, "labor_cost": 160000,
         "replacement_cost_reference": 500000,  # 문짝 전체 교체 시 평균 비용(영업 멘트 기준값)
     },
     "SASH_SMALL": {
         "group": "필름 시공",
         "label": "방창 리폼 세트", "icon": "🪟",
         "chip": ["#34d399", "#10b981"], "design_type": None, "film_meters": 3.0,
-        "material_cost": 5000, "labor_cost": 20000,
+        "material_cost": 30000, "labor_cost": 120000,
         "replacement_cost_reference": 300000,
     },
     "SASH_LARGE": {
         "group": "필름 시공",
         "label": "거실 대창 리폼 세트", "icon": "🪟",
         "chip": ["#22d3ee", "#06b6d4"], "design_type": None, "film_meters": 5.0,
-        "material_cost": 10000, "labor_cost": 40000,
+        "material_cost": 36000, "labor_cost": 144000,
         "replacement_cost_reference": 400000,
     },
+    # [가격 정정 — 2026-11-21] 사장님이 "짝" 단위로 다시 낮춤 — 짝 길이가 짧은
+    # 싱크대장은 짝당 2.5만 원, 길이가 긴 붙박이장·신발장은 짝당 5만 원(아래
+    # WARDROBE_SET/SHOE_CABINET도 동일 기준). 자재:공임 비율은 기존 비율(2:8)
+    # 그대로 유지하고 합계만 새 기준에 맞췄다.
     "SINK_L": {
         "group": "필름 시공",
         "label": "ㄱ자 싱크대 리폼 세트", "icon": "🍳",
         "chip": ["#fb923c", "#f97316"], "design_type": None, "film_meters": 11.0,
-        "material_cost": 120000, "labor_cost": 480000,
+        "material_cost": 5000, "labor_cost": 20000,
     },
     "MOLDING_FLAT": {
         "group": "필름 시공",
@@ -97,7 +98,7 @@ DEFAULT_ITEMS = {
         "group": "필름 시공",
         "label": "붙박이장 리폼 세트", "icon": "🗄️",
         "chip": ["#818cf8", "#6366f1"], "design_type": None, "film_meters": 6.0,
-        "material_cost": 70000, "labor_cost": 160000,
+        "material_cost": 15000, "labor_cost": 35000,
         "replacement_cost_reference": 500000,
     },
     # 신발장 — 붙박이장과 같은 문짝+몸통 구조지만 크기가 작다(표준 1~2도어,
@@ -106,7 +107,7 @@ DEFAULT_ITEMS = {
         "group": "필름 시공",
         "label": "신발장 리폼 세트", "icon": "👞",
         "chip": ["#fde68a", "#eab308"], "design_type": None, "film_meters": 3.5,
-        "material_cost": 40000, "labor_cost": 90000,
+        "material_cost": 15000, "labor_cost": 35000,
         "replacement_cost_reference": 300000,
     },
     # 냉장고장 — 냉장고를 감싸는 좌우 측판·상판(필요 시 장식 도어 포함)만 대상이다.

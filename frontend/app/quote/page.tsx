@@ -38,8 +38,8 @@ const DEFAULT_DOOR_DETAIL: DoorDetail = { design_type: "flat", width_mm: 900, he
 // 평수별 전체 견적의 표준 단가(원/평) — "핵심 시공" 전부(문/샷시/몰딩/걸레받이 +
 // 2026-11-20부터 싱크대/중문/방화문/붙박이장/신발장/냉장고장/우물몰딩까지)가
 // 기본 포함된 올인클루시브 가격이다. 현장 실측 후 확정되는 범위 가격이다.
-const PYEONG_BASE_MIN = 271_500;
-const PYEONG_BASE_MAX = 320_900;
+const PYEONG_BASE_MIN = 221_700;
+const PYEONG_BASE_MAX = 262_000;
 const PYEONG_MIN = 10;
 const PYEONG_MAX = 60;
 const PYEONG_TICKS = [10, 24, 33, 40, 60];
@@ -61,13 +61,12 @@ type Mode = "quick" | "detail";
 // [왜 — 2026-11-20 "문샷시 분리, 싱크대 ㄱ자/일자/아일랜드장 분리"]
 // 문(DOOR_SET)과 샷시(SASH_SMALL/LARGE)는 "현장에서 문만 있고 샷시가 없는
 // 집"(또는 반대)이 있어 하나로 묶으면 끌 수가 없었다 — 결합 offMult를
-// estimator_app 기본 단가 비중으로 쪼갰다(아래 2026-11-20 두 번째 변경으로
-// 비중이 다시 바뀜). 싱크대도 ㄱ자/일자(둘 중 하나, 같은 카운터의 모양)와
-// 아일랜드장(둘과 별개로 추가되는 독립 유닛)은 가격이 서로 다른데 하나의
-// onMult로는 표현이 안 됐다 — ㄱ자(기존 SINK_L 기준)보다 일자가 더 작고,
-// 아일랜드장은 더 작은 독립 모듈로 보고 비율만 낮춰 잡았다. 셋 다 독립
-// 토글이라 동시에 켜질 수 있으니, 보통은 ㄱ자/일자 중 하나만 켜고 아일랜드가
-// 있으면 추가로 켠다.
+// estimator_app 기본 단가 비중(문 20만 : 샷시 평균 16.5만)으로 쪼갰다. 싱크대도
+// ㄱ자/일자(둘 중 하나, 같은 카운터의 모양)와 아일랜드장(둘과 별개로 추가되는
+// 독립 유닛)은 가격이 서로 다른데 하나의 onMult로는 표현이 안 됐다 — ㄱ자(기존
+// SINK_L 기준)보다 일자가 더 작고, 아일랜드장은 더 작은 독립 모듈로 보고
+// 비율만 낮춰 잡았다. 셋 다 독립 토글이라 동시에 켜질 수 있으니, 보통은
+// ㄱ자/일자 중 하나만 켜고 아일랜드가 있으면 추가로 켠다.
 //
 // [왜 — 2026-11-20 "평당 가격에 다 포함, 안 하면 빼는 게 맞다"]
 // "필름 추가 시공"(싱크대/중문/방화문/붙박이장/신발장/냉장고장/우물몰딩)을
@@ -77,11 +76,22 @@ type Mode = "quick" | "detail";
 // 할인) 모델로 통째로 뒤집는다. "핵심 시공" 그룹으로 옮기고 defaultOn:true,
 // onMult:1로 바꾸고, offMult는 기존 onMult의 역수(1/onMult)로 잡아 "뺐을 때
 // 원래 추가되던 만큼 정확히 되돌아오게" 했다. 이러면서 PYEONG_BASE_MIN/MAX
-// 자체도 이 품목들 onMult를 전부 곱한 값(×1.97)만큼 올랐다 — 이제 "평당
-// 가격"이 정말 다 포함된 가격이기 때문이다(공짜로 포함될 수는 없다).
-// 우물몰딩(1.2)처럼 집마다 있는지 다른 품목까지 기본 포함으로 바꾼 건 사장님
-// 지시를 그대로 따른 것 — "흔한 집"을 가정하는 게 아니라 "일단 풀 패키지로
-// 안내하고, 없는 항목만 그 자리에서 빼주는" 상담 방식이 목적이다.
+// 자체도 이 품목들 onMult를 전부 곱한 값만큼 올랐다 — 이제 "평당 가격"이 정말
+// 다 포함된 가격이기 때문이다(공짜로 포함될 수는 없다). 우물몰딩(1.2)처럼
+// 집마다 있는지 다른 품목까지 기본 포함으로 바꾼 건 사장님 지시를 그대로
+// 따른 것 — "흔한 집"을 가정하는 게 아니라 "일단 풀 패키지로 안내하고, 없는
+// 항목만 그 자리에서 빼주는" 상담 방식이 목적이다.
+//
+// [왜 — 2026-11-21 "장 단가 정정은 샷시/문짝이 아니라 싱크대장/붙박이장/
+// 신발장 — 짝 길이로 구분"]
+// 샷시/문짝은 estimator_app 원래 가격 그대로 두고, 사장님이 말한 "짝당
+// 2.5만/5만"은 싱크대장(짧은 짝 — SINK_L)·붙박이장·신발장(긴 짝 —
+// WARDROBE_SET/SHOE_CABINET)에 적용되는 정정이었다. 이 세 품목의
+// estimator_app 단가가 각각 1/24~1/2.6로 확 줄어, 아래 sinkL/wardrobe/
+// shoeCabinet의 offMult와 PYEONG_BASE_MIN/MAX도 줄어든 비중에 맞게 다시
+// 계산했다(문/샷시 offMult는 estimator_app 가격이 안 바뀌었으니 원래 값으로
+// 되돌림). sinkStraight(일자)의 onMult 1.1은 이번에 안 건드렸다 — SINK_L과
+// 짝을 맞추려면 더 낮춰야 할 수 있는데, 숫자를 못 받아서 비워둔다.
 interface QuickToggleDef {
   key: string;
   label: string;
@@ -92,17 +102,17 @@ interface QuickToggleDef {
   offMult: number;
 }
 const QUICK_TOGGLES: QuickToggleDef[] = [
-  { key: "door", label: "문 포함", desc: "문짝 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.88 },
-  { key: "sash", label: "샷시 포함", desc: "샷시(창틀) 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.97 },
+  { key: "door", label: "문 포함", desc: "문짝 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.92 },
+  { key: "sash", label: "샷시 포함", desc: "샷시(창틀) 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
   { key: "molding", label: "몰딩 포함", desc: "천장·벽 몰딩 라인 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
   { key: "baseboard", label: "걸레받이 포함", desc: "바닥과 맞닿는 걸레받이 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.96 },
-  { key: "sinkL", label: "ㄱ자 싱크대 포함", desc: "ㄱ자 싱크대 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.87 },
+  { key: "sinkL", label: "ㄱ자 싱크대 포함", desc: "ㄱ자 싱크대 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.99 },
   { key: "sinkStraight", label: "일자 싱크대 포함", desc: "일자(스트레이트) 싱크대로 교체 — ㄱ자와 동시 선택 불가", group: "핵심 시공", defaultOn: false, onMult: 1.1, offMult: 1 },
   { key: "sinkIsland", label: "아일랜드장 포함", desc: "아일랜드 식탁·수납장 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
   { key: "middleDoor", label: "중문 포함", desc: "중문 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
   { key: "fireDoor", label: "현관 방화문 포함", desc: "현관 방화문 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.95 },
-  { key: "wardrobe", label: "붙박이장 포함", desc: "붙박이장 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.94 },
-  { key: "shoeCabinet", label: "신발장 포함", desc: "신발장 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.96 },
+  { key: "wardrobe", label: "붙박이장 포함", desc: "붙박이장 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.99 },
+  { key: "shoeCabinet", label: "신발장 포함", desc: "신발장 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.99 },
   { key: "fridgeCabinet", label: "냉장고장 포함", desc: "냉장고장 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.94 },
   { key: "wellMolding", label: "우물몰딩 포함", desc: "우물천장 몰딩 시공(방 1개 기준)", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.83 },
   { key: "fan", label: "실링팬", desc: "실링팬 설치 추가", group: "전기·조명·설비", defaultOn: false, onMult: 1.06, offMult: 1 },
