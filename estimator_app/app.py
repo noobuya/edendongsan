@@ -34,11 +34,15 @@ DEFAULT_ITEMS = {
     # 민자/알판 두 SKU를 하나로 합쳤다 — "민자/알판·무늬" 토글(design_type_surcharge)과
     # 문 크기(가로×세로)에 따라 할증이 자동으로 더해지는 동적 단가다(_door_set_pricing 참고).
     # material_cost/labor_cost는 "민자" 기준 기본값이고, 할증은 계산 시점에 따로 더한다.
+    # [가격 정정 — 2026-11-21] 사장님이 민자 15만/알판 18만 두 값으로 직접 고정 —
+    # 민자 기본가를 15만으로 낮추고, 아래 DOOR_SURCHARGE_MIN/MAX를 문 크기와
+    # 무관하게 3만 원 고정으로 바꿔 알판이 항상 18만 원이 되게 했다(크기별로
+    # 할증이 달라지는 기존 보간 방식은 이번 지시로 더 이상 안 씀).
     "DOOR_SET": {
         "group": "필름 시공",
         "label": "도어 리폼 세트", "icon": "🚪",
         "chip": ["#60a5fa", "#3b82f6"], "design_type": None, "film_meters": 4.0,
-        "material_cost": 40000, "labor_cost": 160000,
+        "material_cost": 30000, "labor_cost": 120000,
         "replacement_cost_reference": 500000,  # 문짝 전체 교체 시 평균 비용(영업 멘트 기준값)
     },
     "SASH_SMALL": {
@@ -55,15 +59,15 @@ DEFAULT_ITEMS = {
         "material_cost": 36000, "labor_cost": 144000,
         "replacement_cost_reference": 400000,
     },
-    # [가격 정정 — 2026-11-21] 사장님이 "짝" 단위로 다시 낮춤 — 짝 길이가 짧은
-    # 싱크대장은 짝당 2.5만 원, 길이가 긴 붙박이장·신발장은 짝당 5만 원(아래
-    # WARDROBE_SET/SHOE_CABINET도 동일 기준). 자재:공임 비율은 기존 비율(2:8)
-    # 그대로 유지하고 합계만 새 기준에 맞췄다.
+    # [가격 정정 — 2026-11-21] 지난번 "짝당 2.5만 원"은 ㄱ자 싱크대 전체가
+    # 아니라 문짝 한 짝당 단가였다(문짝 20개짜리 싱크대면 2.5만×20장 개념) —
+    # 표준 ㄱ자 세트 전체 가격은 사장님이 60만 원이라고 못박아서 원래 값으로
+    # 되돌린다.
     "SINK_L": {
         "group": "필름 시공",
         "label": "ㄱ자 싱크대 리폼 세트", "icon": "🍳",
         "chip": ["#fb923c", "#f97316"], "design_type": None, "film_meters": 11.0,
-        "material_cost": 5000, "labor_cost": 20000,
+        "material_cost": 120000, "labor_cost": 480000,
     },
     "MOLDING_FLAT": {
         "group": "필름 시공",
@@ -213,14 +217,16 @@ DEFAULT_ITEMS = {
 }
 
 # ------------------------------------------------------------------
-# 1-1. 문짝 난이도 할증 — "민자/알판·무늬" 토글 + 문 크기(가로×세로)에 비례해
-#      min_amount~max_amount 사이로 자동 할증된다. DOOR_SET에만 적용된다.
+# 1-1. 문짝 난이도 할증 — "민자/알판·무늬" 토글에 붙는다. [가격 정정 — 2026-11-21]
+#      전엔 문 크기(가로×세로)에 비례해 min~max 사이로 보간했는데, 사장님이
+#      민자 15만/알판 18만 두 값으로 고정해서 MIN=MAX=3만 원으로 맞춰 항상
+#      딱 3만 원만 더 붙게 했다(크기별 보간은 더 이상 안 씀).
 # ------------------------------------------------------------------
 DEFAULT_SETTINGS = {
     "MIN_CALLOUT_AMOUNT": 300000,  # 기공 1인 최소 출장비 방어선
     "DEPOSIT_RATE_PERCENT": 15.0,  # 계약금 비율(10~20% 권장, 사장님 조정 가능)
-    "DOOR_SURCHARGE_MIN": 20000,
-    "DOOR_SURCHARGE_MAX": 50000,
+    "DOOR_SURCHARGE_MIN": 30000,
+    "DOOR_SURCHARGE_MAX": 30000,
     "DOOR_SURCHARGE_MIN_AREA_M2": 1.6,  # 800×2000mm 안팎의 작은 문
     "DOOR_SURCHARGE_MAX_AREA_M2": 2.2,  # 1000×2200mm 안팎의 큰 문
     # 영업 리포트(교체 vs 필름 비교)용 평균 공사 기간.

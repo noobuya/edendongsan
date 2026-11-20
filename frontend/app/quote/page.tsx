@@ -38,8 +38,8 @@ const DEFAULT_DOOR_DETAIL: DoorDetail = { design_type: "flat", width_mm: 900, he
 // 평수별 전체 견적의 표준 단가(원/평) — "핵심 시공" 전부(문/샷시/몰딩/걸레받이 +
 // 2026-11-20부터 싱크대/중문/방화문/붙박이장/신발장/냉장고장/우물몰딩까지)가
 // 기본 포함된 올인클루시브 가격이다. 현장 실측 후 확정되는 범위 가격이다.
-const PYEONG_BASE_MIN = 192_500;
-const PYEONG_BASE_MAX = 227_500;
+const PYEONG_BASE_MIN = 223_000;
+const PYEONG_BASE_MAX = 263_500;
 const PYEONG_MIN = 10;
 const PYEONG_MAX = 60;
 const PYEONG_TICKS = [10, 24, 33, 40, 60];
@@ -97,6 +97,13 @@ type Mode = "quick" | "detail";
 // 원이면 충분"]
 // estimator_app WELL_MOLDING을 92만→15만 원으로 정정 — 아래 wellMolding의
 // offMult와 PYEONG_BASE_MIN/MAX도 줄어든 비중에 맞게 다시 계산했다.
+//
+// [왜 — 2026-11-21 "도어 민자 15만/알판 18만, ㄱ자 싱크대는 60만"]
+// DOOR_SET 민자 기본가가 15만 원으로 내려가 문/샷시 비중이 다시 바뀌었다
+// (door 0.92→0.93, sash 0.93→0.92 — 이번엔 샷시 쪽 비중이 더 커짐). 지난번
+// "짝당 2.5만"은 ㄱ자 싱크대 전체가 아니라 문짝 한 짝 단가였다는 걸
+// 사장님이 바로잡아서 SINK_L을 60만 원으로 되돌렸고, sinkL offMult와
+// PYEONG_BASE_MIN/MAX도 다시 커진 비중에 맞게 계산했다.
 interface QuickToggleDef {
   key: string;
   label: string;
@@ -107,11 +114,11 @@ interface QuickToggleDef {
   offMult: number;
 }
 const QUICK_TOGGLES: QuickToggleDef[] = [
-  { key: "door", label: "문 포함", desc: "문짝 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.92 },
-  { key: "sash", label: "샷시 포함", desc: "샷시(창틀) 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
+  { key: "door", label: "문 포함", desc: "문짝 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
+  { key: "sash", label: "샷시 포함", desc: "샷시(창틀) 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.92 },
   { key: "molding", label: "몰딩 포함", desc: "천장·벽 몰딩 라인 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
   { key: "baseboard", label: "걸레받이 포함", desc: "바닥과 맞닿는 걸레받이 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.96 },
-  { key: "sinkL", label: "ㄱ자 싱크대 포함", desc: "ㄱ자 싱크대 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.99 },
+  { key: "sinkL", label: "ㄱ자 싱크대 포함", desc: "ㄱ자 싱크대 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.86 },
   { key: "sinkStraight", label: "일자 싱크대 포함", desc: "일자(스트레이트) 싱크대로 교체 — ㄱ자와 동시 선택 불가", group: "핵심 시공", defaultOn: false, onMult: 1.1, offMult: 1 },
   { key: "sinkIsland", label: "아일랜드장 포함", desc: "아일랜드 식탁·수납장 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
   { key: "middleDoor", label: "중문 포함", desc: "중문 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
