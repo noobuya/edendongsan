@@ -28,9 +28,15 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+/** 사장님 기존 네이버 글들의 실제 강조 색(color:#ff5f45 주황 글자 / background-color:#fff8b2
+ *  노란 하이라이트)과 맞춘 두 색. richText.ts의 볼드(**)·하이라이트(==) 마커를 그대로 옮긴다. */
 function boldToHtml(text: string): string {
   return splitBoldSegments(text)
-    .map((seg) => (seg.bold ? `<strong>${escapeHtml(seg.text)}</strong>` : escapeHtml(seg.text)))
+    .map((seg) => {
+      if (seg.emphasis === "bold") return `<b style="color:#ff5f45">${escapeHtml(seg.text)}</b>`;
+      if (seg.emphasis === "highlight") return `<span style="background-color:#fff8b2">${escapeHtml(seg.text)}</span>`;
+      return escapeHtml(seg.text);
+    })
     .join("");
 }
 

@@ -276,10 +276,14 @@ export default function BlogDetailPage() {
                 {sec.paragraphs.map((paragraph, j) => (
                   <p key={j} className="whitespace-pre-line text-[17px] leading-relaxed text-slate-600">
                     {splitBoldSegments(paragraph).map((seg, k) =>
-                      seg.bold ? (
-                        <strong key={k} className="font-bold text-slate-900">
+                      seg.emphasis === "bold" ? (
+                        <strong key={k} className="font-bold text-[#ff5f45]">
                           {seg.text}
                         </strong>
+                      ) : seg.emphasis === "highlight" ? (
+                        <span key={k} className="rounded-[3px] bg-[#fff8b2] px-0.5">
+                          {seg.text}
+                        </span>
                       ) : (
                         <span key={k}>{seg.text}</span>
                       )
