@@ -14,8 +14,13 @@ import os
 PRICING_PATH = "storage/pricing.json"
 
 DEFAULT_PRICING: dict = {
-    "manday_rate": 250_000,  # 1품(man-day) 인건비
-    "loss_rate_percent": 15.0,  # 자재 로스율
+    # [가격 정정 — 2026-11-21] "견적이 너무 높아 고객이 안 픽한다"는 사장님
+    # 지적으로 전체 가격을 다운시키는 방향 — 모든 시공의 인건비 기준인 이
+    # 1품 단가를 25만→20만 원(-20%)으로, 자재 로스율도 15%→10%로 낮췄다.
+    # 이 두 값이 AI 사진 견적(estimator.py)의 거의 모든 라인에 곱해지므로
+    # 전체 견적 총액이 전반적으로 내려간다.
+    "manday_rate": 200_000,  # 1품(man-day) 인건비
+    "loss_rate_percent": 10.0,  # 자재 로스율
     "vat_rate_percent": 10.0,
     # ── 오야 견적 방어 로직 ──
     # 기공 1인의 하루 일당을 보호하는 최소 출장비. 전체 공급가액이 이 밑으로 나오면

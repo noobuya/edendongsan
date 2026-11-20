@@ -38,8 +38,12 @@ const DEFAULT_DOOR_DETAIL: DoorDetail = { design_type: "flat", width_mm: 900, he
 // 평수별 전체 견적의 표준 단가(원/평) — "핵심 시공" 전부(문/샷시/몰딩/걸레받이 +
 // 2026-11-20부터 싱크대/중문/방화문/붙박이장/신발장/냉장고장/우물몰딩까지)가
 // 기본 포함된 올인클루시브 가격이다. 현장 실측 후 확정되는 범위 가격이다.
-const PYEONG_BASE_MIN = 226_100;
-const PYEONG_BASE_MAX = 267_200;
+// [가격 정정 — 2026-11-21] "견적이 너무 높아 고객이 안 픽한다"는 지적으로
+// 전체를 -20% 다운 — 토글 구성과 무관하게 모든 조합에 똑같이 적용되므로
+// (최종가 = BASE × 평수 × 토글 배수), 개별 offMult/onMult는 그대로 두고
+// 이 기준가만 낮췄다.
+const PYEONG_BASE_MIN = 180_900;
+const PYEONG_BASE_MAX = 213_800;
 const PYEONG_MIN = 10;
 const PYEONG_MAX = 60;
 const PYEONG_TICKS = [10, 24, 33, 40, 60];
