@@ -95,6 +95,9 @@ const QUICK_TOGGLES: QuickToggleDef[] = [
 const QUICK_TOGGLE_DEFAULTS: Record<string, boolean> = Object.fromEntries(
   QUICK_TOGGLES.map((t) => [t.key, t.defaultOn])
 );
+// ㄱ자·일자 싱크대는 같은 카운터의 모양 중 하나라 동시에 켜질 수 없다 — 한쪽을
+// 켜면 같은 그룹의 나머지를 toggleQuick에서 자동으로 끈다.
+const EXCLUSIVE_TOGGLE_GROUPS: string[][] = [["sinkL", "sinkStraight"]];
 
 function won(n: number): string {
   return `${Math.round(n).toLocaleString("ko-KR")}원`;
@@ -195,7 +198,17 @@ export default function QuotePage() {
   // 어렵다. key는 QUICK_TOGGLES의 key와 같다.
   const [quickToggles, setQuickToggles] = useState<Record<string, boolean>>(QUICK_TOGGLE_DEFAULTS);
   function toggleQuick(key: string) {
-    setQuickToggles((prev) => ({ ...prev, [key]: !prev[key] }));
+    setQuickToggles((prev) => {
+      const turningOn = !prev[key];
+      const next = { ...prev, [key]: turningOn };
+      if (turningOn) {
+        const group = EXCLUSIVE_TOGGLE_GROUPS.find((g) => g.includes(key));
+        for (const other of group ?? []) {
+          if (other !== key) next[other] = false;
+        }
+      }
+      return next;
+    });
   }
 
   const [sheetOpen, setSheetOpen] = useState(false);
