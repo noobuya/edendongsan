@@ -34,25 +34,28 @@ DEFAULT_ITEMS = {
     # 민자/알판 두 SKU를 하나로 합쳤다 — "민자/알판·무늬" 토글(design_type_surcharge)과
     # 문 크기(가로×세로)에 따라 할증이 자동으로 더해지는 동적 단가다(_door_set_pricing 참고).
     # material_cost/labor_cost는 "민자" 기준 기본값이고, 할증은 계산 시점에 따로 더한다.
+    # [가격 정정 — 2026-11-20] 사장님이 문짝문틀 15만 원, 샷시는 짝당(짧은 장
+    # 2.5만 원 / 긴 장 5만 원)으로 직접 낮춰 정정 — 자재:공임 비율(2:8)은 기존과
+    # 동일하게 유지하고 합계만 새 기준에 맞췄다.
     "DOOR_SET": {
         "group": "필름 시공",
         "label": "도어 리폼 세트", "icon": "🚪",
         "chip": ["#60a5fa", "#3b82f6"], "design_type": None, "film_meters": 4.0,
-        "material_cost": 40000, "labor_cost": 160000,
+        "material_cost": 30000, "labor_cost": 120000,
         "replacement_cost_reference": 500000,  # 문짝 전체 교체 시 평균 비용(영업 멘트 기준값)
     },
     "SASH_SMALL": {
         "group": "필름 시공",
         "label": "방창 리폼 세트", "icon": "🪟",
         "chip": ["#34d399", "#10b981"], "design_type": None, "film_meters": 3.0,
-        "material_cost": 30000, "labor_cost": 120000,
+        "material_cost": 5000, "labor_cost": 20000,
         "replacement_cost_reference": 300000,
     },
     "SASH_LARGE": {
         "group": "필름 시공",
         "label": "거실 대창 리폼 세트", "icon": "🪟",
         "chip": ["#22d3ee", "#06b6d4"], "design_type": None, "film_meters": 5.0,
-        "material_cost": 36000, "labor_cost": 144000,
+        "material_cost": 10000, "labor_cost": 40000,
         "replacement_cost_reference": 400000,
     },
     "SINK_L": {

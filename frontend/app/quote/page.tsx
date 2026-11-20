@@ -35,9 +35,11 @@ const SILICONE_ADDON_CODES = new Set([
 ]);
 const DEFAULT_DOOR_DETAIL: DoorDetail = { design_type: "flat", width_mm: 900, height_mm: 2100 };
 
-// 평수별 전체 견적의 표준 단가(원/평). 현장 실측 후 확정되는 범위 가격이다.
-const PYEONG_BASE_MIN = 137_500;
-const PYEONG_BASE_MAX = 162_500;
+// 평수별 전체 견적의 표준 단가(원/평) — "핵심 시공" 전부(문/샷시/몰딩/걸레받이 +
+// 2026-11-20부터 싱크대/중문/방화문/붙박이장/신발장/냉장고장/우물몰딩까지)가
+// 기본 포함된 올인클루시브 가격이다. 현장 실측 후 확정되는 범위 가격이다.
+const PYEONG_BASE_MIN = 271_500;
+const PYEONG_BASE_MAX = 320_900;
 const PYEONG_MIN = 10;
 const PYEONG_MAX = 60;
 const PYEONG_TICKS = [10, 24, 33, 40, 60];
@@ -58,36 +60,51 @@ type Mode = "quick" | "detail";
 //
 // [왜 — 2026-11-20 "문샷시 분리, 싱크대 ㄱ자/일자/아일랜드장 분리"]
 // 문(DOOR_SET)과 샷시(SASH_SMALL/LARGE)는 "현장에서 문만 있고 샷시가 없는
-// 집"(또는 반대)이 있어 하나로 묶으면 끌 수가 없었다 — 기존 결합 offMult
-// 0.85를 estimator_app 기본 단가 비중(문 20만 : 샷시 평균 16.5만)으로 쪼갰다.
-// 싱크대도 ㄱ자/일자(둘 중 하나, 같은 카운터의 모양)와 아일랜드장(둘과
-// 별개로 추가되는 독립 유닛)은 가격이 서로 다른데 하나의 onMult로는 표현이
-// 안 됐다 — ㄱ자(기존 SINK_L 기준)보다 일자가 더 작고, 아일랜드장은 더 작은
-// 독립 모듈로 보고 비율만 낮춰 잡았다. 셋 다 독립 토글이라 동시에 켜질 수
-// 있으니, 보통은 ㄱ자/일자 중 하나만 켜고 아일랜드가 있으면 추가로 켠다.
+// 집"(또는 반대)이 있어 하나로 묶으면 끌 수가 없었다 — 결합 offMult를
+// estimator_app 기본 단가 비중으로 쪼갰다(아래 2026-11-20 두 번째 변경으로
+// 비중이 다시 바뀜). 싱크대도 ㄱ자/일자(둘 중 하나, 같은 카운터의 모양)와
+// 아일랜드장(둘과 별개로 추가되는 독립 유닛)은 가격이 서로 다른데 하나의
+// onMult로는 표현이 안 됐다 — ㄱ자(기존 SINK_L 기준)보다 일자가 더 작고,
+// 아일랜드장은 더 작은 독립 모듈로 보고 비율만 낮춰 잡았다. 셋 다 독립
+// 토글이라 동시에 켜질 수 있으니, 보통은 ㄱ자/일자 중 하나만 켜고 아일랜드가
+// 있으면 추가로 켠다.
+//
+// [왜 — 2026-11-20 "평당 가격에 다 포함, 안 하면 빼는 게 맞다"]
+// "필름 추가 시공"(싱크대/중문/방화문/붙박이장/신발장/냉장고장/우물몰딩)을
+// 기본 꺼짐+켜면 추가(onMult) 구조로 뒀더니, 사장님이 "평당 가격에 이미 다
+// 들어있는데 왜 추가로 돈을 더 받냐, 고객이 안 한다고 하면 그만큼 빼주는
+// 게 맞다"고 지적했다 — 업셀(추가 요금) 대신 올인클루시브(기본 포함, 없으면
+// 할인) 모델로 통째로 뒤집는다. "핵심 시공" 그룹으로 옮기고 defaultOn:true,
+// onMult:1로 바꾸고, offMult는 기존 onMult의 역수(1/onMult)로 잡아 "뺐을 때
+// 원래 추가되던 만큼 정확히 되돌아오게" 했다. 이러면서 PYEONG_BASE_MIN/MAX
+// 자체도 이 품목들 onMult를 전부 곱한 값(×1.97)만큼 올랐다 — 이제 "평당
+// 가격"이 정말 다 포함된 가격이기 때문이다(공짜로 포함될 수는 없다).
+// 우물몰딩(1.2)처럼 집마다 있는지 다른 품목까지 기본 포함으로 바꾼 건 사장님
+// 지시를 그대로 따른 것 — "흔한 집"을 가정하는 게 아니라 "일단 풀 패키지로
+// 안내하고, 없는 항목만 그 자리에서 빼주는" 상담 방식이 목적이다.
 interface QuickToggleDef {
   key: string;
   label: string;
   desc: string;
-  group: "핵심 시공" | "필름 추가 시공" | "전기·조명·설비";
+  group: "핵심 시공" | "전기·조명·설비";
   defaultOn: boolean;
   onMult: number;
   offMult: number;
 }
 const QUICK_TOGGLES: QuickToggleDef[] = [
-  { key: "door", label: "문 포함", desc: "문짝 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.92 },
-  { key: "sash", label: "샷시 포함", desc: "샷시(창틀) 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
+  { key: "door", label: "문 포함", desc: "문짝 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.88 },
+  { key: "sash", label: "샷시 포함", desc: "샷시(창틀) 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.97 },
   { key: "molding", label: "몰딩 포함", desc: "천장·벽 몰딩 라인 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
   { key: "baseboard", label: "걸레받이 포함", desc: "바닥과 맞닿는 걸레받이 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.96 },
-  { key: "sinkL", label: "ㄱ자 싱크대 포함", desc: "ㄱ자 싱크대 필름 시공 추가", group: "필름 추가 시공", defaultOn: false, onMult: 1.15, offMult: 1 },
-  { key: "sinkStraight", label: "일자 싱크대 포함", desc: "일자(스트레이트) 싱크대 필름 시공 추가", group: "필름 추가 시공", defaultOn: false, onMult: 1.1, offMult: 1 },
-  { key: "sinkIsland", label: "아일랜드장 포함", desc: "아일랜드 식탁·수납장 필름 시공 추가", group: "필름 추가 시공", defaultOn: false, onMult: 1.08, offMult: 1 },
-  { key: "middleDoor", label: "중문", desc: "중문 리폼 시공 추가", group: "필름 추가 시공", defaultOn: false, onMult: 1.08, offMult: 1 },
-  { key: "fireDoor", label: "현관 방화문", desc: "현관 방화문 리폼 시공 추가", group: "필름 추가 시공", defaultOn: false, onMult: 1.05, offMult: 1 },
-  { key: "wardrobe", label: "붙박이장", desc: "붙박이장 리폼 시공 추가", group: "필름 추가 시공", defaultOn: false, onMult: 1.06, offMult: 1 },
-  { key: "shoeCabinet", label: "신발장", desc: "신발장 리폼 시공 추가", group: "필름 추가 시공", defaultOn: false, onMult: 1.04, offMult: 1 },
-  { key: "fridgeCabinet", label: "냉장고장", desc: "냉장고장 리폼 시공 추가", group: "필름 추가 시공", defaultOn: false, onMult: 1.06, offMult: 1 },
-  { key: "wellMolding", label: "우물몰딩", desc: "우물천장 몰딩 시공 추가(방 1개 기준)", group: "필름 추가 시공", defaultOn: false, onMult: 1.2, offMult: 1 },
+  { key: "sinkL", label: "ㄱ자 싱크대 포함", desc: "ㄱ자 싱크대 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.87 },
+  { key: "sinkStraight", label: "일자 싱크대 포함", desc: "일자(스트레이트) 싱크대로 교체 — ㄱ자와 동시 선택 불가", group: "핵심 시공", defaultOn: false, onMult: 1.1, offMult: 1 },
+  { key: "sinkIsland", label: "아일랜드장 포함", desc: "아일랜드 식탁·수납장 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
+  { key: "middleDoor", label: "중문 포함", desc: "중문 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
+  { key: "fireDoor", label: "현관 방화문 포함", desc: "현관 방화문 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.95 },
+  { key: "wardrobe", label: "붙박이장 포함", desc: "붙박이장 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.94 },
+  { key: "shoeCabinet", label: "신발장 포함", desc: "신발장 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.96 },
+  { key: "fridgeCabinet", label: "냉장고장 포함", desc: "냉장고장 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.94 },
+  { key: "wellMolding", label: "우물몰딩 포함", desc: "우물천장 몰딩 시공(방 1개 기준)", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.83 },
   { key: "fan", label: "실링팬", desc: "실링팬 설치 추가", group: "전기·조명·설비", defaultOn: false, onMult: 1.06, offMult: 1 },
   { key: "downlight", label: "다운라이트", desc: "다운라이트 타공·배선 추가(5개 기준)", group: "전기·조명·설비", defaultOn: false, onMult: 1.06, offMult: 1 },
   { key: "sinkBowl", label: "싱크볼 교체", desc: "싱크볼 교환 시공 추가", group: "전기·조명·설비", defaultOn: false, onMult: 1.08, offMult: 1 },
@@ -502,7 +519,7 @@ export default function QuotePage() {
                 </div>
               </div>
 
-              {(["핵심 시공", "필름 추가 시공", "전기·조명·설비"] as const).map((groupName) => (
+              {(["핵심 시공", "전기·조명·설비"] as const).map((groupName) => (
                 <div key={groupName} className="mt-5">
                   <p className="px-1 text-[12.5px] font-bold uppercase tracking-wide text-[#8b95a1]">{groupName}</p>
                   <div className="mt-1.5 divide-y divide-[#eef0f2] border-t border-[#eef0f2]">
