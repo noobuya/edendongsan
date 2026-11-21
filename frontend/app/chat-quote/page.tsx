@@ -41,6 +41,7 @@ export default function ChatQuotePage() {
   const [copied, setCopied] = useState(false);
   const [cardCopied, setCardCopied] = useState(false);
   const [cardImageCopied, setCardImageCopied] = useState(false);
+  const [cardSaved, setCardSaved] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // 공식 명함 텍스트 생성
@@ -304,11 +305,32 @@ ${card}`;
     }
   };
 
-  const handleDownloadCard = () => {
+  // [왜 — 2026-11-22 "저장해도 당근 채팅창에 붙여넣기가 안 된다"]
+  // 설치된 안드로이드 앱(WebView)에서 <a download>는 "다운로드" 폴더에만
+  // 남고 사진 앱(갤러리)에는 뜨지 않는다(메인 견적서 저장 기능에서 이미
+  // 한 번 겪은 문제 — PremiumReceipt.tsx의 handleSaveToGallery와 같은
+  // 네이티브 플러그인을 재사용한다) — 갤러리에 없으니 당근 채팅의 "사진
+  // 첨부" 목록에서 찾을 수가 없었다. 또한 이미지는 원래 "붙여넣기"가
+  // 아니라 채팅창의 사진/첨부 아이콘으로 갤러리에서 골라 보내는 것이
+  // 맞다 — 앱 대부분이 텍스트 입력창에 이미지 붙여넣기를 지원하지 않는다.
+  const handleDownloadCard = async () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const fileName = '대한인테리어_공식명함.png';
+    try {
+      const { Capacitor } = await import('@capacitor/core');
+      if (Capacitor.isNativePlatform()) {
+        const { default: GallerySaver } = await import('@/lib/gallerySaver');
+        await GallerySaver.saveImage({ data: canvas.toDataURL('image/png'), fileName });
+        setCardSaved(true);
+        setTimeout(() => setCardSaved(false), 2000);
+        return;
+      }
+    } catch {
+      // 네이티브 저장이 실패하면 아래 일반 웹 다운로드로 폴백한다.
+    }
     const link = document.createElement('a');
-    link.download = '대한인테리어_공식명함.png';
+    link.download = fileName;
     link.href = canvas.toDataURL('image/png');
     link.click();
   };
@@ -570,11 +592,11 @@ ${card}`;
               onClick={handleDownloadCard}
               className="text-xs bg-slate-900 text-white font-bold px-3 py-1.5 rounded-lg"
             >
-              📥 명함 이미지 저장
+              {cardSaved ? '✓ 갤러리에 저장됨' : '📥 명함 이미지 저장'}
             </button>
           </div>
           <p className="text-[11px] text-slate-500 leading-relaxed">
-            "이미지 복사"가 지원 안 되는 기기면 알림이 뜨니 그때는 "이미지 저장"으로 다운로드해 채팅에 사진으로 첨부해 주세요. 위 "전체 복사하기"는 명함을 <b>텍스트</b>로만 포함해요(이미지는 별도) — 채팅창이 긴 메시지 뒷부분을 자르면 명함이 안 보일 수 있으니, 그럴 땐 "명함 텍스트만 복사"로 바로 이어서 한 번 더 보내주세요.
+            이미지는 채팅창에 <b>붙여넣기가 아니라</b> "명함 이미지 저장" 후, 당근·숨고 채팅창의 사진/첨부 아이콘을 눌러 갤러리에서 "대한인테리어_공식명함"을 골라 보내주세요(대부분의 채팅 앱은 텍스트 입력창에 이미지 붙여넣기를 지원하지 않아요). "이미지 복사"는 카카오톡 PC 등 붙여넣기가 되는 곳에서만 써주세요. 위 "전체 복사하기"는 명함을 <b>텍스트</b>로만 포함해요 — 채팅창이 긴 메시지 뒷부분을 자르면 명함이 안 보일 수 있으니, 그럴 땐 "명함 텍스트만 복사"로 바로 이어서 한 번 더 보내주세요.
           </p>
           <canvas ref={canvasRef} width={720} height={420} className="w-full rounded-xl border border-slate-200" />
         </section>
