@@ -115,6 +115,15 @@ type Mode = "quick" | "detail";
 // 긴 짝(5만 원) 기준으로 재계산: 붙박이장은 표준 2도어라 10만 원, 신발장은
 // 몸통이 붙박이장의 절반 크기라 1도어로 보고 5만 원. 아래 wardrobe/shoeCabinet의
 // offMult와 PYEONG_BASE_MIN/MAX도 이 비중에 맞게 다시 계산했다.
+//
+// [왜 — 2026-11-21 "토글을 다 꺼도 29평이 245만~290만 원이 나온다, 이상하다"]
+// 아래 12개 토글의 offMult를 전부 곱해도 약 46.8%가 남는다 — 이 남는 부분은
+// PYEONG_BASE_MIN/MAX 안에 "벽면 등 기본 필름 시공"으로 토글 없이 숨어있던
+// 값이었다(토글이 생기기 전부터 있던 원래 평당가의 본체). 사장님이 "이것도
+// 명시적인 토글로 노출해서 끌 수 있게 하자"고 해서 wallFilm을 추가 — 끄면
+// 0.1만 남게 잡아(다른 걸 다 꺼도 남던 46.8%를 4.7%까지 떨어뜨림 — 완전한
+// 0은 아니지만 최소 출장비 수준까지는 간다. 29평 전부 꺼짐 기준 245만~290만
+// → 25만~29만 원).
 interface QuickToggleDef {
   key: string;
   label: string;
@@ -125,6 +134,7 @@ interface QuickToggleDef {
   offMult: number;
 }
 const QUICK_TOGGLES: QuickToggleDef[] = [
+  { key: "wallFilm", label: "벽면 포함", desc: "벽·천장 등 기본 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.1 },
   { key: "door", label: "문 포함", desc: "문짝 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
   { key: "sash", label: "샷시 포함", desc: "샷시(창틀) 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.92 },
   { key: "molding", label: "몰딩 포함", desc: "천장·벽 몰딩 라인 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
