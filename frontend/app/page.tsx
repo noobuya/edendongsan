@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowLeft, ArrowRight, Bot, Briefcase, Calculator, FolderOpen, Images, Loader2, Newspaper, Palette, Ruler, Settings, Sparkles, Users } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, Bot, Briefcase, Calculator, FolderOpen, Images, Loader2, MessageCircle, Newspaper, Palette, Ruler, Settings, Sparkles, Users } from "lucide-react";
 import CanvasStage from "@/components/CanvasStage";
 import FeatureIntroDialog from "@/components/FeatureIntroDialog";
 import { LayoutEditProvider, useLayoutEdit } from "@/components/LayoutEdit";
@@ -448,6 +448,16 @@ export default function HomePage() {
             className="glass-pill flex h-11 w-11 shrink-0 items-center justify-center text-slate-700 transition-transform active:scale-90"
           >
             <Calculator className="h-5 w-5" />
+          </Link>
+          {/* 당근·숨고·블로그·인스타 채팅 응대용 — 고객 사진으로 즉석 견적을
+              뽑아 인사말·명함까지 합친 문구를 바로 복사해 보내는 화면
+              (app/chat-quote/page.tsx). */}
+          <Link
+            href="/chat-quote"
+            aria-label="채팅 즉석 견적"
+            className="glass-pill flex h-11 w-11 shrink-0 items-center justify-center text-slate-700 transition-transform active:scale-90"
+          >
+            <MessageCircle className="h-5 w-5" />
           </Link>
           <Link
             href="/cutting"
