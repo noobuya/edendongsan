@@ -35,6 +35,7 @@ export default function ChatQuotePage() {
   // 출력 및 UI 피드백
   const [generatedText, setGeneratedText] = useState('');
   const [copied, setCopied] = useState(false);
+  const [cardCopied, setCardCopied] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // 공식 명함 텍스트 생성
@@ -230,24 +231,40 @@ ${card}`;
     ctx.fillStyle = '#f59e0b';
     ctx.fillRect(40, 344, 640, 32);
     ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 15px sans-serif';
-    ctx.fillText('싱크대 · 냉장고장 · 붙박이장 · 방문/문틀 · 현관문 · 사각 싱크볼 직영 전문', 62, 366);
+    // 품목이 늘어서(다운라이트·실링팬 추가) 15px로는 640px 박스를 넘기므로 12px로 줄였다.
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText('싱크대·냉장고장·붙박이장·방문/문틀·현관문·사각싱크볼·다운라이트·실링팬 직영전문', 56, 365);
   }, [instaHandle]);
 
   // 안드로이드 WebView/Capacitor 호환 클립보드 복사
-  const handleCopy = async () => {
+  const copyToClipboard = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(generatedText);
+      await navigator.clipboard.writeText(text);
     } catch {
       const textarea = document.createElement('textarea');
-      textarea.value = generatedText;
+      textarea.value = text;
       document.body.appendChild(textarea);
       textarea.select();
       document.execCommand('copy');
       document.body.removeChild(textarea);
     }
+  };
+
+  const handleCopy = async () => {
+    await copyToClipboard(generatedText);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  // [왜 — 2026-11-22] "전체 복사해서 붙여넣으면 명함이 안 나온다" 신고 대응.
+  // 숨고 견적서(soomgo_quote)는 필터링 회피를 위해 원래 명함을 안 넣고,
+  // 다른 채널은 메시지 맨 끝에 명함을 붙이는데 당근·숨고 채팅창이 긴 글을
+  // 보낼 때 뒷부분(=명함)을 자르는 경우가 있다 — 그래서 명함 텍스트만 따로
+  // 복사해서 바로 뒤이어 한 번 더 보낼 수 있게 분리했다.
+  const handleCopyCard = async () => {
+    await copyToClipboard(getBusinessCardText());
+    setCardCopied(true);
+    setTimeout(() => setCardCopied(false), 2000);
   };
 
   const handleDownloadCard = () => {
@@ -497,14 +514,26 @@ ${card}`;
         <section className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-500">4. 채팅방 이미지 첨부용 공식 명함</span>
-            <button
-              type="button"
-              onClick={handleDownloadCard}
-              className="text-xs bg-slate-900 text-white font-bold px-3 py-1.5 rounded-lg"
-            >
-              📥 명함 이미지 저장
-            </button>
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                onClick={handleCopyCard}
+                className="text-xs bg-white border border-slate-300 text-slate-700 font-bold px-3 py-1.5 rounded-lg"
+              >
+                {cardCopied ? '✓ 복사됨' : '📋 명함 텍스트만 복사'}
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadCard}
+                className="text-xs bg-slate-900 text-white font-bold px-3 py-1.5 rounded-lg"
+              >
+                📥 명함 이미지 저장
+              </button>
+            </div>
           </div>
+          <p className="text-[11px] text-slate-500 leading-relaxed">
+            위 "전체 복사하기"는 이 명함을 <b>텍스트</b>로만 포함해요(아래 이미지는 별도) — 채팅창이 긴 메시지 뒷부분을 자르면 명함이 안 보일 수 있으니, 그럴 땐 "명함 텍스트만 복사"로 바로 이어서 한 번 더 보내거나, "명함 이미지 저장" 후 사진으로 첨부해 주세요.
+          </p>
           <canvas ref={canvasRef} width={720} height={400} className="w-full rounded-xl border border-slate-200" />
         </section>
       </main>
