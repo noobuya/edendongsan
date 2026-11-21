@@ -194,11 +194,11 @@ ${card}`;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const grad = ctx.createLinearGradient(0, 0, 720, 400);
+    const grad = ctx.createLinearGradient(0, 0, 720, 420);
     grad.addColorStop(0, '#0f172a');
     grad.addColorStop(1, '#1e293b');
     ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 720, 400);
+    ctx.fillRect(0, 0, 720, 420);
 
     ctx.fillStyle = '#f59e0b';
     ctx.fillRect(40, 44, 8, 64);
@@ -233,12 +233,21 @@ ${card}`;
       ctx.fillText('📍 본사 위치 : 대구 달성군 현풍읍 테크노북로4길 11', 44, 308);
     }
 
+    // [왜 — 2026-11-22] 사장님이 "필름 시공 품목"과 "설치 품목(전기·설비)"을
+    // 섞어 쓰면 헷갈린다고 두 줄로 분리 요청 — 1줄은 필름 리폼 품목(끝에
+    // "필름" 명시), 2줄은 관로·사각싱크볼·다운라이트·실링팬처럼 직접
+    // 설치까지 하는 품목을 별도 문구로 안내한다.
     ctx.fillStyle = '#f59e0b';
-    ctx.fillRect(40, 344, 640, 32);
+    ctx.fillRect(40, 344, 640, 28);
     ctx.fillStyle = '#0f172a';
-    // 품목이 늘어서(다운라이트·실링팬 추가) 15px로는 640px 박스를 넘기므로 12px로 줄였다.
-    ctx.font = 'bold 12px sans-serif';
-    ctx.fillText('싱크대·냉장고장·붙박이장·방문/문틀·현관문·사각싱크볼·다운라이트·실링팬 직영전문', 56, 365);
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillText('싱크대필름·냉장고장필름·붙박이장필름·방문/문틀필름·현관문필름 직영전문', 54, 363);
+
+    ctx.fillStyle = '#fde68a';
+    ctx.fillRect(40, 376, 640, 28);
+    ctx.fillStyle = '#78350f';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillText('관로·사각싱크볼·다운라이트·실링팬 설치도 함께 진행', 54, 395);
   }, [instaHandle]);
 
   // 안드로이드 WebView/Capacitor 호환 클립보드 복사
@@ -567,7 +576,7 @@ ${card}`;
           <p className="text-[11px] text-slate-500 leading-relaxed">
             "이미지 복사"가 지원 안 되는 기기면 알림이 뜨니 그때는 "이미지 저장"으로 다운로드해 채팅에 사진으로 첨부해 주세요. 위 "전체 복사하기"는 명함을 <b>텍스트</b>로만 포함해요(이미지는 별도) — 채팅창이 긴 메시지 뒷부분을 자르면 명함이 안 보일 수 있으니, 그럴 땐 "명함 텍스트만 복사"로 바로 이어서 한 번 더 보내주세요.
           </p>
-          <canvas ref={canvasRef} width={720} height={400} className="w-full rounded-xl border border-slate-200" />
+          <canvas ref={canvasRef} width={720} height={420} className="w-full rounded-xl border border-slate-200" />
         </section>
       </main>
     </div>
