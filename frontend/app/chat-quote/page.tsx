@@ -40,6 +40,7 @@ export default function ChatQuotePage() {
   const [generatedText, setGeneratedText] = useState('');
   const [copied, setCopied] = useState(false);
   const [cardCopied, setCardCopied] = useState(false);
+  const [cardImageCopied, setCardImageCopied] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // 공식 명함 텍스트 생성
@@ -269,6 +270,29 @@ ${card}`;
     await copyToClipboard(getBusinessCardText());
     setCardCopied(true);
     setTimeout(() => setCardCopied(false), 2000);
+  };
+
+  // [왜 — 2026-11-22 "명함 이미지 복사가 안 된다"]
+  // "명함 이미지 저장"은 다운로드만 하고 클립보드엔 안 넣는다 — 채팅에
+  // 바로 붙여넣으려면(Ctrl+V / 길게 눌러 붙여넣기) 이미지 자체가 클립보드에
+  // 있어야 해서, Clipboard API로 캔버스를 PNG Blob으로 만들어 바로 복사하는
+  // 버튼을 추가했다. 구형 WebView 등 이미지 클립보드를 지원하지 않는
+  // 환경에서는 안내 후 "이미지 저장"으로 유도한다.
+  const handleCopyCardImage = async () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    try {
+      const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) throw new Error('이미지를 만들지 못했습니다.');
+      if (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) {
+        throw new Error('unsupported');
+      }
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      setCardImageCopied(true);
+      setTimeout(() => setCardImageCopied(false), 2000);
+    } catch {
+      alert('이 브라우저/앱에서는 이미지 복사가 지원되지 않아요. "명함 이미지 저장"으로 다운로드한 뒤, 채팅에서 사진으로 첨부해 주세요.');
+    }
   };
 
   const handleDownloadCard = () => {
@@ -516,27 +540,32 @@ ${card}`;
 
         {/* STEP 4: 채팅 첨부용 공식 명함 이미지 */}
         <section className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500">4. 채팅방 이미지 첨부용 공식 명함</span>
-            <div className="flex gap-1.5">
-              <button
-                type="button"
-                onClick={handleCopyCard}
-                className="text-xs bg-white border border-slate-300 text-slate-700 font-bold px-3 py-1.5 rounded-lg"
-              >
-                {cardCopied ? '✓ 복사됨' : '📋 명함 텍스트만 복사'}
-              </button>
-              <button
-                type="button"
-                onClick={handleDownloadCard}
-                className="text-xs bg-slate-900 text-white font-bold px-3 py-1.5 rounded-lg"
-              >
-                📥 명함 이미지 저장
-              </button>
-            </div>
+          <span className="block text-xs font-bold text-slate-500">4. 채팅방 첨부용 공식 명함</span>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={handleCopyCardImage}
+              className="text-xs bg-indigo-600 text-white font-bold px-3 py-1.5 rounded-lg"
+            >
+              {cardImageCopied ? '✓ 이미지 복사됨' : '🖼 명함 이미지 복사'}
+            </button>
+            <button
+              type="button"
+              onClick={handleCopyCard}
+              className="text-xs bg-white border border-slate-300 text-slate-700 font-bold px-3 py-1.5 rounded-lg"
+            >
+              {cardCopied ? '✓ 복사됨' : '📋 명함 텍스트만 복사'}
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadCard}
+              className="text-xs bg-slate-900 text-white font-bold px-3 py-1.5 rounded-lg"
+            >
+              📥 명함 이미지 저장
+            </button>
           </div>
           <p className="text-[11px] text-slate-500 leading-relaxed">
-            위 "전체 복사하기"는 이 명함을 <b>텍스트</b>로만 포함해요(아래 이미지는 별도) — 채팅창이 긴 메시지 뒷부분을 자르면 명함이 안 보일 수 있으니, 그럴 땐 "명함 텍스트만 복사"로 바로 이어서 한 번 더 보내거나, "명함 이미지 저장" 후 사진으로 첨부해 주세요.
+            "이미지 복사"가 지원 안 되는 기기면 알림이 뜨니 그때는 "이미지 저장"으로 다운로드해 채팅에 사진으로 첨부해 주세요. 위 "전체 복사하기"는 명함을 <b>텍스트</b>로만 포함해요(이미지는 별도) — 채팅창이 긴 메시지 뒷부분을 자르면 명함이 안 보일 수 있으니, 그럴 땐 "명함 텍스트만 복사"로 바로 이어서 한 번 더 보내주세요.
           </p>
           <canvas ref={canvasRef} width={720} height={400} className="w-full rounded-xl border border-slate-200" />
         </section>
