@@ -42,8 +42,8 @@ const DEFAULT_DOOR_DETAIL: DoorDetail = { design_type: "flat", width_mm: 900, he
 // 전체를 -20% 다운 — 토글 구성과 무관하게 모든 조합에 똑같이 적용되므로
 // (최종가 = BASE × 평수 × 토글 배수), 개별 offMult/onMult는 그대로 두고
 // 이 기준가만 낮췄다.
-const PYEONG_BASE_MIN = 180_900;
-const PYEONG_BASE_MAX = 213_800;
+const PYEONG_BASE_MIN = 160_800;
+const PYEONG_BASE_MAX = 190_000;
 const PYEONG_MIN = 10;
 const PYEONG_MAX = 60;
 const PYEONG_TICKS = [10, 24, 33, 40, 60];
@@ -124,6 +124,20 @@ type Mode = "quick" | "detail";
 // 0.1만 남게 잡아(다른 걸 다 꺼도 남던 46.8%를 4.7%까지 떨어뜨림 — 완전한
 // 0은 아니지만 최소 출장비 수준까지는 간다. 29평 전부 꺼짐 기준 245만~290만
 // → 25만~29만 원).
+//
+// [왜 — 2026-11-21 "일반 집은 장식몰딩 없다, 30평대 싱크대 상하부+냉장고장
+// 60만/아일랜드 추가시 80만 기준으로 평당가 재산출"]
+// 장식몰딩(웨인스코팅/알판)을 "몰딩 포함"에 묶어 기본 포함시켰더니, 사장님이
+// "일반 집은 장식몰딩 없는 곳이 대부분이라 기본 견적에 넣으면 안 된다"고
+// 바로잡음 — molding은 평몰딩(민자)만으로 좁히고, crownMolding을 기본 꺼짐
+// 업그레이드 옵션으로 새로 뺐다(추가 시 +8%, estimator_app MOLDING_CROWN-
+// MOLDING_FLAT 차액 30만 원을 24평 기준 비중으로 환산).
+// 싱크대/냉장고장도 사장님이 "30평대 아파트에서 싱크대 상하부+냉장고장 합쳐
+// 60만 원, 아일랜드 추가하면 80만 원"으로 새 기준을 줘서, 30평 기준으로
+// 비중을 다시 쟀다 — 60만 원을 estimator_app 자재 소요량 비율(싱크대
+// 11m : 냉장고장 4m)로 쪼개 싱크대 44만/냉장고장 16만으로 보고, 아일랜드
+// 20만을 더했다. 이 셋의 offMult·PYEONG_BASE_MIN/MAX도 이 비중에 맞게
+// 다시 계산했다(나머지 항목은 24평 기준을 그대로 유지).
 interface QuickToggleDef {
   key: string;
   label: string;
@@ -137,16 +151,17 @@ const QUICK_TOGGLES: QuickToggleDef[] = [
   { key: "wallFilm", label: "벽면 포함", desc: "벽·천장 등 기본 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.1 },
   { key: "door", label: "문 포함", desc: "문짝 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
   { key: "sash", label: "샷시 포함", desc: "샷시(창틀) 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.92 },
-  { key: "molding", label: "몰딩 포함", desc: "천장·벽 몰딩 라인 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
+  { key: "molding", label: "몰딩 포함", desc: "천장·벽 평몰딩(민자) 라인 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
+  { key: "crownMolding", label: "장식몰딩 추가", desc: "웨인스코팅·알판 등 장식 몰딩으로 업그레이드 — 보통 집엔 없어 기본 꺼짐", group: "핵심 시공", defaultOn: false, onMult: 1.08, offMult: 1 },
   { key: "baseboard", label: "걸레받이 포함", desc: "바닥과 맞닿는 걸레받이 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.96 },
-  { key: "sinkL", label: "ㄱ자 싱크대 포함", desc: "ㄱ자 싱크대 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.86 },
+  { key: "sinkL", label: "ㄱ자 싱크대 포함", desc: "ㄱ자 싱크대 상하부장 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.91 },
   { key: "sinkStraight", label: "일자 싱크대 포함", desc: "일자(스트레이트) 싱크대로 교체 — ㄱ자와 동시 선택 불가", group: "핵심 시공", defaultOn: false, onMult: 1.1, offMult: 1 },
-  { key: "sinkIsland", label: "아일랜드장 포함", desc: "아일랜드 식탁·수납장 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
+  { key: "sinkIsland", label: "아일랜드장 포함", desc: "아일랜드 식탁·수납장 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.96 },
   { key: "middleDoor", label: "중문 포함", desc: "중문 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
   { key: "fireDoor", label: "현관 방화문 포함", desc: "현관 방화문 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.95 },
   { key: "wardrobe", label: "붙박이장 포함", desc: "붙박이장 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.97 },
   { key: "shoeCabinet", label: "신발장 포함", desc: "신발장 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.99 },
-  { key: "fridgeCabinet", label: "냉장고장 포함", desc: "냉장고장 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.94 },
+  { key: "fridgeCabinet", label: "냉장고장 포함", desc: "냉장고장 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.97 },
   { key: "wellMolding", label: "우물몰딩 포함", desc: "우물천장 몰딩 시공(방 1개 기준)", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.96 },
   { key: "fan", label: "실링팬", desc: "실링팬 설치 추가", group: "전기·조명·설비", defaultOn: false, onMult: 1.06, offMult: 1 },
   { key: "downlight", label: "다운라이트", desc: "다운라이트 타공·배선 추가(5개 기준)", group: "전기·조명·설비", defaultOn: false, onMult: 1.06, offMult: 1 },
