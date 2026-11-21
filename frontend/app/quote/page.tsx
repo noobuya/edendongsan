@@ -35,13 +35,8 @@ const SILICONE_ADDON_CODES = new Set([
 ]);
 const DEFAULT_DOOR_DETAIL: DoorDetail = { design_type: "flat", width_mm: 900, height_mm: 2100 };
 
-// 평수별 전체 견적의 표준 단가(원/평) — "핵심 시공" 전부(문/샷시/몰딩/걸레받이 +
-// 2026-11-20부터 싱크대/중문/방화문/붙박이장/신발장/냉장고장/우물몰딩까지)가
-// 기본 포함된 올인클루시브 가격이다. 현장 실측 후 확정되는 범위 가격이다.
-// [가격 정정 — 2026-11-21] "견적이 너무 높아 고객이 안 픽한다"는 지적으로
-// 전체를 -20% 다운 — 토글 구성과 무관하게 모든 조합에 똑같이 적용되므로
-// (최종가 = BASE × 평수 × 토글 배수), 개별 offMult/onMult는 그대로 두고
-// 이 기준가만 낮췄다.
+// 평수별 전체 견적의 표준 단가(원/평) — QUICK_TOGGLES의 "핵심 시공" weight
+// 합이 1(= 전부 기본값)일 때 적용되는 가격이다. 아래 QUICK_TOGGLES 설명 참고.
 const PYEONG_BASE_MIN = 160_800;
 const PYEONG_BASE_MAX = 190_000;
 const PYEONG_MIN = 10;
@@ -51,122 +46,76 @@ const QUICK_MATERIAL_RATIO = 0.2;
 
 type Mode = "quick" | "detail";
 
-// [왜 — 2026-11-07 "평수별에도 모든 시공을 세분화 토글스위치로 넣어줘"]
-// 전엔 "샷시 포함"·"싱크대 포함" 둘뿐이었다 — 현장에서 "몰딩은 안 합니다",
-// "중문은 뺍니다" 같은 요청이 품목마다 다 나와서, 부분 상세 견적(estimator_app
-// DEFAULT_ITEMS)에 있는 품목 전부를 평수별 범위 견적에도 켜고 끌 수 있는
-// 스위치로 추가한다. "핵심" 그룹(문/샷시/몰딩/걸레받이)은 기본 켜짐 상태가
-// 기존 "전체 시공" 기준값(100%)이라 꺼지면 그만큼 깎고(offMult), 나머지
-// "추가" 품목은 기본 꺼짐 상태에서 켜면 그만큼 더한다(onMult) — 집집마다
-// 있는지 없는지 다른, 평수에 비례하지 않는 품목이라 하나(또는 표준 세트) 기준
-// 가격을 비율로 환산해 얹었다(estimator_app 기본 단가 ÷ 24평 기준 범위 중간값).
-// 실측 전 참고용 범위이므로 정확한 금액이 필요하면 부분 상세 견적을 쓴다.
+// [히스토리 요약 — 이전엔 "offMult/onMult를 곱한다"는 모델이었다]
+// 2026-11-07부터 2026-11-21까지 여러 번 가격을 고치면서(estimator_app
+// 단가 정정 → 평수별 비중 재계산 반복), "핵심 시공" 항목들을 "곱셈 배수
+// (mult *= on? onMult : offMult)"로 다뤘다. 문제는 2026-11-21에 발견됐다
+// — "벽면 포함"처럼 비중이 큰 항목 하나를 혼자 꺼도 곱셈이라 전체가 그
+// 비중만큼 통째로 꺾여버렸다(원래는 "다른 걸 다 껐을 때" 기준으로 역산한
+// 값인데, 곱셈 모델에서는 "혼자 꺼도" 똑같이 적용돼 가격이 비정상적으로
+// 뚝 떨어지는 버그였다). 그래서 모델을 "덧셈 비중(weight)"으로 바꿨다:
 //
-// [왜 — 2026-11-20 "문샷시 분리, 싱크대 ㄱ자/일자/아일랜드장 분리"]
-// 문(DOOR_SET)과 샷시(SASH_SMALL/LARGE)는 "현장에서 문만 있고 샷시가 없는
-// 집"(또는 반대)이 있어 하나로 묶으면 끌 수가 없었다 — 결합 offMult를
-// estimator_app 기본 단가 비중(문 20만 : 샷시 평균 16.5만)으로 쪼갰다. 싱크대도
-// ㄱ자/일자(둘 중 하나, 같은 카운터의 모양)와 아일랜드장(둘과 별개로 추가되는
-// 독립 유닛)은 가격이 서로 다른데 하나의 onMult로는 표현이 안 됐다 — ㄱ자(기존
-// SINK_L 기준)보다 일자가 더 작고, 아일랜드장은 더 작은 독립 모듈로 보고
-// 비율만 낮춰 잡았다. 셋 다 독립 토글이라 동시에 켜질 수 있으니, 보통은
-// ㄱ자/일자 중 하나만 켜고 아일랜드가 있으면 추가로 켠다.
+// [현재 모델 — 2026-11-21]
+// "핵심 시공" 기본 포함 항목들(wallFilm/door/sash/molding/baseboard/sinkL/
+// sinkIsland/middleDoor/fireDoor/wardrobe/shoeCabinet/fridgeCabinet/
+// wellMolding)은 전체 100%를 나눠 가진 weight를 갖고, 합이 정확히 1이다.
+// 최종 배수 = (켜진 핵심 항목들의 weight 합) + (켜진 업그레이드/추가 항목의
+// addonWeight 합). 이러면 다 끄면 정확히 0, 하나만 꺼도 그 항목의 몫만큼만
+// 빠진다 — "벽면만 꺼도 전체가 꺾이는" 문제가 구조적으로 없어진다.
+// weight 값은 전부 이전 offMult에서 그대로 환산했다(weight ≈ 1-offMult —
+// 원래도 offMult 자체가 "item_price/(기준 평수×평당 중간값)"에서 역산한
+// 작은 배수라 큰 오차 없이 그대로 재사용 가능하다). wallFilm의 weight(0.38)
+// 만 "나머지 12개 weight 합(0.62)을 1에서 뺀 값"으로 새로 구했다 — wallFilm은
+// 토글이 생기기 전부터 평당가 안에 숨어있던 "문/샷시/싱크대 등 이름 붙은
+// 품목 말고 남는 전부"(벽·천장 등)였기 때문에 자기 몫이 따로 측정된 적이
+// 없었다.
+// sinkStraight(일자 싱크대)·crownMolding(장식몰딩)은 "핵심 100%" 안의
+// 몫이 아니라 addonWeight로 다룬다 — sinkStraight는 sinkL의 자리를
+// 대신 차지하는 교체(replaces: "sinkL", 그 자리 weight 대신 자기 weight를
+// 더함), crownMolding은 molding 위에 얹는 순수 추가(업그레이드 프리미엄).
+// 전기·조명·설비(실링팬/다운라이트/싱크볼/변기)도 전부 addonWeight로 —
+// 켜면 핵심 시공 상태와 무관하게 항상 같은 몫만큼 더한다.
 //
-// [왜 — 2026-11-20 "평당 가격에 다 포함, 안 하면 빼는 게 맞다"]
-// "필름 추가 시공"(싱크대/중문/방화문/붙박이장/신발장/냉장고장/우물몰딩)을
-// 기본 꺼짐+켜면 추가(onMult) 구조로 뒀더니, 사장님이 "평당 가격에 이미 다
-// 들어있는데 왜 추가로 돈을 더 받냐, 고객이 안 한다고 하면 그만큼 빼주는
-// 게 맞다"고 지적했다 — 업셀(추가 요금) 대신 올인클루시브(기본 포함, 없으면
-// 할인) 모델로 통째로 뒤집는다. "핵심 시공" 그룹으로 옮기고 defaultOn:true,
-// onMult:1로 바꾸고, offMult는 기존 onMult의 역수(1/onMult)로 잡아 "뺐을 때
-// 원래 추가되던 만큼 정확히 되돌아오게" 했다. 이러면서 PYEONG_BASE_MIN/MAX
-// 자체도 이 품목들 onMult를 전부 곱한 값만큼 올랐다 — 이제 "평당 가격"이 정말
-// 다 포함된 가격이기 때문이다(공짜로 포함될 수는 없다). 우물몰딩(1.2)처럼
-// 집마다 있는지 다른 품목까지 기본 포함으로 바꾼 건 사장님 지시를 그대로
-// 따른 것 — "흔한 집"을 가정하는 게 아니라 "일단 풀 패키지로 안내하고, 없는
-// 항목만 그 자리에서 빼주는" 상담 방식이 목적이다.
-//
-// [왜 — 2026-11-21 "장 단가 정정은 샷시/문짝이 아니라 싱크대장/붙박이장/
-// 신발장 — 짝 길이로 구분"]
-// 샷시/문짝은 estimator_app 원래 가격 그대로 두고, 사장님이 말한 "짝당
-// 2.5만/5만"은 싱크대장(짧은 짝 — SINK_L)·붙박이장·신발장(긴 짝 —
-// WARDROBE_SET/SHOE_CABINET)에 적용되는 정정이었다. 이 세 품목의
-// estimator_app 단가가 각각 1/24~1/2.6로 확 줄어, 아래 sinkL/wardrobe/
-// shoeCabinet의 offMult와 PYEONG_BASE_MIN/MAX도 줄어든 비중에 맞게 다시
-// 계산했다(문/샷시 offMult는 estimator_app 가격이 안 바뀌었으니 원래 값으로
-// 되돌림). sinkStraight(일자)의 onMult 1.1은 이번에 안 건드렸다 — SINK_L과
-// 짝을 맞추려면 더 낮춰야 할 수 있는데, 숫자를 못 받아서 비워둔다.
-//
-// [왜 — 2026-11-21 "우물몰딩 92만 원은 필름 시공이라 절대 나올 수 없다, 15만
-// 원이면 충분"]
-// estimator_app WELL_MOLDING을 92만→15만 원으로 정정 — 아래 wellMolding의
-// offMult와 PYEONG_BASE_MIN/MAX도 줄어든 비중에 맞게 다시 계산했다.
-//
-// [왜 — 2026-11-21 "도어 민자 15만/알판 18만, ㄱ자 싱크대는 60만"]
-// DOOR_SET 민자 기본가가 15만 원으로 내려가 문/샷시 비중이 다시 바뀌었다
-// (door 0.92→0.93, sash 0.93→0.92 — 이번엔 샷시 쪽 비중이 더 커짐). 지난번
-// "짝당 2.5만"은 ㄱ자 싱크대 전체가 아니라 문짝 한 짝 단가였다는 걸
-// 사장님이 바로잡아서 SINK_L을 60만 원으로 되돌렸고, sinkL offMult와
-// PYEONG_BASE_MIN/MAX도 다시 커진 비중에 맞게 계산했다.
-//
-// [왜 — 2026-11-21 "짝당 가격을 기준으로 전체 견적 비율을 맞춰서 만들어달라"]
-// "짝당 2.5만/5만"은 품목 전체 가격이 아니라 "문짝 한 짝 단가 × 짝 수"로 다른
-// 품목 전부를 다시 만들라는 뜻이었다 — estimator_app WARDROBE_SET/SHOE_CABINET을
-// 긴 짝(5만 원) 기준으로 재계산: 붙박이장은 표준 2도어라 10만 원, 신발장은
-// 몸통이 붙박이장의 절반 크기라 1도어로 보고 5만 원. 아래 wardrobe/shoeCabinet의
-// offMult와 PYEONG_BASE_MIN/MAX도 이 비중에 맞게 다시 계산했다.
-//
-// [왜 — 2026-11-21 "토글을 다 꺼도 29평이 245만~290만 원이 나온다, 이상하다"]
-// 아래 12개 토글의 offMult를 전부 곱해도 약 46.8%가 남는다 — 이 남는 부분은
-// PYEONG_BASE_MIN/MAX 안에 "벽면 등 기본 필름 시공"으로 토글 없이 숨어있던
-// 값이었다(토글이 생기기 전부터 있던 원래 평당가의 본체). 사장님이 "이것도
-// 명시적인 토글로 노출해서 끌 수 있게 하자"고 해서 wallFilm을 추가 — 끄면
-// 0.1만 남게 잡아(다른 걸 다 꺼도 남던 46.8%를 4.7%까지 떨어뜨림 — 완전한
-// 0은 아니지만 최소 출장비 수준까지는 간다. 29평 전부 꺼짐 기준 245만~290만
-// → 25만~29만 원).
-//
-// [왜 — 2026-11-21 "일반 집은 장식몰딩 없다, 30평대 싱크대 상하부+냉장고장
-// 60만/아일랜드 추가시 80만 기준으로 평당가 재산출"]
-// 장식몰딩(웨인스코팅/알판)을 "몰딩 포함"에 묶어 기본 포함시켰더니, 사장님이
-// "일반 집은 장식몰딩 없는 곳이 대부분이라 기본 견적에 넣으면 안 된다"고
-// 바로잡음 — molding은 평몰딩(민자)만으로 좁히고, crownMolding을 기본 꺼짐
-// 업그레이드 옵션으로 새로 뺐다(추가 시 +8%, estimator_app MOLDING_CROWN-
-// MOLDING_FLAT 차액 30만 원을 24평 기준 비중으로 환산).
-// 싱크대/냉장고장도 사장님이 "30평대 아파트에서 싱크대 상하부+냉장고장 합쳐
-// 60만 원, 아일랜드 추가하면 80만 원"으로 새 기준을 줘서, 30평 기준으로
-// 비중을 다시 쟀다 — 60만 원을 estimator_app 자재 소요량 비율(싱크대
-// 11m : 냉장고장 4m)로 쪼개 싱크대 44만/냉장고장 16만으로 보고, 아일랜드
-// 20만을 더했다. 이 셋의 offMult·PYEONG_BASE_MIN/MAX도 이 비중에 맞게
-// 다시 계산했다(나머지 항목은 24평 기준을 그대로 유지).
+// PYEONG_BASE_MIN/MAX(16.08만~19만 원/평)는 안 바뀐다 — 핵심 항목 전부
+// 기본값 그대로(weight 합 1)일 때의 가격이 지금까지의 "올인클루시브" 가격과
+// 똑같아야 하므로, 모델만 바꾸고 숫자는 그대로 이어받았다. 실측 전 참고용
+// 범위이므로 정확한 금액이 필요하면 부분 상세 견적을 쓴다.
 interface QuickToggleDef {
   key: string;
   label: string;
   desc: string;
   group: "핵심 시공" | "전기·조명·설비";
   defaultOn: boolean;
-  onMult: number;
-  offMult: number;
+  /** "핵심 시공" 기본 포함 항목: 전체 100% 중 이 항목의 몫. 이 항목들끼리
+   *  합이 정확히 1이 되도록 맞춘다. addonWeight를 쓰는 항목은 비워둔다. */
+  weight?: number;
+  /** 업그레이드·교체·독립 추가 항목(장식몰딩/일자 싱크대/전기·조명·설비):
+   *  켜면 위 weight 합에 그대로 더한다. */
+  addonWeight?: number;
+  /** addonWeight 항목이 다른 핵심 항목의 "자리"를 대신 차지하는 경우(예:
+   *  일자 싱크대가 ㄱ자 싱크대 자리를 대신함) 그 핵심 항목의 key. */
+  replaces?: string;
 }
 const QUICK_TOGGLES: QuickToggleDef[] = [
-  { key: "wallFilm", label: "벽면 포함", desc: "벽·천장 등 기본 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.1 },
-  { key: "door", label: "문 포함", desc: "문짝 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
-  { key: "sash", label: "샷시 포함", desc: "샷시(창틀) 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.92 },
-  { key: "molding", label: "몰딩 포함", desc: "천장·벽 평몰딩(민자) 라인 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
-  { key: "crownMolding", label: "장식몰딩 추가", desc: "웨인스코팅·알판 등 장식 몰딩으로 업그레이드 — 보통 집엔 없어 기본 꺼짐", group: "핵심 시공", defaultOn: false, onMult: 1.08, offMult: 1 },
-  { key: "baseboard", label: "걸레받이 포함", desc: "바닥과 맞닿는 걸레받이 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.96 },
-  { key: "sinkL", label: "ㄱ자 싱크대 포함", desc: "ㄱ자 싱크대 상하부장 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.91 },
-  { key: "sinkStraight", label: "일자 싱크대 포함", desc: "일자(스트레이트) 싱크대로 교체 — ㄱ자와 동시 선택 불가", group: "핵심 시공", defaultOn: false, onMult: 1.1, offMult: 1 },
-  { key: "sinkIsland", label: "아일랜드장 포함", desc: "아일랜드 식탁·수납장 필름 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.96 },
-  { key: "middleDoor", label: "중문 포함", desc: "중문 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.93 },
-  { key: "fireDoor", label: "현관 방화문 포함", desc: "현관 방화문 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.95 },
-  { key: "wardrobe", label: "붙박이장 포함", desc: "붙박이장 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.97 },
-  { key: "shoeCabinet", label: "신발장 포함", desc: "신발장 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.99 },
-  { key: "fridgeCabinet", label: "냉장고장 포함", desc: "냉장고장 리폼 시공", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.97 },
-  { key: "wellMolding", label: "우물몰딩 포함", desc: "우물천장 몰딩 시공(방 1개 기준)", group: "핵심 시공", defaultOn: true, onMult: 1, offMult: 0.96 },
-  { key: "fan", label: "실링팬", desc: "실링팬 설치 추가", group: "전기·조명·설비", defaultOn: false, onMult: 1.06, offMult: 1 },
-  { key: "downlight", label: "다운라이트", desc: "다운라이트 타공·배선 추가(5개 기준)", group: "전기·조명·설비", defaultOn: false, onMult: 1.06, offMult: 1 },
-  { key: "sinkBowl", label: "싱크볼 교체", desc: "싱크볼 교환 시공 추가", group: "전기·조명·설비", defaultOn: false, onMult: 1.08, offMult: 1 },
-  { key: "toilet", label: "변기 교체", desc: "변기 설치 시공 추가", group: "전기·조명·설비", defaultOn: false, onMult: 1.08, offMult: 1 },
+  { key: "wallFilm", label: "벽면 포함", desc: "벽·천장 등 기본 필름 시공", group: "핵심 시공", defaultOn: true, weight: 0.38 },
+  { key: "door", label: "문 포함", desc: "문짝 필름 시공", group: "핵심 시공", defaultOn: true, weight: 0.07 },
+  { key: "sash", label: "샷시 포함", desc: "샷시(창틀) 필름 시공", group: "핵심 시공", defaultOn: true, weight: 0.08 },
+  { key: "molding", label: "몰딩 포함", desc: "천장·벽 평몰딩(민자) 라인 필름 시공", group: "핵심 시공", defaultOn: true, weight: 0.07 },
+  { key: "crownMolding", label: "장식몰딩 추가", desc: "웨인스코팅·알판 등 장식 몰딩으로 업그레이드 — 보통 집엔 없어 기본 꺼짐", group: "핵심 시공", defaultOn: false, addonWeight: 0.08 },
+  { key: "baseboard", label: "걸레받이 포함", desc: "바닥과 맞닿는 걸레받이 필름 시공", group: "핵심 시공", defaultOn: true, weight: 0.04 },
+  { key: "sinkL", label: "ㄱ자 싱크대 포함", desc: "ㄱ자 싱크대 상하부장 필름 시공", group: "핵심 시공", defaultOn: true, weight: 0.09 },
+  { key: "sinkStraight", label: "일자 싱크대 포함", desc: "일자(스트레이트) 싱크대로 교체 — ㄱ자와 동시 선택 불가", group: "핵심 시공", defaultOn: false, addonWeight: 0.06, replaces: "sinkL" },
+  { key: "sinkIsland", label: "아일랜드장 포함", desc: "아일랜드 식탁·수납장 필름 시공", group: "핵심 시공", defaultOn: true, weight: 0.04 },
+  { key: "middleDoor", label: "중문 포함", desc: "중문 리폼 시공", group: "핵심 시공", defaultOn: true, weight: 0.07 },
+  { key: "fireDoor", label: "현관 방화문 포함", desc: "현관 방화문 리폼 시공", group: "핵심 시공", defaultOn: true, weight: 0.05 },
+  { key: "wardrobe", label: "붙박이장 포함", desc: "붙박이장 리폼 시공", group: "핵심 시공", defaultOn: true, weight: 0.03 },
+  { key: "shoeCabinet", label: "신발장 포함", desc: "신발장 리폼 시공", group: "핵심 시공", defaultOn: true, weight: 0.01 },
+  { key: "fridgeCabinet", label: "냉장고장 포함", desc: "냉장고장 리폼 시공", group: "핵심 시공", defaultOn: true, weight: 0.03 },
+  { key: "wellMolding", label: "우물몰딩 포함", desc: "우물천장 몰딩 시공(방 1개 기준)", group: "핵심 시공", defaultOn: true, weight: 0.04 },
+  { key: "fan", label: "실링팬", desc: "실링팬 설치 추가", group: "전기·조명·설비", defaultOn: false, addonWeight: 0.06 },
+  { key: "downlight", label: "다운라이트", desc: "다운라이트 타공·배선 추가(5개 기준)", group: "전기·조명·설비", defaultOn: false, addonWeight: 0.06 },
+  { key: "sinkBowl", label: "싱크볼 교체", desc: "싱크볼 교환 시공 추가", group: "전기·조명·설비", defaultOn: false, addonWeight: 0.08 },
+  { key: "toilet", label: "변기 교체", desc: "변기 설치 시공 추가", group: "전기·조명·설비", defaultOn: false, addonWeight: 0.08 },
 ];
 const QUICK_TOGGLE_DEFAULTS: Record<string, boolean> = Object.fromEntries(
   QUICK_TOGGLES.map((t) => [t.key, t.defaultOn])
@@ -351,10 +300,23 @@ export default function QuotePage() {
   }, [sheetOpen]);
 
   const range = useMemo(() => {
-    let mult = 1;
+    let mult = 0;
+    // 핵심 시공 weight 합 — 다른 토글이 그 자리를 대신하는(replaces) 항목은
+    // 건너뛴다(예: 일자 싱크대가 켜져 있으면 ㄱ자 싱크대 몫은 안 더한다).
     for (const t of QUICK_TOGGLES) {
+      if (t.weight === undefined) continue;
+      const takenOver = QUICK_TOGGLES.some(
+        (o) => o.replaces === t.key && (quickToggles[o.key] ?? o.defaultOn)
+      );
+      if (takenOver) continue;
       const on = quickToggles[t.key] ?? t.defaultOn;
-      mult *= on ? t.onMult : t.offMult;
+      if (on) mult += t.weight;
+    }
+    // 업그레이드·교체·독립 추가 항목 — 켜져 있으면 그대로 더한다.
+    for (const t of QUICK_TOGGLES) {
+      if (t.addonWeight === undefined) continue;
+      const on = quickToggles[t.key] ?? t.defaultOn;
+      if (on) mult += t.addonWeight;
     }
     return {
       min: round10k(pyeong * PYEONG_BASE_MIN * mult),
