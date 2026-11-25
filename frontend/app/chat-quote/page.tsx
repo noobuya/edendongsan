@@ -20,6 +20,11 @@ const PRESET_ITEMS = [
   { label: '방문 알판 (짝당 18만)', name: '방문 및 문틀 필름 시공 (알판)', price: '18만 원 (짝당)' },
   { label: '붙박이장 (짝당 5만)', name: '붙박이장 도어 필름 시공', price: '10만 원 (2도어 기준)' },
   { label: '사각 싱크볼 (25만)', name: '스테인리스 사각 싱크볼 교체 + 실리콘 마감', price: '25만 원' },
+  // [콩자갈 바닥 — 2026-11-26] 평당 20만 원 기준. 1.5평 이하 소규모(현관·전실)는
+  // 최소 출장·인건비 방어선으로 35만 원 1식 고정, 2평 이상부터 평수×20만 원 산출.
+  { label: '현관 콩자갈 (35만)', name: '현관·전실 천연 콩자갈 바닥 시공', price: '35만 원 (1식)' },
+  { label: '베란다 콩자갈 (50만)', name: '베란다·다용도실 천연 콩자갈 바닥 시공', price: '50만 원 (평당 20만 원)' },
+  { label: '상가 콩자갈 (평당 20만)', name: '상가·카페 천연 콩자갈 바닥 시공', price: '평당 20만 원 (㎡당 약 6만 원)' },
 ];
 
 export default function ChatQuotePage() {
@@ -116,10 +121,75 @@ export default function ChatQuotePage() {
     const card = getBusinessCardText();
     const photoMention = photos.length > 0 ? '보내주신 현장 사진 꼼꼼히 확인했습니다.\n' : '';
     const noteLine = prepNote.trim() ? `\n· 시공 포함 내역 : ${prepNote.trim()}` : '';
+    // [콩자갈 바닥 — 2026-11-26] 시공 품목명에 '콩자갈'이 포함되면 필름 전용
+    // 문구(샘플북, 시트지·페인트 제거 등) 대신 바닥 시공 전용 3대 원칙으로 전환한다.
+    const isPebble = itemName.includes('콩자갈');
 
     let text = '';
 
-    if (channel === 'daangn') {
+    if (isPebble) {
+      if (channel === 'daangn') {
+        text = `안녕하세요, ${nameLabel}! 대구·현풍·테크노폴리스 천연 콩자갈 바닥 시공 전문 [대한인테리어필름]입니다 😊
+
+보내주신 내용 꼼꼼히 확인했습니다.
+문의하신 [${itemName}] 시공 예상 견적은 【 ${quotePrice} 】입니다.${noteLine}
+(※ 현장 실측과 바닥 상태(수평·면적)에 따라 정확한 최종 금액이 확정됩니다.)
+
+저희는 불필요한 영업사원 수수료와 중간 마진 없는 정직한 직영 견적으로 시공하며, 아래 3가지 원칙을 반드시 지킵니다.
+
+✔ 이음매 없는 무줄눈 마감으로 때 끼임 없이 청소가 편하고 미끄럼 방지 효과 우수
+✔ 바닥 연삭(그라인딩) 및 전용 프라이머 정석 밑작업 + 정밀 바인더 배합으로 돌 빠짐·크랙 방지
+✔ 불필요한 중간 마진 없는 정직한 직영 견적(평당 20만 원 기준) & 시공 후 1년 무상 A/S 공식 보증제
+
+무료로 방문드려 바닥 상태와 수평을 확인하고, 실제 콩자갈 원석 샘플(화이트·그레이·베이지 등)을 직접 보여드릴 수 있습니다. 편하신 시간대 알려주시면 맞춰서 찾아뵙겠습니다!
+
+${card}`;
+      } else if (channel === 'soomgo_quote') {
+        text = `안녕하세요, ${nameLabel}! 대구·달성군 천연 콩자갈 바닥 시공 전문 [대한인테리어필름]입니다.
+
+보내드린 【 ${quotePrice} 】 견적은 [${itemName}] 표준 시공 기준(평당 20만 원)이며, 현장 실측 면적과 바닥 상태(수평·기존 마감)에 따라 정확한 최종 견적이 산출됩니다.${noteLine}
+
+[천연 콩자갈 바닥 3가지 책임 시공 기준]
+1. 이음매 없는 무줄눈 마감으로 때 끼임 없이 청소가 편하고 미끄럼 방지 효과 우수
+2. 바닥 연삭(그라인딩) 및 전용 프라이머 정석 밑작업 + 정밀 바인더 배합으로 돌 빠짐·크랙 방지
+3. 불필요한 중간 마진 없는 정직한 직영 견적(평당 20만 원 기준) & 시공 완료 후 '1년 무상 A/S 보증제' 공식 운영
+
+채팅창으로 시공 원하시는 바닥 사진 1장만 보내주시면 거품 없는 정확한 직영 견적을 바로 안내해 드리겠습니다. 감사합니다!`;
+      } else if (channel === 'soomgo_chat') {
+        text = `${nameLabel}, 반갑습니다! 견적서 확인해 주셔서 감사합니다 😊
+정확한 안내를 위해 시공 원하시는 바닥 사진 1~2장만 편하게 올려주시면 바로 확인 후 말씀드리겠습니다.
+
+무료로 방문드려 바닥 상태와 수평을 확인하고, 실제 콩자갈 원석 샘플(화이트·그레이·베이지 등)을 직접 보여드릴 수 있습니다. 급하신 경우 전화나 오픈채팅으로 연락 주셔도 바로 상담 가능합니다!
+
+${card}`;
+      } else if (channel === 'blog') {
+        text = `안녕하세요, ${nameLabel}! 대한인테리어필름 블로그를 찾아주셔서 진심으로 감사합니다 😊
+
+${photoMention}문의하신 [${itemName}] 시공 예상 견적은 【 ${quotePrice} 】입니다.${noteLine}
+
+천연 콩자갈 바닥은 이음매 없는 무줄눈 마감이라 때 끼임 없이 청소가 편하고 미끄럼 방지 효과도 우수합니다.
+대한인테리어필름은 바닥 연삭(그라인딩) 및 전용 프라이머 정석 밑작업과 정밀 바인더 배합으로 돌 빠짐·크랙을 방지하며, 불필요한 중간 마진 없는 정직한 직영 견적(평당 20만 원 기준)으로 시공 후 1년 무상 A/S를 공식 보장합니다.
+
+아래 오픈채팅이나 안심번호로 바닥 사진과 함께 편하게 문의 주시면 무료로 방문드려 바닥 상태와 수평을 확인하고, 실제 콩자갈 원석 샘플(화이트·그레이·베이지 등)을 직접 보여드리겠습니다!
+
+${card}`;
+      } else if (channel === 'insta') {
+        const instaGreeting = instaHandle.trim()
+          ? `대한인테리어필름(@${instaHandle.trim().replace(/^@/, '')})을 찾아주셔서 감사합니다 ✨`
+          : `대한인테리어필름을 찾아주셔서 감사합니다 ✨`;
+        text = `안녕하세요, ${nameLabel}! ${instaGreeting}
+
+${photoMention}보내주신 [${itemName}] 시공 예상 견적은 【 ${quotePrice} 】입니다.${noteLine}
+
+✔ 이음매 없는 무줄눈 마감으로 청소 편리 & 미끄럼 방지 효과 우수
+✔ 바닥 연삭(그라인딩)·전용 프라이머 밑작업 + 정밀 바인더 배합으로 돌 빠짐·크랙 방지
+✔ 불필요한 중간 마진 없는 정직한 직영 견적(평당 20만 원 기준) & 시공 후 1년 무상 A/S 공식 보증
+
+무료 방문 실측과 실제 콩자갈 원석 샘플(화이트·그레이·베이지 등)을 보여드릴 수 있으니 언제든 편하게 답장 주세요!
+
+${card}`;
+      }
+    } else if (channel === 'daangn') {
       text = `안녕하세요, ${nameLabel}! 대구·현풍·테크노폴리스 인테리어 필름 직영 시공 전문 [대한인테리어필름]입니다 😊
 
 보내주신 내용 꼼꼼히 확인했습니다.
@@ -242,7 +312,7 @@ ${card}`;
     ctx.fillRect(40, 344, 640, 28);
     ctx.fillStyle = '#0f172a';
     ctx.font = 'bold 13px sans-serif';
-    ctx.fillText('싱크대필름·냉장고장필름·붙박이장필름·방문/문틀필름·현관문필름 직영전문', 54, 363);
+    ctx.fillText('싱크대 · 붙박이장 · 방문 · 사각 싱크볼 · 콩자갈 바닥 직영 전문', 54, 363);
 
     ctx.fillStyle = '#fde68a';
     ctx.fillRect(40, 376, 640, 28);
@@ -460,6 +530,27 @@ ${card}`;
                 className="text-[11px] bg-orange-50 text-orange-700 border border-orange-200 px-2 py-0.5 rounded"
               >
                 + 페인트 제거
+              </button>
+              <button
+                type="button"
+                onClick={() => setPrepNote('무황변 우레탄 바인더 배합 적용 (햇빛 황변 방지 / 평당 +2~3만 원 추가)')}
+                className="text-[11px] bg-stone-50 text-stone-700 border border-stone-200 px-2 py-0.5 rounded"
+              >
+                + 무황변 우레탄 바인더 (평당 +2~3만 원)
+              </button>
+              <button
+                type="button"
+                onClick={() => setPrepNote('바닥 연삭(그라인딩) 및 전용 프라이머 정석 밑작업 포함')}
+                className="text-[11px] bg-stone-50 text-stone-700 border border-stone-200 px-2 py-0.5 rounded"
+              >
+                + 바닥 연삭·전용 프라이머 밑작업
+              </button>
+              <button
+                type="button"
+                onClick={() => setPrepNote('투톤 곡선·로고 인레이 디자인 작업 (별도 협의)')}
+                className="text-[11px] bg-stone-50 text-stone-700 border border-stone-200 px-2 py-0.5 rounded"
+              >
+                + 투톤 곡선·로고 인레이 (별도 협의)
               </button>
             </div>
             <input
