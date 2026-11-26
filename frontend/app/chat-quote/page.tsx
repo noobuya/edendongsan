@@ -63,16 +63,35 @@ export default function ChatQuotePage() {
 ━━━━━━━━━━━━━━━`;
   };
 
-  // 사진 업로드 핸들러
-  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files) return;
-    const selected = Array.from(e.target.files).slice(0, 4);
-    const mapped = selected.map((file) => ({
+  // [왜 — 2026-11-26 "사진찍고 시공사진이 안나온다"] 안드로이드 WebView에서
+  // capture 속성 없는 <input type="file">은 "카메라/갤러리/파일" 전체 선택창을
+  // 띄우는데, 거기서 "카메라"로 촬영하면 카메라 앱이 뜬 사이 웹뷰 액티비티가
+  // 메모리 정리되면서 돌아왔을 때 사진이 입력창에 전달되지 않고 사라지는 경우가
+  // 있다(이미 admin/swatches·admin/swatch-scan에서 capture="environment"로
+  // 우회해 둔 것과 같은 문제). 그래서 "갤러리에서 선택"(고객이 보낸 사진)과
+  // "바로 촬영"(capture="environment")을 별도 버튼으로 분리한다. 매번 선택한
+  // 사진으로 전체를 교체하던 기존 동작도, 촬영을 여러 번 나눠 할 수 있도록
+  // 기존 사진에 이어 붙이는 방식으로 바꾼다.
+  const addPhotos = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const mapped = Array.from(files).map((file) => ({
       file,
       previewUrl: URL.createObjectURL(file),
     }));
-    setPhotos(mapped);
+    setPhotos((prev) => [...prev, ...mapped].slice(0, 4));
     setAiSummary('');
+  };
+
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    addPhotos(e.target.files);
+    // 같은 파일(특히 카메라로 찍은 임시 파일)을 다시 찍어도 onChange가 다시
+    // 발생하도록 입력값을 비워 둔다 — 비우지 않으면 같은 경로의 파일은 "값이
+    // 안 바뀌었다"고 보고 두 번째부터 이벤트가 안 일어난다.
+    e.target.value = '';
+  };
+
+  const handleRemovePhoto = (idx: number) => {
+    setPhotos((prev) => prev.filter((_, i) => i !== idx));
   };
 
   // 에덴동산 백엔드 AI 사진 견적 호출
@@ -429,31 +448,47 @@ ${card}`;
           </div>
 
           <div className="flex gap-2">
-            <label className="flex-1 cursor-pointer bg-slate-50 hover:bg-slate-100 border-2 border-dashed border-slate-300 rounded-xl py-3 px-4 text-center text-sm font-bold text-slate-700">
-              📷 고객 사진 선택 (최대 4장)
+            <label className="flex-1 cursor-pointer bg-slate-50 hover:bg-slate-100 border-2 border-dashed border-slate-300 rounded-xl py-2.5 px-3 text-center text-xs font-bold text-slate-700">
+              🖼 갤러리에서 선택
               <input type="file" accept="image/*" multiple onChange={handlePhotoChange} className="hidden" />
+            </label>
+            <label className="flex-1 cursor-pointer bg-slate-50 hover:bg-slate-100 border-2 border-dashed border-slate-300 rounded-xl py-2.5 px-3 text-center text-xs font-bold text-slate-700">
+              📷 바로 촬영
+              <input type="file" accept="image/*" capture="environment" onChange={handlePhotoChange} className="hidden" />
             </label>
             <button
               type="button"
               onClick={handleAnalyzePhotos}
               disabled={isAnalyzing}
-              className="bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 text-white font-bold text-sm px-4 rounded-xl shadow-sm"
+              className="bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 text-white font-bold text-xs px-3 rounded-xl shadow-sm shrink-0"
             >
-              {isAnalyzing ? '분석 중...' : '⚡ 즉시 견적 내기'}
+              {isAnalyzing ? '분석 중...' : '⚡ 즉시 견적'}
             </button>
           </div>
 
           {photos.length > 0 && (
             <div className="grid grid-cols-4 gap-2 pt-1">
               {photos.map((p, idx) => (
-                <img
-                  key={idx}
-                  src={p.previewUrl}
-                  alt={`현장사진 ${idx + 1}`}
-                  className="w-full h-20 object-cover rounded-lg border border-slate-200"
-                />
+                <div key={idx} className="relative">
+                  <img
+                    src={p.previewUrl}
+                    alt={`현장사진 ${idx + 1}`}
+                    className="w-full h-20 object-cover rounded-lg border border-slate-200"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleRemovePhoto(idx)}
+                    aria-label="사진 삭제"
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-slate-900 text-white text-xs rounded-full flex items-center justify-center shadow"
+                  >
+                    ✕
+                  </button>
+                </div>
               ))}
             </div>
+          )}
+          {photos.length >= 4 && (
+            <p className="text-[11px] text-slate-400">사진은 최대 4장까지 담을 수 있어요. 더 담으려면 먼저 하나를 지워주세요.</p>
           )}
 
           {/* 빠른 확정 단가 프리셋 */}
