@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowLeft, ArrowRight, Bot, Briefcase, Calculator, Camera, FolderOpen, Images, Loader2, MessageCircle, Newspaper, Palette, Ruler, Settings, Sparkles, Users } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, Bot, Briefcase, Calculator, Camera, FolderOpen, GitCompare, Images, Loader2, MessageCircle, Newspaper, Palette, Ruler, Settings, Sparkles, Users } from "lucide-react";
 import CanvasStage from "@/components/CanvasStage";
 import FeatureIntroDialog from "@/components/FeatureIntroDialog";
 import { LayoutEditProvider, useLayoutEdit } from "@/components/LayoutEdit";
@@ -536,6 +536,17 @@ export default function HomePage() {
               className="glass-pill flex h-11 w-11 shrink-0 items-center justify-center text-slate-700 transition-transform active:scale-90"
             >
               <Sparkles className="h-5 w-5" />
+            </Link>
+          )}
+          {/* 시공전 사진 + 외부 AI(Gemini 등)로 만든 시공후 옵션 사진들을 올리면
+              BEFORE/AFTER 비교판 이미지·비교영상으로 합성해 주는 화면(app/compare/new). */}
+          {ownerToken && (
+            <Link
+              href="/compare/new"
+              aria-label="AI 가상시공 비교판"
+              className="glass-pill flex h-11 w-11 shrink-0 items-center justify-center text-slate-700 transition-transform active:scale-90"
+            >
+              <GitCompare className="h-5 w-5" />
             </Link>
           )}
           {/* 개발용 스크린샷 업로드(/shot) — 폰 화면을 서버로 올려 클로드 코드에게

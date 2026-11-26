@@ -477,6 +477,40 @@ export interface Proposal {
 export type ProposalFeedbackTarget = "detail_image" | "copy";
 export type ProposalFeedbackAction = "brighter" | "darker" | "shorter" | "longer" | "custom";
 
+/** AI 가상시공 비교판(/compare) — 시공전 사진(부위별)과 외부 AI(Gemini 등)로
+ *  미리 만들어 둔 시공후 옵션 사진들을 한 장의 제안서 이미지로 합성한 결과. */
+export interface ComparisonPhotoRef {
+  id: string;
+  url: string;
+}
+
+export interface ComparisonOption {
+  id: string;
+  label: string;
+  caption: string;
+  price_note: string;
+  photo: ComparisonPhotoRef;
+}
+
+export interface ComparisonArea {
+  label: string;
+  before_photo: ComparisonPhotoRef;
+  options: ComparisonOption[];
+}
+
+export type ComparisonBoardStatus = "draft" | "published";
+
+export interface ComparisonBoard {
+  id: string;
+  status: ComparisonBoardStatus;
+  created_at: string;
+  published_at: string | null;
+  title: string;
+  price_note: string;
+  areas: ComparisonArea[];
+  image_url: string;
+}
+
 export interface ProposalPublic {
   id: string;
   created_at: string;

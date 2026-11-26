@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.database import Base, engine, migrate_recruiting_db
-from app.routers import admin, admin_automation, automation, blog, blog_compose, brand, community, dev_shot, estimate, finance, jobs, journal, layout, ledger, manual_mask, pricing, portfolio, proposals, push, quotes, recruiting, swatch_photos, swatch_scan, upload, warranty, weather
+from app.routers import admin, admin_automation, automation, blog, blog_compose, brand, comparison, community, dev_shot, estimate, finance, jobs, journal, layout, ledger, manual_mask, pricing, portfolio, proposals, push, quotes, recruiting, swatch_photos, swatch_scan, upload, warranty, weather
 
 settings = get_settings()
 app = FastAPI(title="AI 시공 견적/렌더링 API")
@@ -54,6 +54,8 @@ app.include_router(journal.router)
 app.include_router(recruiting.router)
 app.include_router(proposals.router)
 app.include_router(proposals.public_router)
+app.include_router(comparison.router)
+app.include_router(comparison.public_router)
 app.include_router(portfolio.router)
 app.include_router(warranty.router)
 app.include_router(finance.router)

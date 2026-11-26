@@ -3,6 +3,7 @@ import type {
   BlogPost,
   BlogSummary,
   ChangeOrder,
+  ComparisonBoard,
   ConstructionIntentResult,
   CreateJobParams,
   EstimateBreakdown,
@@ -1052,6 +1053,81 @@ export async function getProposalPublic(id: string): Promise<ProposalPublic> {
   const res = await apiFetch(`${API_BASE}/api/proposals/${id}/public`);
   if (!res.ok) throw new Error(await extractErrorMessage(res, "제안서를 찾을 수 없습니다."));
   return res.json();
+}
+
+/** AI 가상시공 비교판(/compare) — 시공전 사진(부위별) + 외부 AI(Gemini 등)로
+ *  미리 만든 시공후 옵션 사진들을 한 장의 제안서 이미지로 합성한다. 생성·발행은
+ *  사장님 전용(X-Admin-Token), 공개 조회(getComparisonBoardPublic)와 비교 영상
+ *  (comparisonVideoUrl)만 인증 없이 열린다(board_id+사진 id를 알아야 접근 가능). */
+export interface ComparisonOptionInput {
+  label: string;
+  caption: string;
+  price_note: string;
+}
+export interface ComparisonAreaInput {
+  label: string;
+  options: ComparisonOptionInput[];
+}
+
+export async function createComparisonBoard(
+  title: string,
+  priceNote: string,
+  layout: ComparisonAreaInput[],
+  photos: File[],
+  ownerToken: string
+): Promise<ComparisonBoard> {
+  const form = new FormData();
+  form.append("title", title);
+  form.append("price_note", priceNote);
+  form.append("layout", JSON.stringify(layout));
+  photos.forEach((p) => form.append("photos", p));
+  const res = await apiFetch(`${API_BASE}/api/comparison`, {
+    method: "POST",
+    body: form,
+    headers: ownerHeaders(ownerToken),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "비교판 생성에 실패했습니다."));
+  return res.json();
+}
+
+export async function publishComparisonBoard(id: string, ownerToken: string): Promise<ComparisonBoard> {
+  const res = await apiFetch(`${API_BASE}/api/comparison/${id}/publish`, {
+    method: "POST",
+    headers: ownerHeaders(ownerToken),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "발행에 실패했습니다."));
+  return res.json();
+}
+
+export async function getComparisonBoard(id: string, ownerToken: string): Promise<ComparisonBoard> {
+  const res = await apiFetch(`${API_BASE}/api/comparison/${id}`, { headers: ownerHeaders(ownerToken) });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "비교판을 찾을 수 없습니다."));
+  return res.json();
+}
+
+export async function listComparisonBoards(ownerToken: string): Promise<ComparisonBoard[]> {
+  const res = await apiFetch(`${API_BASE}/api/comparison`, { headers: ownerHeaders(ownerToken) });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "비교판 목록을 불러오지 못했습니다."));
+  const data = await res.json();
+  return data.boards;
+}
+
+export async function deleteComparisonBoard(id: string, ownerToken: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/comparison/${id}`, {
+    method: "DELETE",
+    headers: ownerHeaders(ownerToken),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "비교판 삭제에 실패했습니다."));
+}
+
+export async function getComparisonBoardPublic(id: string): Promise<ComparisonBoard> {
+  const res = await apiFetch(`${API_BASE}/api/comparison/${id}/public`);
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "비교판을 찾을 수 없습니다."));
+  return res.json();
+}
+
+export function comparisonVideoUrl(boardId: string, before: string, after: string, fmt: "gif" | "mp4" = "gif"): string {
+  return `${API_BASE}/api/comparison/${boardId}/video?before=${encodeURIComponent(before)}&after=${encodeURIComponent(after)}&fmt=${fmt}`;
 }
 
 /** 서명 완료된 시공 건 쇼케이스 — 인증 없이 누구나 볼 수 있는 공개 목록. */
