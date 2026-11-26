@@ -1121,6 +1121,17 @@ export async function fetchJobCompareBlob(jobId: string, fmt: "gif" | "mp4" = "g
   return res.blob();
 }
 
+/** 개발용 — 폰 스크린샷을 서버의 고정 경로(/home/ubuntu/latest_shot.*)로 올린다
+ *  (/shot 페이지, routers/dev_shot.py). 돌려주는 절대 경로를 클로드 코드에게
+ *  그대로 붙여넣으면 바로 Read할 수 있다. */
+export async function uploadDevShot(file: File): Promise<{ path: string }> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await apiFetch(`${API_BASE}/api/dev-shot`, { method: "POST", body: form });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "업로드에 실패했습니다."));
+  return res.json();
+}
+
 /** 결과 사진 위에 다시 잡은 구역만 새로 렌더링한다(부분 재시뮬레이션).
  *
  *  마스크는 JSON에 base64로 싣지 않고 파일 파트로 따로 붙인다 — 처음 견적을 낼 때와
