@@ -35,7 +35,11 @@ export default function SendResultToCustomer({
         text: "고객님, 요청하신 시공 사진입니다.",
       });
       setNotice(
-        result === "shared" ? null : "파일을 저장했어요. 채팅창의 사진/첨부 아이콘으로 보내주세요."
+        result === "shared"
+          ? null
+          : result === "saved"
+          ? "갤러리에 저장했어요. 채팅창의 사진/동영상 첨부 아이콘에서 찾아 보내주세요."
+          : "다운로드 폴더에 저장했어요. 못 찾으시면 파일 관리 앱의 '다운로드'를 확인해주세요."
       );
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "전송에 실패했습니다.");
