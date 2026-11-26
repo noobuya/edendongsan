@@ -1197,14 +1197,28 @@ export async function fetchJobCompareBlob(jobId: string, fmt: "gif" | "mp4" = "g
   return res.blob();
 }
 
-/** 개발용 — 폰 스크린샷을 서버의 고정 경로(/home/ubuntu/latest_shot.*)로 올린다
- *  (/shot 페이지, routers/dev_shot.py). 돌려주는 절대 경로를 클로드 코드에게
- *  그대로 붙여넣으면 바로 Read할 수 있다. */
-export async function uploadDevShot(file: File): Promise<{ path: string }> {
+/** 개발용 — 폰 스크린샷 여러 장을 서버의 고정 경로(/home/ubuntu/latest_shot_1.*,
+ *  _2.* ...)로 올린다(/shot 페이지, routers/dev_shot.py). 돌려주는 절대 경로들을
+ *  클로드 코드에게 그대로 붙여넣으면 바로 Read할 수 있다. */
+export async function uploadDevShots(files: File[]): Promise<{ paths: string[] }> {
   const form = new FormData();
-  form.append("file", file);
+  files.forEach((f) => form.append("files", f));
   const res = await apiFetch(`${API_BASE}/api/dev-shot`, { method: "POST", body: form });
   if (!res.ok) throw new Error(await extractErrorMessage(res, "업로드에 실패했습니다."));
+  return res.json();
+}
+
+/** 개발용 — 블로그 글 링크(네이버 블로그 등)를 서버가 대신 읽어 본문 텍스트를
+ *  /home/ubuntu/latest_blog.txt로 저장한다. 네이버 블로그 주소는 서버가 자동으로
+ *  모바일판(m.blog.naver.com)으로 바꿔서 읽는다(원래 주소는 본문이 iframe 안에
+ *  있어 그대로 받으면 내용이 거의 안 잡힌다). */
+export async function fetchDevBlog(url: string): Promise<{ path: string; title: string; preview: string }> {
+  const res = await apiFetch(`${API_BASE}/api/dev-shot/blog`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "블로그 글을 불러오지 못했습니다."));
   return res.json();
 }
 
