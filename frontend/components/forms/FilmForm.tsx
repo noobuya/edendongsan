@@ -2,6 +2,7 @@
 
 import type { FilmOptions } from "@/types";
 import { FormSection, NumberField, ToggleRow } from "@/components/ui/FormControls";
+import { Palette } from "lucide-react";
 import PanelArrayField from "@/components/ui/PanelArrayField";
 import SwatchPicker from "@/components/ui/SwatchPicker";
 import SwatchPhotoField from "@/components/ui/SwatchPhotoField";
@@ -67,6 +68,43 @@ export default function FilmForm({ value, onChange }: Props) {
                 addLabel="하부장 추가"
               />
             </FormSection>
+
+            {/* [투톤 주방 — 2026-11-26] "상부장은 화이트, 하부장은 우드"처럼 고객이
+                상/하부장 색상을 다르게 원할 때만 켠다. 끄면 하부장도 위 "컬러/패턴"
+                견본책을 그대로 같이 쓴다(견적서 원단도 한 줄로 합쳐 계산). */}
+            <ToggleRow
+              label="하부장 색상을 다르게"
+              description="상부장과 다른 견본책을 쓰는 투톤 주방일 때만 켜세요"
+              checked={value.lowerCabinetsPatternId != null}
+              onChange={(on) =>
+                onChange({
+                  ...value,
+                  lowerCabinetsPatternId: on ? value.lowerCabinetsPatternId ?? value.patternId : undefined,
+                  lowerCabinetsUnitPricePerM: on ? value.lowerCabinetsUnitPricePerM : undefined,
+                })
+              }
+            />
+            {value.lowerCabinetsPatternId != null && (
+              <FormSection title="하부장 전용 컬러/패턴">
+                <div className="mb-2 flex items-center gap-1.5 text-[12px] text-slate-500">
+                  <Palette className="h-3.5 w-3.5" />
+                  하부장만 이 견본책으로 따로 계산해 견적서에 별도 원단 줄로 뽑아요
+                </div>
+                <SwatchPicker
+                  swatches={ALL_PATTERN_SWATCHES}
+                  selectedId={value.lowerCabinetsPatternId}
+                  onSelect={(lowerCabinetsPatternId) => onChange({ ...value, lowerCabinetsPatternId })}
+                />
+                <NumberField
+                  label="하부장 필름 자재 단가 (원/m)"
+                  unit="원"
+                  step={500}
+                  value={value.lowerCabinetsUnitPricePerM ?? value.unitPricePerM}
+                  onChange={(lowerCabinetsUnitPricePerM) => onChange({ ...value, lowerCabinetsUnitPricePerM })}
+                />
+              </FormSection>
+            )}
+
             <FormSection title="아일랜드 식탁">
               <PanelArrayField
                 items={value.islandTables}

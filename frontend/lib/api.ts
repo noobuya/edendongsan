@@ -150,6 +150,8 @@ export async function createJob(
             fridge_cabinets: panelItemsPayload(options.film.fridgeCabinets),
             pantry_cabinets: panelItemsPayload(options.film.pantryCabinets),
             shoe_cabinets: panelItemsPayload(options.film.shoeCabinets),
+            lower_cabinets_pattern_id: options.film.lowerCabinetsPatternId ?? null,
+            lower_cabinets_unit_price_per_m: options.film.lowerCabinetsUnitPricePerM ?? null,
           }
         : undefined,
       sash: selectedItems.includes("sash")

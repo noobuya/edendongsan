@@ -55,6 +55,11 @@ export interface FilmOptions {
   fridgeCabinets: PanelItem[];
   pantryCabinets: PanelItem[];
   shoeCabinets: PanelItem[];
+  /** 상부장은 화이트, 하부장은 우드처럼 "투톤" 주방을 고객이 원할 때만 채운다 —
+   *  지정하면 하부장만 이 견본책(패턴)·단가로 따로 계산해 별도 원단 줄로 뽑고,
+   *  비워 두면 하부장도 patternId/unitPricePerM을 그대로 같이 쓴다. */
+  lowerCabinetsPatternId?: string;
+  lowerCabinetsUnitPricePerM?: number;
 }
 
 export interface SashOptions {

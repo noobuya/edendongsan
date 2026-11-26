@@ -58,6 +58,11 @@ class FilmOptions(BaseModel):
     fridge_cabinets: list[PanelItem] = Field(default_factory=list)
     pantry_cabinets: list[PanelItem] = Field(default_factory=list)
     shoe_cabinets: list[PanelItem] = Field(default_factory=list)
+    # 상부장은 화이트, 하부장은 우드처럼 "투톤" 주방을 고객이 원할 때만 채운다 —
+    # 지정하면 하부장만 이 견본책(패턴)·단가로 따로 계산해 별도 원단 줄로 뽑고,
+    # 비워 두면(None) 하부장도 그대로 pattern_id/unit_price_per_m을 같이 쓴다.
+    lower_cabinets_pattern_id: Optional[str] = None
+    lower_cabinets_unit_price_per_m: Optional[int] = None
 
 
 FireDoorSides = Literal["single", "double"]

@@ -217,10 +217,26 @@ def _line_item(item_id: str, details: list[dict]) -> dict:
     }
 
 
+def _film_roll_detail(label: str, area_m2: float, unit_price_per_m: int, pattern_id: str) -> dict:
+    """면적(㎡) → 로스율 반영 → 필요 원단 길이(m) → 소수점 1자리 올림 → 원/m 단가.
+    한 롤에서 같이 재단하는 부위들을 한 줄로 합산해 청구할 때 쓴다(_film_line_item
+    맨 위 docstring의 A~D 참고)."""
+    lossed_area_m2 = area_m2 * _loss_rate()
+    billed_length_m = math.ceil((lossed_area_m2 / FILM_ROLL_WIDTH_M) * 10) / 10
+    return _detail(
+        label,
+        billed_length_m,
+        "m",
+        unit_price_per_m,
+        "material",
+        f"총 시공 면적 {round(area_m2, 2)}㎡ (로스율 15% · 장폭 {FILM_ROLL_WIDTH_M}m 반영)",
+        material_code=pattern_id,
+    )
+
+
 def _film_line_item(opts: FilmOptions) -> dict:
     table = _prices()["film"]
     coverage = table["manday_coverage"]
-    details = []
 
     # 인건비 산출 대상: (표시 라벨, 품 산출 기준 카테고리 키, 항목 배열)
     panel_categories: list[tuple[str, str, list[PanelItem]]] = [
@@ -234,35 +250,40 @@ def _film_line_item(opts: FilmOptions) -> dict:
         ("신발장", "tall_cabinet_m2", opts.shoe_cabinets),
     ]
 
+    # [투톤 주방 — 2026-11-26 "상부장/하부장 색상을 다르게"] 하부장에 별도 견본책
+    # (lower_cabinets_pattern_id)이 지정되면, 하부장은 다른 필름 롤이라 나머지와
+    # 같이 재단할 수 없으므로 면적 합산에서 빼 따로 원단 줄을 만든다. 지정이
+    # 없으면(기본값 None) 예전처럼 하부장도 나머지와 한 롤로 합쳐 계산한다.
+    split_lower = opts.lower_cabinets_pattern_id is not None
+    lower_area_m2 = _panels_area_m2(opts.lower_cabinets) if split_lower else 0.0
+
     # A. 부위별 총 면적(㎡) 합산 — 걸레받이/몰딩은 표준 폭(0.15m)을 곱해 면적으로 환산해 더한다.
     total_area_m2 = 0.0
     for _, _, items in panel_categories:
+        if split_lower and items is opts.lower_cabinets:
+            continue
         total_area_m2 += _panels_area_m2(items)
     molding_area_m2 = opts.molding_length_m * MOLDING_WIDTH_M
     total_area_m2 += molding_area_m2
 
-    if total_area_m2 <= 0:
+    if total_area_m2 <= 0 and lower_area_m2 <= 0:
         return _line_item("film", [])
 
-    # B. 로스율 반영 → C. 필요 원단 길이(m) → D. 소수점 1자리 올림 후 원/m 단가 적용
-    lossed_area_m2 = total_area_m2 * _loss_rate()
-    required_length_m = lossed_area_m2 / FILM_ROLL_WIDTH_M
-    billed_length_m = math.ceil(required_length_m * 10) / 10
-    material_amount = round(billed_length_m * opts.unit_price_per_m)
-
-    details = [
-        _detail(
-            "필름 원단",
-            billed_length_m,
-            "m",
-            opts.unit_price_per_m,
-            "material",
-            f"총 시공 면적 {round(total_area_m2, 2)}㎡ (로스율 15% · 장폭 {FILM_ROLL_WIDTH_M}m 반영)",
-            material_code=opts.pattern_id,
+    # B~D. 로스율 반영 → 필요 원단 길이(m) → 소수점 1자리 올림 → 원/m 단가 적용
+    details = []
+    if total_area_m2 > 0:
+        details.append(_film_roll_detail("필름 원단", total_area_m2, opts.unit_price_per_m, opts.pattern_id))
+    if lower_area_m2 > 0:
+        pattern_name = PATTERNS.get(opts.lower_cabinets_pattern_id, {}).get("name", opts.lower_cabinets_pattern_id)
+        unit_price = opts.lower_cabinets_unit_price_per_m or opts.unit_price_per_m
+        details.append(
+            _film_roll_detail(
+                f"필름 원단 (하부장 전용 · {pattern_name})", lower_area_m2, unit_price, opts.lower_cabinets_pattern_id
+            )
         )
-    ]
 
-    # 부자재/인건비는 부위별 실제 작업 물량 기준으로 개별 산출한다.
+    # 부자재/인건비는 부위별 실제 작업 물량 기준으로 개별 산출한다(견본책을 하부장만
+    # 따로 쓰더라도 인건비·프라이머는 똑같이 면적 기준이라 그대로 계산한다).
     for label, coverage_key, items in panel_categories:
         area = _panels_area_m2(items)
         if area <= 0:
