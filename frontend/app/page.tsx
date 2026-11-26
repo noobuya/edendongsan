@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowLeft, ArrowRight, Bot, Briefcase, Calculator, FolderOpen, Images, Loader2, MessageCircle, Newspaper, Palette, Ruler, Settings, Sparkles, Users } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, Bot, Briefcase, Calculator, Camera, FolderOpen, Images, Loader2, MessageCircle, Newspaper, Palette, Ruler, Settings, Sparkles, Users } from "lucide-react";
 import CanvasStage from "@/components/CanvasStage";
 import FeatureIntroDialog from "@/components/FeatureIntroDialog";
 import { LayoutEditProvider, useLayoutEdit } from "@/components/LayoutEdit";
@@ -536,6 +536,18 @@ export default function HomePage() {
               className="glass-pill flex h-11 w-11 shrink-0 items-center justify-center text-slate-700 transition-transform active:scale-90"
             >
               <Sparkles className="h-5 w-5" />
+            </Link>
+          )}
+          {/* 개발용 스크린샷 업로드(/shot) — 폰 화면을 서버로 올려 클로드 코드에게
+              경로로 바로 보여줄 때 쓰는 사장님 전용 도구라 고객 눈에 띄지 않게
+              여기(사장님 전용 줄) 맨 뒤쪽, 단가 설정 바로 앞에 둔다. */}
+          {ownerToken && (
+            <Link
+              href="/shot"
+              aria-label="개발용 스크린샷"
+              className="glass-pill flex h-11 w-11 shrink-0 items-center justify-center text-slate-700 transition-transform active:scale-90"
+            >
+              <Camera className="h-5 w-5" />
             </Link>
           )}
           {/* 단가 설정 입구. [왜 2026-11-06에 뺐다가 되돌리는가] 한동안 이
