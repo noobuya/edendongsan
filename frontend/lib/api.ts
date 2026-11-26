@@ -1102,6 +1102,23 @@ export async function fetchAssetObjectUrl(path: string): Promise<string> {
   return URL.createObjectURL(await res.blob());
 }
 
+/** 백엔드 이미지를 Blob 그대로 받는다(fetchAssetObjectUrl과 같은 ngrok 헤더 이유) —
+ *  navigator.share({ files })로 고객에게 바로 보내려면 object URL이 아니라 File이
+ *  필요해서, 그 File을 만들 재료로 Blob을 돌려준다. */
+export async function fetchAssetBlob(path: string): Promise<Blob> {
+  const res = await apiFetch(resolveAssetUrl(path));
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "사진을 불러오지 못했습니다."));
+  return res.blob();
+}
+
+/** 원본(before)·AI 시공결과(after)의 "밀어 보기" 비교 움짤(GIF, fmt=mp4면 영상)을
+ *  Blob으로 받는다 — routers/jobs.py의 /{job_id}/compare를 그대로 호출한다. */
+export async function fetchJobCompareBlob(jobId: string, fmt: "gif" | "mp4" = "gif"): Promise<Blob> {
+  const res = await apiFetch(`${API_BASE}/api/jobs/${jobId}/compare?fmt=${fmt}`);
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "시공 전후 비교 파일을 만들지 못했습니다."));
+  return res.blob();
+}
+
 /** 결과 사진 위에 다시 잡은 구역만 새로 렌더링한다(부분 재시뮬레이션).
  *
  *  마스크는 JSON에 base64로 싣지 않고 파일 파트로 따로 붙인다 — 처음 견적을 낼 때와

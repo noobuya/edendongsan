@@ -13,6 +13,7 @@ import PremiumReceipt from "@/components/PremiumReceipt";
 import ShareEstimateDialog from "@/components/community/ShareEstimateDialog";
 import InteractiveResultCanvas from "@/components/InteractiveResultCanvas";
 import SectorReedit from "@/components/SectorReedit";
+import SendResultToCustomer from "@/components/SendResultToCustomer";
 import SiteConditionsCard from "@/components/SiteConditionsCard";
 import SitePhotoGallery from "@/components/SitePhotoGallery";
 import SwatchPicker from "@/components/ui/SwatchPicker";
@@ -243,10 +244,12 @@ export default function SimulationPanel({
           {tab === "result" &&
             (resultUrl ? (
               <div className="space-y-0">
-                {/* 시공 전 사진이 있을 때만 비교 버튼을 보여준다(수동 재편집 등으로
-                    원본이 없는 옛 작업은 버튼 자체가 안 뜬다). */}
-                {beforeUrl && (
-                  <div className="flex justify-end border-b border-slate-200 bg-white px-3 py-2">
+                {/* 시공 전 사진이 있을 때만 "비교" 버튼을 보여준다(화면 안에서 직접
+                    끄는 슬라이더 — 수동 재편집 등으로 원본이 없는 옛 작업은 버튼
+                    자체가 안 뜬다). "고객에게 보내기"는 AI 시공결과 사진만 있어도
+                    쓸 수 있고, beforeUrl이 있으면 전후 비교 움짤·영상도 추가된다. */}
+                <div className="flex items-center justify-end gap-2 border-b border-slate-200 bg-white px-3 py-2">
+                  {beforeUrl && (
                     <button
                       type="button"
                       onClick={() => setCompareMode((v) => !v)}
@@ -257,8 +260,9 @@ export default function SimulationPanel({
                       <SlidersHorizontal className="h-3.5 w-3.5" />
                       {compareMode ? "영역 선택 모드로" : "시공 전후 비교"}
                     </button>
-                  </div>
-                )}
+                  )}
+                  <SendResultToCustomer jobId={liveJob.job_id} resultUrl={resultUrl} beforeUrl={beforeUrl} />
+                </div>
 
                 {compareMode && beforeUrl ? (
                   <BeforeAfterSlider beforeSrc={beforeUrl} afterSrc={resultUrl} className="aspect-[4/3] w-full" />

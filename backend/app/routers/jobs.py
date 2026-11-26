@@ -1,3 +1,4 @@
+import hashlib
 import io
 import json
 import os
@@ -5,6 +6,8 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, Header, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import FileResponse
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app.services.swatch import extract_swatch_patch
@@ -39,6 +42,7 @@ from app.schemas import (
     SignatureRequest,
     SiteConditionsRequest,
 )
+from app.services.blog_video import make_compare_gif, make_compare_mp4
 from app.services.intent_parser import parse_construction_intent
 
 # 손가락으로 그린 서명치고 지나치게 큰 데이터(악의적으로 큰 이미지를 밀어넣는 경우)를
@@ -97,6 +101,42 @@ async def get_job(job_id: str):
         return JobStatusResponse(**quote)
 
     raise HTTPException(status_code=404, detail="Job not found")
+
+
+def _static_url_to_path(url: str) -> str:
+    return "storage/" + url.split("/static/", 1)[1] if "/static/" in url else url
+
+
+@router.get("/{job_id}/compare")
+async def get_job_compare_media(job_id: str, fmt: str = "gif"):
+    """원본 사진(before)과 AI 시공결과(after)를 "밀어 보기" 움짤(GIF, fmt=mp4면
+    영상)로 만든다 — 사장님이 고객에게 채팅으로 시공 전후 변화를 한 번에 보여줄
+    때 쓴다(routers/blog.py의 공개 블로그용 비교 움짤과 같은 함수를 재사용 —
+    services/blog_video.make_compare_gif/make_compare_mp4). 사진 id가 아니라
+    job_id + 수정 시각으로 캐시해, 부위 편집으로 결과 사진이 바뀌면 새로 만든다."""
+    quote = load_quote(job_id)
+    if quote is None:
+        raise HTTPException(status_code=404, detail="견적서를 찾을 수 없습니다.")
+    before_url = quote.get("original_image_url")
+    after_url = quote.get("rendered_image_url")
+    if not before_url or not after_url:
+        raise HTTPException(status_code=404, detail="비교할 시공 전/후 사진이 없습니다.")
+
+    before_path = _static_url_to_path(before_url)
+    after_path = _static_url_to_path(after_url)
+    if not os.path.exists(before_path) or not os.path.exists(after_path):
+        raise HTTPException(status_code=404, detail="비교할 사진 파일을 찾을 수 없습니다.")
+
+    ext, maker, media = (
+        ("mp4", make_compare_mp4, "video/mp4") if fmt == "mp4" else ("gif", make_compare_gif, "image/gif")
+    )
+    key = hashlib.md5(f"{after_path}|{os.path.getmtime(after_path)}".encode()).hexdigest()[:10]
+    out = f"storage/results/{job_id}_jobcompare_{key}.{ext}"
+    if not os.path.exists(out):
+        tmp = out.replace(f".{ext}", f".tmp.{ext}")
+        await run_in_threadpool(maker, before_path, after_path, tmp)
+        os.replace(tmp, out)
+    return FileResponse(out, media_type=media)
 
 
 def _get_or_restore_job(job_id: str) -> dict | None:
