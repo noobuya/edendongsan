@@ -833,6 +833,26 @@ export async function deleteLedgerEntry(entryId: string, ownerToken: string): Pr
   if (!res.ok) throw new Error(await extractErrorMessage(res, "항목을 삭제하지 못했습니다."));
 }
 
+/** 지난 기록을 한 번에 정리한다 — 매출(완료 견적)·인건비(현장 지원)는 수동
+ *  입력과 다른 저장소라 영향받지 않고, 직접 입력한 수입/지출 항목만 지워진다.
+ *  fromDate/toDate를 둘 다 생략하면 수동 항목 전체를 지운다. */
+export async function deleteLedgerEntriesBulk(
+  ownerToken: string,
+  fromDate?: string,
+  toDate?: string
+): Promise<{ deleted: number }> {
+  const params = new URLSearchParams();
+  if (fromDate) params.set("from_date", fromDate);
+  if (toDate) params.set("to_date", toDate);
+  const qs = params.toString();
+  const res = await apiFetch(`${API_BASE}/api/ledger/entries${qs ? `?${qs}` : ""}`, {
+    method: "DELETE",
+    headers: ownerHeaders(ownerToken),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res, "일괄 삭제에 실패했습니다."));
+  return res.json();
+}
+
 export async function uploadWorkPhoto(
   jobId: string,
   file: File,

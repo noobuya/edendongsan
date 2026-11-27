@@ -5,6 +5,7 @@ import Link from "next/link";
 import { BookText, Calculator, Loader2, Pencil, Plus, Trash2, TrendingUp, X } from "lucide-react";
 import {
   createLedgerEntry,
+  deleteLedgerEntriesBulk,
   deleteLedgerEntry,
   getLedgerSummary,
   updateLedgerEntry,
@@ -159,6 +160,7 @@ export default function AdminLedgerPage() {
   }
 
   async function removeEntry(entry: LedgerTransaction) {
+    if (!window.confirm(`"${entry.category}" ${won(entry.amount)} 항목을 삭제할까요?`)) return;
     const id = entry.id.replace(/^manual:/, "");
     setDeletingId(id);
     setError(null);
@@ -169,6 +171,49 @@ export default function AdminLedgerPage() {
       setError(e instanceof Error ? e.message : "삭제하지 못했습니다.");
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  // ── 지난 기록 한 번에 삭제 ── 매출(완료 견적)·인건비(현장 지원)는 수동 입력과
+  // 다른 저장소의 값이라 영향받지 않는다. "연습용으로 쓴 기록 초기화" 요청 대응.
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [cleanupFrom, setCleanupFrom] = useState("");
+  const [cleanupTo, setCleanupTo] = useState("");
+  const [cleaning, setCleaning] = useState(false);
+
+  async function handleCleanupRange() {
+    const range = cleanupFrom && cleanupTo ? `${cleanupFrom} ~ ${cleanupTo}` : cleanupFrom ? `${cleanupFrom} 이후` : `${cleanupTo} 이전`;
+    if (!window.confirm(`${range} 기간의 직접 입력한 수입/지출 기록을 모두 삭제할까요? 되돌릴 수 없어요.`)) return;
+    setCleaning(true);
+    setError(null);
+    try {
+      const { deleted } = await deleteLedgerEntriesBulk(token, cleanupFrom || undefined, cleanupTo || undefined);
+      await load(token, month);
+      setCleanupOpen(false);
+      setCleanupFrom("");
+      setCleanupTo("");
+      window.alert(`${deleted}건 삭제했어요.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "일괄 삭제에 실패했습니다.");
+    } finally {
+      setCleaning(false);
+    }
+  }
+
+  async function handleCleanupAll() {
+    if (!window.confirm("직접 입력한 수입/지출 기록을 전부 삭제할까요? 매출·인건비 자동 집계는 그대로 남고, 되돌릴 수 없어요.")) return;
+    if (!window.confirm("정말로 전체 삭제할까요? 한 번 더 확인할게요.")) return;
+    setCleaning(true);
+    setError(null);
+    try {
+      const { deleted } = await deleteLedgerEntriesBulk(token);
+      await load(token, month);
+      setCleanupOpen(false);
+      window.alert(`${deleted}건 삭제했어요.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "일괄 삭제에 실패했습니다.");
+    } finally {
+      setCleaning(false);
     }
   }
 
@@ -426,8 +471,67 @@ export default function AdminLedgerPage() {
 
           <p className="px-1 text-[11.5px] leading-relaxed text-slate-400">
             매출은 서명 완료일(없으면 생성일), 인건비는 완료 처리된 현장의 작업일 기준으로 자동 집계돼요. 그 밖의
-            수입·지출은 직접 추가한 항목이에요 — 연필 아이콘으로 고칠 수 있어요.
+            수입·지출은 직접 추가한 항목이에요 — 연필 아이콘으로 고치거나 휴지통 아이콘으로 한 건씩 지울 수 있어요.
           </p>
+
+          {/* 지난 기록 한 번에 삭제 — 매출·인건비 자동 집계는 건드리지 않고
+              직접 입력한 항목만 지운다("연습용으로 쓴 기록 초기화" 요청). */}
+          <section className="rounded-2xl border border-rose-100 bg-rose-50/40 p-4">
+            <button
+              type="button"
+              onClick={() => setCleanupOpen((v) => !v)}
+              className="flex w-full items-center justify-between text-[13.5px] font-bold text-rose-700"
+            >
+              직접 입력한 기록 정리
+              <span className="text-[12px] font-normal text-rose-400">{cleanupOpen ? "접기 ▲" : "펼치기 ▼"}</span>
+            </button>
+            {cleanupOpen && (
+              <div className="mt-3 space-y-3">
+                <p className="text-[12px] leading-relaxed text-rose-700/80">
+                  날짜를 고르면 그 기간의 직접 입력 항목만 한 번에 지워요(매출·인건비 자동 집계는 그대로 남아요).
+                  둘 다 비워두고 "전체 삭제"를 누르면 직접 입력한 기록 전부가 지워집니다.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <span className="mb-1 block text-[11.5px] font-semibold text-rose-600">시작일 (선택)</span>
+                    <input
+                      type="date"
+                      className={`${input} h-11 border-rose-200`}
+                      value={cleanupFrom}
+                      onChange={(e) => setCleanupFrom(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <span className="mb-1 block text-[11.5px] font-semibold text-rose-600">종료일 (선택)</span>
+                    <input
+                      type="date"
+                      className={`${input} h-11 border-rose-200`}
+                      value={cleanupTo}
+                      onChange={(e) => setCleanupTo(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={cleaning || (!cleanupFrom && !cleanupTo)}
+                    onClick={handleCleanupRange}
+                    className="flex h-11 flex-1 items-center justify-center rounded-xl bg-rose-600 text-[13.5px] font-bold text-white disabled:opacity-40"
+                  >
+                    {cleaning ? <Loader2 className="h-4 w-4 animate-spin" /> : "선택한 기간 삭제"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={cleaning}
+                    onClick={handleCleanupAll}
+                    className="flex h-11 flex-1 items-center justify-center rounded-xl border border-rose-300 bg-white text-[13.5px] font-bold text-rose-700 disabled:opacity-40"
+                  >
+                    전체 삭제
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
         </>
       )}
     </main>

@@ -102,3 +102,20 @@ def delete_entry(entry_id: str) -> bool:
     with _conn() as con:
         cur = con.execute("DELETE FROM ledger_entries WHERE id=?", (entry_id,))
         return cur.rowcount > 0
+
+
+def delete_entries(from_date: str | None, to_date: str | None) -> int:
+    """from_date/to_date("YYYY-MM-DD", 둘 다 포함) 범위의 수동 항목을 한 번에
+    지운다 — 연습 삼아 입력해 둔 기록을 한 번에 초기화할 때 쓴다. 둘 다 없으면
+    전체를 지운다. 매출(완료 견적)·인건비(현장 지원)는 여기 테이블에 없는
+    별도 저장소의 값이라 이 함수로는 절대 지워지지 않는다."""
+    with _conn() as con:
+        if from_date and to_date:
+            cur = con.execute("DELETE FROM ledger_entries WHERE date >= ? AND date <= ?", (from_date, to_date))
+        elif from_date:
+            cur = con.execute("DELETE FROM ledger_entries WHERE date >= ?", (from_date,))
+        elif to_date:
+            cur = con.execute("DELETE FROM ledger_entries WHERE date <= ?", (to_date,))
+        else:
+            cur = con.execute("DELETE FROM ledger_entries")
+        return cur.rowcount

@@ -155,3 +155,11 @@ async def delete_manual_entry(entry_id: str):
     if not store.delete_entry(entry_id):
         raise HTTPException(status_code=404, detail="장부 항목을 찾을 수 없습니다.")
     return {"ok": True}
+
+
+@router.delete("/entries")
+async def delete_manual_entries_bulk(from_date: str | None = None, to_date: str | None = None):
+    """지난 기록을 한 번에 정리한다(둘 다 안 주면 수동 항목 전체 삭제) — 매출·
+    인건비는 이 테이블에 없는 별도 저장소 값이라 영향받지 않는다."""
+    deleted = store.delete_entries(from_date, to_date)
+    return {"deleted": deleted}
