@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { BookText, Loader2, Pencil, Plus, Trash2, TrendingUp, X } from "lucide-react";
+import { BookText, Calculator, Loader2, Pencil, Plus, Trash2, TrendingUp, X } from "lucide-react";
 import {
   createLedgerEntry,
   deleteLedgerEntry,
@@ -255,6 +255,16 @@ export default function AdminLedgerPage() {
               <Plus className="h-4 w-4" /> 지출 추가
             </button>
           </div>
+
+          {/* 작업 견적과 무관하게, 그날 실제로 받은 돈·쓴 돈(재료·인건비·밥값·
+              기름값·기타)을 한 번에 입력하는 화면 — 기름값은 차종·연비·거리로
+              자동 계산해 준다(사장님 요청). */}
+          <Link
+            href="/admin/ledger/daily"
+            className="flex h-12 w-full items-center justify-center gap-1.5 rounded-xl bg-indigo-600 text-[14.5px] font-bold text-white"
+          >
+            <Calculator className="h-4 w-4" /> 오늘 현장 정산 입력하기
+          </Link>
 
           {form && (
             <section className="space-y-3 rounded-2xl border border-indigo-200 bg-white p-4 shadow-sm">
