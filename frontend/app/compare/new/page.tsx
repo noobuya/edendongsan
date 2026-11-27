@@ -39,6 +39,35 @@ function emptyArea(): AreaDraft {
   return { label: "", beforeFile: null, beforePreviewUrl: "", options: [emptyOption()] };
 }
 
+/** "부위 이름"은 원래부터 자유 입력이라 주방 싱크대·진열장 말고 무엇이든 적을 수
+ *  있었지만(제한 없음), 사장님이 실제로 시공하는 품목 전부를 빠르게 고를 수 있게
+ *  lib/workItems.ts(시공 항목 정의)·chat-quote 프리셋과 같은 이름으로 빠른 선택
+ *  칩을 둔다 — 타이핑 없이도 "우리가 가지고 있는 모든 품목"이 가능함을 바로 보여준다. */
+const COMMON_AREA_LABELS = [
+  "싱크대 상부장",
+  "싱크대 하부장",
+  "아일랜드 식탁",
+  "냉장고장",
+  "펜트리장",
+  "신발장",
+  "붙박이장(옷장)",
+  "방문",
+  "문틀",
+  "현관문",
+  "샷시",
+  "벽면",
+  "걸레받이/몰딩",
+  "사각 싱크볼",
+  "욕실 변기",
+  "다운라이트(조명)",
+  "실링팬",
+  "유리 썬팅",
+  "미세방충망",
+  "콩자갈 바닥",
+  "장식장/진열장",
+  "가구(의자·책상 등)",
+];
+
 /** 사장님 전용 — AI 가상시공 비교판 만들기. 시공전 사진(부위별 여러 장)과
  *  외부 AI(Gemini 등)로 미리 만들어 둔 시공후 옵션 사진(올화이트/투톤 등)들을
  *  올리면, 한 장의 제안서 이미지(BEFORE/AFTER 격자 비교판)로 합성해 준다.
@@ -267,10 +296,18 @@ export default function NewComparisonBoardPage() {
       {!board ? (
         <section className="space-y-4">
           <div className="space-y-3 rounded-2xl bg-white p-5 shadow-sm">
-            <p className="rounded-xl bg-indigo-50 px-3.5 py-3 text-[13px] leading-relaxed text-indigo-800">
-              부위마다 시공전 사진 1장과, 외부 AI(Gemini 등)로 미리 만들어 둔 시공후 옵션 사진을 올리면
-              BEFORE/AFTER 비교판 이미지로 합성해 드려요. 옵션은 올화이트·투톤처럼 여러 개를 추가할 수 있어요.
-            </p>
+            <div className="space-y-2 rounded-xl bg-indigo-50 px-3.5 py-3 text-[13px] leading-relaxed text-indigo-800">
+              <p>
+                <b>부위</b>는 싱크대·방문·샷시·욕실 등 우리가 시공하는 모든 품목을 자유롭게 적을 수 있어요(아래
+                부위 카드의 빠른 선택 버튼 참고) — 주방 싱크대·진열장은 예시일 뿐, 개수 제한도 없습니다.
+              </p>
+              <p>
+                <b>옵션</b>은 같은 부위를 색상·디자인만 바꿔서 나란히 비교하는 시안이에요(예: 올화이트 vs
+                투톤). 제미나이 등 외부 AI로 미리 만들어 둔 시공후 사진을 옵션마다 하나씩 올리면, 고객이
+                "A안이 좋으세요, B안이 좋으세요?" 하고 바로 고를 수 있게 비교판으로 합성해 드려요. 옵션이
+                하나뿐이어도 괜찮아요(그 경우 시공후 사진 1장만 보여주는 단순 비교가 됩니다).
+              </p>
+            </div>
             <input
               type="text"
               value={title}
@@ -447,6 +484,23 @@ function AreaCard({
         )}
       </div>
 
+      {/* 자유 입력 칸이라 원래도 어떤 품목이든 적을 수 있지만, 타이핑 없이 바로
+          고를 수 있게 우리가 실제로 시공하는 품목 전체를 칩으로 둔다. */}
+      <div className="flex flex-wrap gap-1.5">
+        {COMMON_AREA_LABELS.map((label) => (
+          <button
+            key={label}
+            type="button"
+            onClick={() => onLabelChange(label)}
+            className={`rounded-full px-2.5 py-1 text-[11.5px] font-semibold transition ${
+              area.label === label ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       <input
         ref={beforeInputRef}
         type="file"
@@ -526,6 +580,9 @@ function OptionRow({
           </button>
         )}
       </div>
+      <p className="text-[11px] font-semibold text-indigo-500">
+        👉 여기에 제미나이 등 AI로 만든 시공후 사진을 넣으세요
+      </p>
       <div className="flex gap-2">
         <input
           ref={fileInputRef}
@@ -543,9 +600,10 @@ function OptionRow({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="flex h-16 w-16 shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg border-2 border-dashed border-slate-300 text-slate-400"
+            className="flex h-16 w-16 shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg border-2 border-dashed border-indigo-300 bg-indigo-50/50 text-indigo-400"
           >
             <ImagePlus className="h-4 w-4" />
+            <span className="text-[9px] font-bold leading-none">AI 사진</span>
           </button>
         )}
         <div className="flex-1 space-y-1.5">
