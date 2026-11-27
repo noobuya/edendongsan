@@ -12,6 +12,7 @@ import {
   type ComparisonAreaInput,
 } from "@/lib/api";
 import { readOwnerToken, saveOwnerToken } from "@/lib/ownerToken";
+import { ALL_PATTERN_SWATCHES } from "@/lib/patternSwatches";
 import { shareOrDownloadFile } from "@/lib/shareMedia";
 import { useAndroidBack } from "@/lib/useAndroidBack";
 import type { ComparisonBoard } from "@/types";
@@ -20,6 +21,7 @@ interface OptionDraft {
   label: string;
   caption: string;
   priceNote: string;
+  filmName: string;
   file: File | null;
   previewUrl: string;
 }
@@ -32,7 +34,7 @@ interface AreaDraft {
 }
 
 function emptyOption(): OptionDraft {
-  return { label: "", caption: "", priceNote: "", file: null, previewUrl: "" };
+  return { label: "", caption: "", priceNote: "", filmName: "", file: null, previewUrl: "" };
 }
 
 function emptyArea(): AreaDraft {
@@ -67,6 +69,12 @@ const COMMON_AREA_LABELS = [
   "장식장/진열장",
   "가구(의자·책상 등)",
 ];
+
+/** 필름 이름 입력칸의 자동완성 후보 — 앱이 이미 쓰는 실제 자재 카탈로그
+ *  (lib/patternSwatches.ts, FilmForm의 SwatchPicker와 같은 목록)에서 그대로
+ *  가져온다. 품번이 있는 제품은 "이름 (브랜드 코드)"로 보여줘 발주서와 바로
+ *  맞춰볼 수 있게 한다. */
+const FILM_NAME_SUGGESTIONS = ALL_PATTERN_SWATCHES.map((p) => (p.code ? `${p.name} (${p.brand} ${p.code})` : p.name));
 
 /** 사장님 전용 — AI 가상시공 비교판 만들기. 시공전 사진(부위별 여러 장)과
  *  외부 AI(Gemini 등)로 미리 만들어 둔 시공후 옵션 사진(올화이트/투톤 등)들을
@@ -169,7 +177,12 @@ export default function NewComparisonBoardPage() {
     try {
       const layout: ComparisonAreaInput[] = areas.map((a) => ({
         label: a.label.trim(),
-        options: a.options.map((o) => ({ label: o.label.trim(), caption: o.caption.trim(), price_note: o.priceNote.trim() })),
+        options: a.options.map((o) => ({
+          label: o.label.trim(),
+          caption: o.caption.trim(),
+          price_note: o.priceNote.trim(),
+          film_name: o.filmName.trim(),
+        })),
       }));
       const photos: File[] = [];
       areas.forEach((a) => {
@@ -286,6 +299,11 @@ export default function NewComparisonBoardPage() {
 
   return (
     <main className="mx-auto max-w-xl space-y-5 px-4 py-6 pb-24">
+      <datalist id="film-name-options">
+        {FILM_NAME_SUGGESTIONS.map((name) => (
+          <option key={name} value={name} />
+        ))}
+      </datalist>
       <header className="flex items-center gap-2">
         <Link href="/" aria-label="처음으로" className="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-slate-200/70">
           <ArrowLeft className="h-5 w-5" />
@@ -619,6 +637,14 @@ function OptionRow({
             value={option.priceNote}
             onChange={(e) => onChange({ priceNote: e.target.value })}
             placeholder="이 옵션 가격 (선택)"
+            className="h-8 w-full rounded-lg border border-slate-200 px-2.5 text-[12.5px] outline-none focus:border-indigo-500"
+          />
+          <input
+            type="text"
+            value={option.filmName}
+            onChange={(e) => onChange({ filmName: e.target.value })}
+            placeholder="필름 이름/품번 (선택, 예: 매트 화이트)"
+            list="film-name-options"
             className="h-8 w-full rounded-lg border border-slate-200 px-2.5 text-[12.5px] outline-none focus:border-indigo-500"
           />
         </div>

@@ -489,6 +489,8 @@ export interface ComparisonOption {
   label: string;
   caption: string;
   price_note: string;
+  /** 실제 자재명/품번 — 비교판 이미지·공개 페이지에 "필름: OOO"로 표시된다. */
+  film_name: string;
   photo: ComparisonPhotoRef;
 }
 

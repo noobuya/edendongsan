@@ -36,6 +36,9 @@ class OptionInput(BaseModel):
     label: str
     caption: str = ""
     price_note: str = ""
+    # 비교판 이미지·공개 페이지에 "필름: OOO"로 표시되는 실제 자재명/품번
+    # (사장님 요청: "모든 부위에 필름이름을 밑에 부수기재로 넣어줘").
+    film_name: str = ""
 
 
 class AreaInput(BaseModel):
@@ -123,10 +126,13 @@ async def create_board(
                     "label": opt.label,
                     "caption": opt.caption,
                     "price_note": opt.price_note,
+                    "film_name": opt.film_name,
                     "photo": {"id": opt_id, "url": _to_static_url(opt_path)},
                 }
             )
-            compose_options.append(ComparisonOptionData(label=opt.label, caption=opt.caption, photo_path=opt_path))
+            compose_options.append(
+                ComparisonOptionData(label=opt.label, caption=opt.caption, film_name=opt.film_name, photo_path=opt_path)
+            )
 
         areas_data.append(
             {

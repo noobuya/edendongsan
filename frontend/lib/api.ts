@@ -1083,6 +1083,7 @@ export interface ComparisonOptionInput {
   label: string;
   caption: string;
   price_note: string;
+  film_name: string;
 }
 export interface ComparisonAreaInput {
   label: string;

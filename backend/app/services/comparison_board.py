@@ -22,7 +22,7 @@ GAP = 20
 MARGIN = 44
 BADGE_H = 42
 BADGE_GAP = 8
-CAPTION_H = 50
+CAPTION_H = 72  # 설명 1줄 + "필름: OOO" 부수기재 1줄을 담을 수 있는 높이
 HEADER_H = 150
 TITLE_GAP = 72
 PRICE_H = 74
@@ -44,6 +44,8 @@ class ComparisonOptionData:
     label: str
     caption: str
     photo_path: str
+    # 실제 자재명/품번 — 부수기재로 사진 밑에 "필름: OOO"로 표시한다(사장님 요청).
+    film_name: str = ""
 
 
 @dataclass
@@ -75,13 +77,22 @@ def _badge(draw: ImageDraw.ImageDraw, x: int, y: int, w: int, text: str, bg: tup
     draw.text((x + (w - tw) / 2, y + (BADGE_H - ascent - descent) / 2), text, font=font, fill=(255, 255, 255))
 
 
-def _caption(draw: ImageDraw.ImageDraw, x: int, y: int, w: int, text: str) -> None:
-    if not text:
-        return
-    font = _font(19, bold=False)
+def _fit_line(draw: ImageDraw.ImageDraw, text: str, font, w: int) -> str:
     while draw.textlength(text, font=font) > w - 16 and len(text) > 1:
         text = text[:-1]
-    draw.text((x + 4, y + 10), text, font=font, fill=TEXT_DARK)
+    return text
+
+
+def _caption(draw: ImageDraw.ImageDraw, x: int, y: int, w: int, text: str, film_name: str = "") -> None:
+    """부위/옵션 설명 1줄(진하게) + 필름 이름(있으면) 1줄(옅게, "필름: OOO")을
+    사진 바로 밑에 부수기재로 적는다."""
+    font = _font(19, bold=False)
+    film_font = _font(17, bold=False)
+    if text:
+        draw.text((x + 4, y + 8), _fit_line(draw, text, font, w), font=font, fill=TEXT_DARK)
+    if film_name:
+        film_y = y + 8 + (sum(font.getmetrics()) + 4 if text else 0)
+        draw.text((x + 4, film_y), _fit_line(draw, f"필름: {film_name}", film_font, w), font=film_font, fill=TEXT_MUTED)
 
 
 def compose_board_image(
@@ -145,7 +156,7 @@ def compose_board_image(
                 y += BADGE_H + BADGE_GAP
                 base.paste(_photo_cell(opt.photo_path), (x, y))
                 y += CELL_H
-                _caption(draw, x, y, CELL_W, opt.caption)
+                _caption(draw, x, y, CELL_W, opt.caption, opt.film_name)
                 y += CAPTION_H + GAP
             else:
                 y += row_unit_h  # 이 부위는 옵션이 더 없음 — 빈 칸으로 건너뛴다.

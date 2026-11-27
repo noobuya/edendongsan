@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowLeft, Loader2, PlayCircle } from "lucide-react";
+import { AlertCircle, ArrowLeft, Loader2 } from "lucide-react";
 import AssetImage from "@/components/AssetImage";
+import BeforeAfterSlider from "@/components/BeforeAfterSlider";
 import BusinessBanner from "@/components/BusinessBanner";
 import CallBanner from "@/components/CallBanner";
 import ShareLinkButton from "@/components/ShareLinkButton";
-import { comparisonVideoUrl, getComparisonBoardPublic } from "@/lib/api";
+import { getComparisonBoardPublic } from "@/lib/api";
 import type { ComparisonBoard } from "@/types";
 import { useAndroidBack } from "@/lib/useAndroidBack";
 
@@ -33,7 +34,6 @@ export default function ComparisonBoardPublicPage() {
   const [id, setId] = useState<string | null>(null);
   const [board, setBoard] = useState<ComparisonBoard | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [openVideo, setOpenVideo] = useState<string | null>(null);
 
   useEffect(() => {
     const value = new URLSearchParams(window.location.search).get("id");
@@ -85,45 +85,33 @@ export default function ComparisonBoardPublicPage() {
       <article className="space-y-6">
         <AssetImage src={board.image_url} alt={board.title} className="w-full rounded-xl shadow-sm" />
 
-        <div className="space-y-4">
+        <p className="text-center text-[12.5px] text-slate-400">아래 사진을 손가락으로 밀어 보면서 시공 전후를 비교해 보세요</p>
+
+        <div className="space-y-6">
           {board.areas.map((area) => (
-            <div key={area.label} className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
-              <p className="mb-2.5 text-[14.5px] font-bold text-slate-800">{area.label}</p>
-              <div className="flex flex-wrap gap-2">
-                {area.options.map((opt, i) => {
-                  const key = `${area.before_photo.id}-${opt.photo.id}`;
-                  const isOpen = openVideo === key;
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => setOpenVideo(isOpen ? null : key)}
-                      className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition ${
-                        isOpen ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-700"
-                      }`}
-                    >
-                      <PlayCircle className="h-3.5 w-3.5" />
-                      옵션 {i + 1} ({opt.label}) 전후 영상
-                    </button>
-                  );
-                })}
-              </div>
-              {area.options.map((opt) => {
-                const key = `${area.before_photo.id}-${opt.photo.id}`;
-                if (openVideo !== key) return null;
-                return (
-                  <video
-                    key={opt.id}
-                    src={comparisonVideoUrl(board.id, area.before_photo.id, opt.photo.id, "mp4")}
-                    className="mt-3 w-full rounded-lg"
-                    controls
-                    autoPlay
-                    loop
-                    muted
-                    playsInline
+            <div key={area.label} className="space-y-3 rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
+              <p className="text-[14.5px] font-bold text-slate-800">{area.label}</p>
+              {area.options.map((opt, i) => (
+                <div key={opt.id} className="space-y-1.5">
+                  {area.options.length > 1 && (
+                    <p className="text-[12.5px] font-semibold text-slate-500">
+                      옵션 {i + 1} ({opt.label})
+                    </p>
+                  )}
+                  <BeforeAfterSlider
+                    beforeSrc={area.before_photo.url}
+                    afterSrc={opt.photo.url}
+                    className="aspect-[4/3] w-full overflow-hidden rounded-lg"
                   />
-                );
-              })}
+                  {(opt.caption || opt.film_name) && (
+                    <p className="text-[12px] text-slate-500">
+                      {opt.caption}
+                      {opt.caption && opt.film_name && " · "}
+                      {opt.film_name && <span className="text-slate-400">필름: {opt.film_name}</span>}
+                    </p>
+                  )}
+                </div>
+              ))}
             </div>
           ))}
         </div>
